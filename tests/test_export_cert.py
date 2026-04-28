@@ -6,6 +6,7 @@ from pathlib import Path
 
 from export_cert import (
     LEAN_VERIFIED,
+    _failed_theorem_attributions,
     _failed_theorem_names,
     _has_unattributable_failures,
     main,
@@ -180,3 +181,31 @@ def test_main_end_to_end(tmp_path: Path):
     by_name = {a["name"]: a for a in upgraded["atoms"]}
     assert by_name["inc"]["z3_check_result"] == LEAN_VERIFIED
     assert by_name["dec"]["z3_check_result"] == "unknown"
+
+
+def test_failed_theorem_attributions_includes_file_path():
+    log = (
+        "Generated/Std/Math.lean:12:0: theorem inc_correct\n"
+        "Generated/Std/Math.lean:12:0: warning: declaration uses 'sorry'\n"
+        "Generated/Std/List.lean:30:0: theorem inc_correct\n"
+        "Generated/Std/List.lean:30:5: error: unknown identifier 'foo'\n"
+    )
+    attributions = _failed_theorem_attributions(log)
+    assert ("Generated/Std/Math.lean", "inc") in attributions
+    assert ("Generated/Std/List.lean", "inc") in attributions
+    # Same theorem name in two different files must produce two
+    # distinct attributions, not be deduped down to one entry.
+    assert len(attributions) == 2
+
+
+def test_failed_theorem_attributions_emits_none_when_no_file_prefix():
+    # Older / non-Lake-formatted logs may surface ``error:`` /
+    # ``sorry`` lines without a ``file:line:col:`` prefix; the
+    # attribution should still record the theorem name with
+    # ``file_path=None`` so callers can apply it conservatively.
+    log = (
+        "theorem orphan_correct\n"
+        "warning: declaration uses 'sorry'\n"
+    )
+    attributions = _failed_theorem_attributions(log)
+    assert attributions == [(None, "orphan")]

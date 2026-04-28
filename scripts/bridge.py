@@ -32,17 +32,27 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 try:
-    from .ingest_cert import collect_unknown_atoms, write_modules
+    from .ingest_cert import (
+        IngestedAtom,
+        collect_unknown_atoms,
+        module_to_path,
+        write_modules,
+    )
     from .export_cert import (
-        _failed_theorem_names,
+        _failed_theorem_attributions,
         _has_unattributable_failures,
         upgrade_certificate,
     )
 except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from ingest_cert import collect_unknown_atoms, write_modules  # type: ignore
+    from ingest_cert import (  # type: ignore
+        IngestedAtom,
+        collect_unknown_atoms,
+        module_to_path,
+        write_modules,
+    )
     from export_cert import (  # type: ignore
-        _failed_theorem_names,
+        _failed_theorem_attributions,
         _has_unattributable_failures,
         upgrade_certificate,
     )
@@ -179,18 +189,23 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Track proved atom names *per payload* so that, in multi-cert
     # mode, an ``unknown`` atom in one cert cannot accidentally
-    # overwrite a same-named ``unsat`` atom in another cert.
+    # overwrite a same-named ``unsat`` atom in another cert. We also
+    # remember each payload's full ``IngestedAtom`` list so we can
+    # reproduce the originating ``Generated/<...>.lean`` path for
+    # per-file failure attribution further down.
     proved_per_payload: List[List[str]] = []
+    atoms_per_payload: List[List[IngestedAtom]] = []
     # Collect all atoms across payloads first, then call ``write_modules``
     # once. ``write_modules`` writes one Lean file per module key and
     # would silently overwrite earlier payloads if two payloads
     # produced atoms whose module keys collide after sanitisation
     # (e.g. ``math.mm`` vs ``Math.mm`` → ``Generated.Math``).
-    all_atoms = []
+    all_atoms: List[IngestedAtom] = []
     for src_path, payload in payloads:
         atoms = collect_unknown_atoms(payload)
         all_atoms.extend(atoms)
         proved_per_payload.append([a.name for a in atoms])
+        atoms_per_payload.append(atoms)
         print(
             f"ingested {len(atoms):3d} unknown atom(s) from {src_path}"
         )
@@ -225,13 +240,26 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.lean_cert_out is None:
         parser.error("--lean-cert-out is required unless --no-export is set")
 
-    failed = _failed_theorem_names(build_log)
+    attributions = _failed_theorem_attributions(build_log)
     # If the build log has a failure we couldn't attribute to a
     # specific theorem (e.g. a file-level ``import`` error), we cannot
     # safely tell which atoms succeeded — fall back to the same
     # conservative behaviour as ``lake_missing``.
     unattributable = (not lake_missing) and _has_unattributable_failures(build_log)
-    if lake_missing or unattributable:
+    # ``lake build`` returned non-zero but neither sorry nor compile
+    # errors matched (e.g. infrastructure errors like ``error: cannot
+    # resolve dependency 'mathlib'`` whose ``error:`` is not preceded
+    # by a ``file:line:col`` location, lake itself crashing without a
+    # diagnostic, or an empty log). In those cases we have no way to
+    # attribute the failure but a non-zero ``rc`` *is* a hard signal
+    # that nothing was verified — be conservative.
+    unrecognised_failure = (
+        (not lake_missing)
+        and rc != 0
+        and not attributions
+        and not unattributable
+    )
+    if lake_missing or unattributable or unrecognised_failure:
         if unattributable:
             print(
                 "warning: build log contains failures that could not be "
@@ -239,19 +267,73 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "atoms as failed.",
                 file=sys.stderr,
             )
-        # Treat every atom we would have lifted into Lean as failed so
-        # the resulting certificate is conservative (no false
-        # ``lean_verified``).
-        all_proved: List[str] = [
-            name for proved in proved_per_payload for name in proved
+        elif unrecognised_failure:
+            print(
+                f"warning: `lake build` exited with status {rc} but no "
+                f"theorem-level failures could be parsed from the log; "
+                f"treating all lifted atoms as failed.",
+                file=sys.stderr,
+            )
+        # Treat every atom we would have lifted into Lean as failed
+        # in *every* payload so the resulting certificate is
+        # conservative (no false ``lean_verified``).
+        per_payload_failed: List[List[str]] = [
+            list(set(proved)) for proved in proved_per_payload
         ]
-        failed = list({*failed, *all_proved})
+    else:
+        # Map each payload to the set of generated source files it
+        # owns. Failures whose Lake-reported file path matches one of
+        # those files are attributed to that payload only, which
+        # avoids cross-payload contamination when two certs contain
+        # atoms with the same name. Failures without a recoverable
+        # file path, or whose file path does not match any known
+        # payload, are applied to *every* payload that owns an atom
+        # by that name so we never silently drop a real failure.
+        payload_files: List[set] = []
+        for atoms in atoms_per_payload:
+            files: set = set()
+            for atom in atoms:
+                rel = module_to_path(atom.module_key, args.module_prefix)
+                files.add(str((args.out_dir / rel).as_posix()))
+                files.add(str(rel.as_posix()))
+            payload_files.append(files)
+
+        all_known_files: set = set().union(*payload_files) if payload_files else set()
+
+        per_payload_failed = []
+        for proved, files in zip(proved_per_payload, payload_files):
+            local: set = set()
+            proved_set = set(proved)
+            for file_path, name in attributions:
+                if name not in proved_set:
+                    continue
+                if file_path is None:
+                    # No file context — apply to every payload that
+                    # owns the name to stay conservative.
+                    local.add(name)
+                    continue
+                file_norm = str(Path(file_path).as_posix())
+                matched_known = any(
+                    file_norm == f or file_norm.endswith(f)
+                    for f in all_known_files
+                )
+                matched_local = any(
+                    file_norm == f or file_norm.endswith(f) for f in files
+                )
+                if matched_local:
+                    local.add(name)
+                elif not matched_known:
+                    # File path doesn't correspond to any payload we
+                    # generated; fall back to applying the failure
+                    # globally rather than silently ignoring it.
+                    local.add(name)
+            per_payload_failed.append(sorted(local))
 
     if len(payloads) == 1:
         upgraded = upgrade_certificate(
             cert=payloads[0][1],
             proved_atoms=proved_per_payload[0],
-            failed_atoms=failed,
+            failed_atoms=per_payload_failed[0],
             lean_version=args.lean_version,
         )
         args.lean_cert_out.parent.mkdir(parents=True, exist_ok=True)
@@ -265,7 +347,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     # ``args.lean_cert_out`` interpreted as a directory.
     out_dir = args.lean_cert_out
     out_dir.mkdir(parents=True, exist_ok=True)
-    for (src_path, payload), proved in zip(payloads, proved_per_payload):
+    for (src_path, payload), proved, failed in zip(
+        payloads, proved_per_payload, per_payload_failed
+    ):
         upgraded = upgrade_certificate(
             cert=payload,
             proved_atoms=proved,

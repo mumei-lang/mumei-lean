@@ -31,7 +31,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 LEAN_CERT_SCHEMA_VERSION = "1.0-lean"
 LEAN_VERIFIED = "lean_verified"
@@ -46,6 +46,52 @@ _SORRY_RE = re.compile(r"declaration uses 'sorry'")
 # Any ``error:`` diagnostic in a generated theorem is treated as a
 # failure for that theorem (the proof did not type-check).
 _ERROR_RE = re.compile(r":\s*error:\s")
+# Lake prefixes every diagnostic line with the originating source
+# file, e.g. ``Generated/Std/Math.lean:12:0: warning: ...``.
+_FILE_PREFIX_RE = re.compile(r"^([^\s:]+\.lean):\d+:\d+:")
+
+
+def _failed_theorem_attributions(
+    build_output: str,
+) -> List[Tuple[Optional[str], str]]:
+    """Return ``(file_path, theorem_name)`` for every attributable failure.
+
+    ``file_path`` is the Lake diagnostic file (relative to the repo
+    root) when present, otherwise ``None``. ``theorem_name`` is the
+    de-suffixed atom name (i.e. ``inc`` for ``theorem inc_correct``).
+    Use this when callers need to disambiguate same-named atoms across
+    multiple input certificates by their originating Lean source file.
+    """
+    failures: List[Tuple[Optional[str], str]] = []
+    seen: set = set()
+    lines = build_output.splitlines()
+    for idx, line in enumerate(lines):
+        if not (_SORRY_RE.search(line) or _ERROR_RE.search(line)):
+            continue
+        file_match = _FILE_PREFIX_RE.match(line)
+        file_path: Optional[str] = file_match.group(1) if file_match else None
+        attribution: Optional[str] = None
+        for j in range(idx, max(-1, idx - 12), -1):
+            if file_path is None:
+                fm = _FILE_PREFIX_RE.match(lines[j])
+                if fm:
+                    file_path = fm.group(1)
+            m = re.search(r"theorem\s+([A-Za-z_][A-Za-z0-9_]*)", lines[j])
+            if m:
+                attribution = m.group(1)
+                break
+        if not attribution:
+            continue
+        if attribution.endswith("_correct"):
+            name = attribution[: -len("_correct")]
+        else:
+            name = attribution
+        key = (file_path, name)
+        if key in seen:
+            continue
+        seen.add(key)
+        failures.append(key)
+    return failures
 
 
 def _failed_theorem_names(build_output: str) -> List[str]:
@@ -64,27 +110,15 @@ def _failed_theorem_names(build_output: str) -> List[str]:
     to that atom. This keeps `lake build` exit-code information out of
     the picture: even when ``rc == 0`` (e.g. errors were demoted to
     warnings), any unproven theorem we can attribute is recorded.
+
+    Multi-payload callers that need to disambiguate same-named atoms
+    across different generated source files should use
+    :func:`_failed_theorem_attributions` directly.
     """
     failures: List[str] = []
-    lines = build_output.splitlines()
-    for idx, line in enumerate(lines):
-        if not (_SORRY_RE.search(line) or _ERROR_RE.search(line)):
-            continue
-        # Walk backwards a few lines looking for a theorem name.
-        attribution: Optional[str] = None
-        for j in range(idx, max(-1, idx - 12), -1):
-            m = re.search(r"theorem\s+([A-Za-z_][A-Za-z0-9_]*)", lines[j])
-            if m:
-                attribution = m.group(1)
-                break
-        if attribution:
-            # ``ingest_cert.py`` always emits ``<atomname>_correct``.
-            if attribution.endswith("_correct"):
-                name = attribution[: -len("_correct")]
-            else:
-                name = attribution
-            if name not in failures:
-                failures.append(name)
+    for _file_path, name in _failed_theorem_attributions(build_output):
+        if name not in failures:
+            failures.append(name)
     return failures
 
 

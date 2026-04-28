@@ -170,6 +170,17 @@ def _module_to_path(module_key: str, prefix: str) -> Path:
     return rel.with_suffix(".lean")
 
 
+def module_to_path(module_key: str, prefix: str) -> Path:
+    """Public wrapper around :func:`_module_to_path`.
+
+    Returns the relative ``Generated/<...>.lean`` path that
+    :func:`write_modules` would emit for the given ``module_key`` and
+    ``prefix``. Exposed so the bridge can attribute build-log
+    diagnostics back to the originating payload by file path.
+    """
+    return _module_to_path(module_key, prefix)
+
+
 def render_theorem(atom: IngestedAtom) -> str:
     """Render a single Lean ``theorem`` declaration for ``atom``."""
     req = atom.requires_translation

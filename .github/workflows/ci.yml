@@ -97,6 +97,13 @@ jobs:
           # bubble up as a red CI tick. ``exit 0`` at the very end
           # ensures the step always succeeds.
           set +e
+          # ``lean_lib `Generated`` uses `globs := .andSubmodules `Generated`,
+          # which requires `generated/Generated/` to exist so lake can
+          # walk it for submodules. `scripts/bridge.py` creates this
+          # directory on real runs via `write_modules`; on a fresh CI
+          # checkout with no ingested certs it doesn't exist yet, so
+          # create an empty one here.
+          mkdir -p generated/Generated
           lake --version
           lake update -R
           # mathlib4 ships a precompiled cache; pull it before building so we

@@ -1,3 +1,5 @@
+import MumeiLean.Basic
+
 /-!
 # MumeiLean.Verify
 
@@ -9,8 +11,6 @@ a failure). This module gives Python a stable, named API for the
 two-line "did this atom prove?" check that future Lean-only flows can
 target.
 -/
-
-import MumeiLean.Basic
 
 namespace MumeiLean
 

@@ -1,3 +1,6 @@
+import MumeiLean.Basic
+import MumeiLean.CertParser
+
 /-!
 # MumeiLean.CertWriter
 
@@ -19,9 +22,6 @@ two fields:
 * `lean_version` is added alongside `mumei_version` to record the Lean
   toolchain used.
 -/
-
-import MumeiLean.Basic
-import MumeiLean.CertParser
 
 namespace MumeiLean
 

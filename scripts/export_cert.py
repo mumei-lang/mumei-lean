@@ -289,6 +289,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         if line.strip()
     ]
     failed = _failed_theorem_names(build_log)
+    if _has_unattributable_failures(build_log):
+        # File-level failures (e.g. a failing ``import``) cannot be
+        # attributed to a specific theorem; fall back to marking every
+        # lifted atom as failed so we never emit a false
+        # ``lean_verified`` certification.
+        print(
+            "warning: build log contains failures that could not be "
+            "attributed to a specific theorem; treating all lifted "
+            "atoms as failed.",
+            file=sys.stderr,
+        )
+        failed = list({*failed, *proved})
 
     upgraded = upgrade_certificate(
         cert=cert,

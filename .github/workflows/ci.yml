@@ -52,6 +52,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # GitHub-hosted Ubuntu runners only have ~14 GiB free on /. Pulling
+      # mathlib4 (even before compiling anything) plus the Lean toolchain
+      # is enough to exhaust the disk and kill the runner worker itself
+      # ("System.IO.IOException: No space left on device"), which
+      # propagates as a red job status even with job-level
+      # ``continue-on-error: true``. Reclaim ~14 GiB of pre-installed
+      # tooling we don't need before touching lake.
+      - name: Free disk space
+        continue-on-error: true
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: true
+
       - name: Install elan + Lean toolchain
         continue-on-error: true
         run: |

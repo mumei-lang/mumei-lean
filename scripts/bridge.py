@@ -33,11 +33,14 @@ from typing import List, Optional, Tuple
 
 try:
     from .ingest_cert import collect_unknown_atoms, write_modules
-    from .export_cert import upgrade_certificate
+    from .export_cert import _failed_theorem_names, upgrade_certificate
 except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from ingest_cert import collect_unknown_atoms, write_modules  # type: ignore
-    from export_cert import upgrade_certificate  # type: ignore
+    from export_cert import (  # type: ignore
+        _failed_theorem_names,
+        upgrade_certificate,
+    )
 
 
 def _load_cert(path: Path) -> dict:
@@ -169,11 +172,14 @@ def main(argv: Optional[List[str]] = None) -> int:
             )
             return 0
 
-    proved_atom_names: List[str] = []
+    # Track proved atom names *per payload* so that, in multi-cert
+    # mode, an ``unknown`` atom in one cert cannot accidentally
+    # overwrite a same-named ``unsat`` atom in another cert.
+    proved_per_payload: List[List[str]] = []
     for src_path, payload in payloads:
         atoms = collect_unknown_atoms(payload)
         write_modules(atoms, args.out_dir, args.module_prefix)
-        proved_atom_names.extend(a.name for a in atoms)
+        proved_per_payload.append([a.name for a in atoms])
         print(
             f"ingested {len(atoms):3d} unknown atom(s) from {src_path}"
         )
@@ -208,12 +214,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.lean_cert_out is None:
         parser.error("--lean-cert-out is required unless --no-export is set")
 
+    failed = _failed_theorem_names(build_log)
+
     if len(payloads) == 1:
-        from export_cert import _failed_theorem_names  # type: ignore
-        failed = _failed_theorem_names(build_log)
         upgraded = upgrade_certificate(
             cert=payloads[0][1],
-            proved_atoms=proved_atom_names,
+            proved_atoms=proved_per_payload[0],
             failed_atoms=failed,
             lean_version=args.lean_version,
         )
@@ -228,12 +234,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     # ``args.lean_cert_out`` interpreted as a directory.
     out_dir = args.lean_cert_out
     out_dir.mkdir(parents=True, exist_ok=True)
-    from export_cert import _failed_theorem_names  # type: ignore
-    failed = _failed_theorem_names(build_log)
-    for src_path, payload in payloads:
+    for (src_path, payload), proved in zip(payloads, proved_per_payload):
         upgraded = upgrade_certificate(
             cert=payload,
-            proved_atoms=proved_atom_names,
+            proved_atoms=proved,
             failed_atoms=failed,
             lean_version=args.lean_version,
         )

@@ -88,6 +88,32 @@ def _failed_theorem_names(build_output: str) -> List[str]:
     return failures
 
 
+def _has_unattributable_failures(build_output: str) -> bool:
+    """Return True iff ``build_output`` contains an ``error:`` /
+    ``sorry`` diagnostic that cannot be attributed to a specific
+    theorem.
+
+    File-level errors (e.g. a failing ``import MumeiLean`` at the top
+    of a generated file) appear before any ``theorem`` declaration, so
+    the backward-walk in :func:`_failed_theorem_names` cannot pin them
+    to an atom. Callers should treat *all* lifted atoms in the affected
+    build as failed when this returns ``True`` to avoid silently
+    marking them ``lean_verified``.
+    """
+    lines = build_output.splitlines()
+    for idx, line in enumerate(lines):
+        if not (_SORRY_RE.search(line) or _ERROR_RE.search(line)):
+            continue
+        attributed = False
+        for j in range(idx, max(-1, idx - 12), -1):
+            if re.search(r"theorem\s+([A-Za-z_][A-Za-z0-9_]*)", lines[j]):
+                attributed = True
+                break
+        if not attributed:
+            return True
+    return False
+
+
 def _atom_proved(
     atom: dict,
     failed: Iterable[str],

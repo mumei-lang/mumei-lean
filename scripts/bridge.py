@@ -33,12 +33,17 @@ from typing import List, Optional, Tuple
 
 try:
     from .ingest_cert import collect_unknown_atoms, write_modules
-    from .export_cert import _failed_theorem_names, upgrade_certificate
+    from .export_cert import (
+        _failed_theorem_names,
+        _has_unattributable_failures,
+        upgrade_certificate,
+    )
 except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from ingest_cert import collect_unknown_atoms, write_modules  # type: ignore
     from export_cert import (  # type: ignore
         _failed_theorem_names,
+        _has_unattributable_failures,
         upgrade_certificate,
     )
 
@@ -176,13 +181,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     # mode, an ``unknown`` atom in one cert cannot accidentally
     # overwrite a same-named ``unsat`` atom in another cert.
     proved_per_payload: List[List[str]] = []
+    # Collect all atoms across payloads first, then call ``write_modules``
+    # once. ``write_modules`` writes one Lean file per module key and
+    # would silently overwrite earlier payloads if two payloads
+    # produced atoms whose module keys collide after sanitisation
+    # (e.g. ``math.mm`` vs ``Math.mm`` → ``Generated.Math``).
+    all_atoms = []
     for src_path, payload in payloads:
         atoms = collect_unknown_atoms(payload)
-        write_modules(atoms, args.out_dir, args.module_prefix)
+        all_atoms.extend(atoms)
         proved_per_payload.append([a.name for a in atoms])
         print(
             f"ingested {len(atoms):3d} unknown atom(s) from {src_path}"
         )
+    write_modules(all_atoms, args.out_dir, args.module_prefix)
 
     if args.no_build:
         print("dry run: skipping `lake build`")
@@ -214,10 +226,22 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.error("--lean-cert-out is required unless --no-export is set")
 
     failed = _failed_theorem_names(build_log)
-    if lake_missing:
-        # Without `lake` we cannot prove anything; treat every atom we
-        # would have lifted into Lean as failed so the resulting
-        # certificate is conservative (no false ``lean_verified``).
+    # If the build log has a failure we couldn't attribute to a
+    # specific theorem (e.g. a file-level ``import`` error), we cannot
+    # safely tell which atoms succeeded — fall back to the same
+    # conservative behaviour as ``lake_missing``.
+    unattributable = (not lake_missing) and _has_unattributable_failures(build_log)
+    if lake_missing or unattributable:
+        if unattributable:
+            print(
+                "warning: build log contains failures that could not be "
+                "attributed to a specific theorem; treating all lifted "
+                "atoms as failed.",
+                file=sys.stderr,
+            )
+        # Treat every atom we would have lifted into Lean as failed so
+        # the resulting certificate is conservative (no false
+        # ``lean_verified``).
         all_proved: List[str] = [
             name for proved in proved_per_payload for name in proved
         ]

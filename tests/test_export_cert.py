@@ -7,6 +7,7 @@ from pathlib import Path
 from export_cert import (
     LEAN_VERIFIED,
     _failed_theorem_names,
+    _has_unattributable_failures,
     main,
     upgrade_certificate,
 )
@@ -113,6 +114,22 @@ Generated/Std/Math.lean:12:5: error: unknown identifier 'foo'
 """
     failures = _failed_theorem_names(log)
     assert failures == ["broken"]
+
+
+def test_has_unattributable_failures_detects_file_level_errors():
+    log = (
+        "Generated/Std/Math.lean:1:0: error: unknown module 'MumeiLean'\n"
+        "Generated/Std/Math.lean:5:0: theorem inc_correct\n"
+    )
+    assert _has_unattributable_failures(log) is True
+
+
+def test_has_unattributable_failures_false_when_all_attributed():
+    log = (
+        "Generated/Std/Math.lean:5:0: theorem inc_correct\n"
+        "Generated/Std/Math.lean:5:0: warning: declaration uses 'sorry'\n"
+    )
+    assert _has_unattributable_failures(log) is False
 
 
 def test_upgrade_certificate_handles_bundle():

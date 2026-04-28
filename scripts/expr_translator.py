@@ -116,6 +116,23 @@ def _tokenize(source: str) -> List[tuple]:
     return tokens
 
 
+def contains_identifier(source: str, name: str) -> bool:
+    """Return ``True`` iff ``source`` contains an identifier *token*
+    that is exactly ``name``.
+
+    Unlike a plain ``name in source`` substring test, this respects
+    token boundaries: ``contains_identifier("results > 0", "result")``
+    is ``False`` and so is ``contains_identifier("no_result > 0",
+    "result")``.
+    """
+    if not name:
+        return False
+    for kind, text in _tokenize(source or ""):
+        if kind == "ID" and text == name:
+            return True
+    return False
+
+
 def translate_contract(source: str) -> TranslationResult:
     """Translate a single mumei contract string to a Lean ``Prop``.
 

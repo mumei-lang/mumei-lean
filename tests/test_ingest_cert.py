@@ -116,6 +116,55 @@ def test_render_theorem_includes_atom_name_and_sorry():
     assert "result" in rendered
 
 
+def test_render_theorem_does_not_add_result_param_for_substring_matches():
+    # Identifier ``results`` must not trigger a spurious ``result : Int``
+    # parameter in the emitted theorem signature.
+    import re
+
+    cert = _make_certificate(
+        "m.mm",
+        [_make_atom("count_pos", requires="results > 0", ensures="results >= 0")],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "theorem count_pos_correct" in rendered
+    # ``results`` is the free identifier; ``result`` (whole word) must
+    # NOT appear in the parameter list.
+    assert "results" in rendered
+    # Match the parameter list ``(... : Int)`` and check that ``result``
+    # is not one of the bound identifiers.
+    params_match = re.search(r"\(([^)]*) : Int\)", rendered)
+    assert params_match is not None
+    bound_idents = params_match.group(1).split()
+    assert "result" not in bound_idents
+    assert "results" in bound_idents
+
+    cert2 = _make_certificate(
+        "m.mm",
+        [_make_atom("nr", requires="no_result > 0", ensures="no_result == 1")],
+    )
+    [atom2] = collect_unknown_atoms(cert2)
+    rendered2 = render_theorem(atom2)
+    params_match2 = re.search(r"\(([^)]*) : Int\)", rendered2)
+    assert params_match2 is not None
+    bound_idents2 = params_match2.group(1).split()
+    assert "result" not in bound_idents2
+    assert "no_result" in bound_idents2
+
+
+def test_render_theorem_adds_result_param_when_token_is_operator_adjacent():
+    # ``result>=x`` (no whitespace) used to slip past the ``.split()``
+    # check; ensure the tokenised path still picks it up.
+    cert = _make_certificate(
+        "m.mm",
+        [_make_atom("inc", requires="x > 0", ensures="result>=x")],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "theorem inc_correct" in rendered
+    assert "result" in rendered
+
+
 def test_render_module_emits_namespace_header_and_imports():
     cert = _make_certificate(
         "math.mm",

@@ -40,10 +40,18 @@ from typing import Any, Iterable, List, Optional
 
 try:
     # When invoked as ``python -m scripts.ingest_cert`` or via pytest.
-    from .expr_translator import TranslationResult, translate_contract
+    from .expr_translator import (
+        TranslationResult,
+        contains_identifier,
+        translate_contract,
+    )
 except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py``
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from expr_translator import TranslationResult, translate_contract  # type: ignore
+    from expr_translator import (  # type: ignore
+        TranslationResult,
+        contains_identifier,
+        translate_contract,
+    )
 
 
 @dataclass
@@ -173,11 +181,14 @@ def render_theorem(atom: IngestedAtom) -> str:
         for ident in tr.identifiers:
             if ident not in idents:
                 idents.append(ident)
-    has_result = "result" in (atom.raw_ensures + " " + atom.raw_requires).split() or (
-        "result" in atom.raw_ensures
-    )
     # The token-level translator strips ``result`` out of identifiers
     # via _RESERVED_IDENTS, so we re-add it explicitly when present.
+    # Use the tokenizer rather than a substring / whitespace-split test
+    # so identifiers like ``results`` or ``no_result`` do not falsely
+    # trigger a spurious ``result : Int`` parameter.
+    has_result = contains_identifier(
+        atom.raw_requires, "result"
+    ) or contains_identifier(atom.raw_ensures, "result")
 
     params: List[str] = list(idents)
     if has_result and "result" not in params:

@@ -1,7 +1,7 @@
 """Unit tests for ``scripts.expr_translator``."""
 from __future__ import annotations
 
-from expr_translator import translate_contract
+from expr_translator import contains_identifier, translate_contract
 
 
 def test_trivial_contract_is_true():
@@ -57,3 +57,19 @@ def test_negation_is_translated():
     result = translate_contract("!flag")
     assert result.lean_expr.startswith("¬")
     assert result.identifiers == ["flag"]
+
+
+def test_contains_identifier_respects_token_boundaries():
+    # Exact match — both whitespace-delimited and operator-adjacent.
+    assert contains_identifier("result >= x", "result") is True
+    assert contains_identifier("result>=x", "result") is True
+    assert contains_identifier("x + result", "result") is True
+
+    # Substring matches must NOT trigger.
+    assert contains_identifier("results >= 0", "result") is False
+    assert contains_identifier("no_result > 0", "result") is False
+    assert contains_identifier("result_count == 1", "result") is False
+
+    # Empty / missing input.
+    assert contains_identifier("", "result") is False
+    assert contains_identifier("x > 0", "") is False

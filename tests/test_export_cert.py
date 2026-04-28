@@ -106,6 +106,37 @@ def test_all_verified_flips_when_every_atom_is_proved():
     assert upgraded["all_verified"] is True
 
 
+def test_failed_theorem_names_picks_up_compile_errors():
+    log = """\
+Generated/Std/Math.lean:12:0: theorem broken_correct
+Generated/Std/Math.lean:12:5: error: unknown identifier 'foo'
+"""
+    failures = _failed_theorem_names(log)
+    assert failures == ["broken"]
+
+
+def test_upgrade_certificate_handles_bundle():
+    bundle = {
+        "bundle_version": "1.0",
+        "modules": {
+            "std/math": _certificate([_atom("inc")]),
+            "std/list": _certificate([_atom("len")]),
+        },
+        "summary": {},
+    }
+    upgraded = upgrade_certificate(
+        cert=bundle,
+        proved_atoms=["inc", "len"],
+        failed_atoms=["len"],
+        lean_version="x",
+    )
+    inc = upgraded["modules"]["std/math"]["atoms"][0]
+    length = upgraded["modules"]["std/list"]["atoms"][0]
+    assert inc["z3_check_result"] == LEAN_VERIFIED
+    assert length["z3_check_result"] == "unknown"
+    assert upgraded["lean_version"] == "x"
+
+
 def test_main_end_to_end(tmp_path: Path):
     cert_path = tmp_path / "cert.json"
     cert_path.write_text(json.dumps(_certificate([_atom("inc"), _atom("dec")])))

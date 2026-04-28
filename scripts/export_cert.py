@@ -41,25 +41,34 @@ LEAN_VERIFIED = "lean_verified"
 # preceded by a header line that names the file/decl. We treat *any*
 # such warning as a hard failure for the corresponding theorem.
 _SORRY_RE = re.compile(r"declaration uses 'sorry'")
+# Lake compile-error diagnostics look like::
+#   Generated/Foo.lean:42:7: error: <message>
+# Any ``error:`` diagnostic in a generated theorem is treated as a
+# failure for that theorem (the proof did not type-check).
+_ERROR_RE = re.compile(r":\s*error:\s")
 
 
 def _failed_theorem_names(build_output: str) -> List[str]:
-    """Extract theorem names that triggered ``sorry`` warnings.
+    """Extract theorem names that failed to prove cleanly.
 
-    Lake's diagnostic format is roughly::
+    Two failure modes are recognised:
 
-        Generated/Foo.lean:42:7: warning: declaration uses 'sorry'
+    * ``warning: declaration uses 'sorry'`` — the proof body still
+      contains ``sorry``;
+    * ``error: ...`` — the generated theorem did not type-check
+      (e.g. because the contract translator emitted a partial /
+      unsupported expression).
 
-    accompanied by a separate informative line that mentions the
-    declaration. We take a conservative approach: any line containing
-    ``declaration uses 'sorry'`` is treated as a failure, and we look
-    for the most recent ``theorem <name>`` reference in the preceding
-    context to attribute it.
+    For each failure line we walk backwards a few lines to find the
+    most recent ``theorem <name>`` reference and attribute the failure
+    to that atom. This keeps `lake build` exit-code information out of
+    the picture: even when ``rc == 0`` (e.g. errors were demoted to
+    warnings), any unproven theorem we can attribute is recorded.
     """
     failures: List[str] = []
     lines = build_output.splitlines()
     for idx, line in enumerate(lines):
-        if not _SORRY_RE.search(line):
+        if not (_SORRY_RE.search(line) or _ERROR_RE.search(line)):
             continue
         # Walk backwards a few lines looking for a theorem name.
         attribution: Optional[str] = None
@@ -71,9 +80,11 @@ def _failed_theorem_names(build_output: str) -> List[str]:
         if attribution:
             # ``ingest_cert.py`` always emits ``<atomname>_correct``.
             if attribution.endswith("_correct"):
-                failures.append(attribution[: -len("_correct")])
+                name = attribution[: -len("_correct")]
             else:
-                failures.append(attribution)
+                name = attribution
+            if name not in failures:
+                failures.append(name)
     return failures
 
 
@@ -94,6 +105,43 @@ def _atom_proved(
     return name not in failed
 
 
+def _upgrade_single_certificate(
+    cert: dict,
+    proved_set: set,
+    failed_set: set,
+) -> bool:
+    """Mutate a single per-module certificate in place.
+
+    Returns ``True`` iff at least one atom was upgraded.
+    """
+    upgraded_any = False
+    for atom in cert.get("atoms", []):
+        if not isinstance(atom, dict):
+            continue
+        if not _atom_proved(atom, failed_set, proved_set):
+            continue
+        atom["z3_check_result"] = LEAN_VERIFIED
+        atom["status"] = "verified"
+        upgraded_any = True
+
+    if upgraded_any:
+        # The mumei certificate_hash is computed over the canonical
+        # serialisation; once we mutate atoms it is no longer valid,
+        # and the upstream resolver only checks per-atom content
+        # hashes, so we drop it explicitly to avoid stale metadata.
+        cert.pop("certificate_hash", None)
+        # ``all_verified`` flips to true iff every atom is now either
+        # ``unsat`` or ``lean_verified`` (and at least one atom exists).
+        atoms = cert.get("atoms", [])
+        if atoms:
+            cert["all_verified"] = all(
+                a.get("z3_check_result") in {"unsat", LEAN_VERIFIED}
+                for a in atoms
+                if isinstance(a, dict)
+            )
+    return upgraded_any
+
+
 def upgrade_certificate(
     cert: dict,
     proved_atoms: Iterable[str],
@@ -106,37 +154,25 @@ def upgrade_certificate(
     have their ``z3_check_result`` set to ``"lean_verified"`` and
     ``status`` set to ``"verified"``; everything else is preserved
     verbatim.
+
+    Both per-module ``ProofCertificate`` and ``ProofBundle`` envelopes
+    are accepted: bundles are detected by the presence of a ``modules``
+    dict, and each nested certificate is upgraded independently.
     """
     proved_set = set(proved_atoms)
     failed_set = set(failed_atoms)
     out = json.loads(json.dumps(cert))  # deep copy via JSON round-trip
-    upgraded_any = False
-    for atom in out.get("atoms", []):
-        if not isinstance(atom, dict):
-            continue
-        if not _atom_proved(atom, failed_set, proved_set):
-            continue
-        atom["z3_check_result"] = LEAN_VERIFIED
-        atom["status"] = "verified"
-        upgraded_any = True
+
+    if isinstance(out.get("modules"), dict):
+        # ProofBundle: recurse into each per-module certificate.
+        for nested in out["modules"].values():
+            if isinstance(nested, dict):
+                _upgrade_single_certificate(nested, proved_set, failed_set)
+    else:
+        _upgrade_single_certificate(out, proved_set, failed_set)
 
     out["lean_version"] = lean_version
     out["lean_cert_schema_version"] = LEAN_CERT_SCHEMA_VERSION
-    if upgraded_any:
-        # The mumei certificate_hash is computed over the canonical
-        # serialisation; once we mutate atoms it is no longer valid,
-        # and the upstream resolver only checks per-atom content
-        # hashes, so we drop it explicitly to avoid stale metadata.
-        out.pop("certificate_hash", None)
-        # ``all_verified`` flips to true iff every atom is now either
-        # ``unsat`` or ``lean_verified`` (and at least one atom exists).
-        atoms = out.get("atoms", [])
-        if atoms:
-            out["all_verified"] = all(
-                a.get("z3_check_result") in {"unsat", LEAN_VERIFIED}
-                for a in atoms
-                if isinstance(a, dict)
-            )
     return out
 
 

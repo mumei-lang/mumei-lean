@@ -192,7 +192,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     log_path = args.out_dir / "lake_build.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     rc = _run_lake_build(args.repo_dir, log_path)
-    if rc == 127:
+    lake_missing = rc == 127
+    if lake_missing:
         print(
             "warning: `lake` is not installed; skipping build. "
             "Install Lean 4 / Lake to enable end-to-end verification.",
@@ -200,8 +201,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         if args.no_export:
             return 0
-        # Without `lake` we cannot prove anything; treat all atoms as
-        # failed so the resulting certificate is conservative.
         build_log = ""
     else:
         build_log = log_path.read_text()
@@ -215,6 +214,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.error("--lean-cert-out is required unless --no-export is set")
 
     failed = _failed_theorem_names(build_log)
+    if lake_missing:
+        # Without `lake` we cannot prove anything; treat every atom we
+        # would have lifted into Lean as failed so the resulting
+        # certificate is conservative (no false ``lean_verified``).
+        all_proved: List[str] = [
+            name for proved in proved_per_payload for name in proved
+        ]
+        failed = list({*failed, *all_proved})
 
     if len(payloads) == 1:
         upgraded = upgrade_certificate(

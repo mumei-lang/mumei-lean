@@ -5,8 +5,12 @@
 *.ilean
 *.hash
 
-# Generated Lean sources from mumei .proof-cert.json
-/generated/
+# Generated Lean sources from mumei .proof-cert.json.
+# The namespace root (`generated/Generated.lean`) IS committed so
+# `lake build` can resolve the `Generated` lib on a fresh checkout;
+# the ingested submodules under `generated/Generated/` are not.
+/generated/*
+!/generated/Generated.lean
 
 # Python
 __pycache__/

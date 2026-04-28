@@ -1,3 +1,9 @@
+import MumeiLean.Basic
+import MumeiLean.CertParser
+import MumeiLean.TheoremGen
+import MumeiLean.Verify
+import MumeiLean.CertWriter
+
 /-!
 # MumeiLean
 
@@ -17,9 +23,3 @@ The Python bridge under `scripts/` does the heavy lifting of
 JSON ↔ Lean source translation; the modules above provide the
 Lean-side primitives the generated theorems lean on.
 -/
-
-import MumeiLean.Basic
-import MumeiLean.CertParser
-import MumeiLean.TheoremGen
-import MumeiLean.Verify
-import MumeiLean.CertWriter

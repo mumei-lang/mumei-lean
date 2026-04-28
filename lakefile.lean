@@ -25,11 +25,11 @@ lean_lib «MumeiLean» where
 -- `scripts/export_cert.py` can correctly distinguish proved theorems
 -- from ones that still contain `sorry` / fail to elaborate.
 --
--- `globs := #[.submodules `Generated]` deliberately omits a `Generated.lean`
--- root (the `generated/` directory may be empty or missing on a fresh
--- clone), so lake just walks the namespace and builds whatever submodules
--- exist.
+-- The namespace root (`generated/Generated.lean`) IS committed as a
+-- placeholder so lake can resolve the library's source directory on a
+-- fresh checkout; `globs := #[.andSubmodules `Generated]` walks the
+-- namespace and builds the root plus whatever submodules have been ingested.
 @[default_target]
 lean_lib «Generated» where
   srcDir := "generated"
-  globs := #[.submodules `Generated]
+  globs := #[.andSubmodules `Generated]

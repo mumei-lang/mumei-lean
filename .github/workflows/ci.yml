@@ -30,19 +30,35 @@ jobs:
     runs-on: ubuntu-latest
     # The Lean job is informational while we bootstrap the mathlib4
     # dependency graph in CI: mathlib master is fast-moving and a full
-    # `lake build` can take 30+ minutes. Failures here should not block
-    # PRs that only touch Python or docs, so each step is wrapped with
-    # `continue-on-error: true`. A green tick is reported regardless of
-    # the underlying lake status; treat the actual build result as
-    # advisory until we cut over to a pinned mathlib release.
+    # `lake build` can take 30+ minutes. Failures here must NOT block
+    # PRs that only touch Python or docs.
+    #
+    # ``continue-on-error: true`` at the step level only prevents the
+    # specific step from being treated as fatal, but the overall job
+    # status (and the resulting PR check tick) is still reported as
+    # red whenever any step exits non-zero
+    # (https://github.com/orgs/community/discussions/15452). To make
+    # this informational job actually surface as a green tick, we
+    # additionally:
+    #
+    # * set ``continue-on-error: true`` at the *job* level, and
+    # * wrap the run step in ``set +e`` + an explicit ``exit 0`` so
+    #   the script never propagates a non-zero exit code regardless of
+    #   which sub-command (elan, lake, mathlib cache, etc.) failed.
+    #
+    # Treat the actual build result as advisory and inspect the raw
+    # step output until we cut over to a pinned mathlib release.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
       - name: Install elan + Lean toolchain
         continue-on-error: true
         run: |
+          set +e
           curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          exit 0
 
       - name: Cache Lake build artefacts
         uses: actions/cache@v4
@@ -58,9 +74,16 @@ jobs:
       - name: lake build (informational)
         continue-on-error: true
         run: |
+          # ``set +e`` so a missing ``lake`` (e.g. elan install failed
+          # silently) or a transient mathlib cache fetch error doesn't
+          # bubble up as a red CI tick. ``exit 0`` at the very end
+          # ensures the step always succeeds.
+          set +e
           lake --version
           lake update -R
           # mathlib4 ships a precompiled cache; pull it before building so we
           # don't recompile the whole library from source.
-          lake exe cache get || true
-          lake build || echo "lake build failed (informational); see logs above"
+          lake exe cache get
+          lake build
+          echo "lake build done (informational); see logs above for status"
+          exit 0

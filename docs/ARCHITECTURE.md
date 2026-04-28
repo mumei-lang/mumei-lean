@@ -8,22 +8,33 @@
 
 ```mermaid
 graph TD
-    M["mumei verify --emit proof-cert\n(mumei-lang/mumei)"]
-      -->|".proof-cert.json or std-proof-bundle.json"| I["scripts/ingest_cert.py"]
-
-    I -->|"generated/&lt;Module&gt;.lean\n(one theorem per unknown atom)"| L["lake build\n(Lean 4 + mathlib4)"]
-
-    L -->|"build log + proved atom list"| E["scripts/export_cert.py"]
-    E -->|".lean-cert.json\n(mumei ProofCertificate compatible)"| R["mumei resolver\n(verify_import_certificate)"]
-
-    R -->|"tier 1: ./.proof-cert.json"| R
-    R -->|"tier 3: $MUMEI_PROOF_BUNDLE"| R
+    M["mumei verify --proof-cert"] -->|".proof-cert.json"| ML["mumei-lean"]
+    M2["mumei build --emit verified-json"] -->|".verified.json"| ML
+    ML -->|"Lean 4 theorem + tactic"| LP["Lean Proof Check"]
+    LP -->|".lean-cert.json"| MR["mumei resolver\n(verify_import_certificate)"]
+    MR -->|"mark_verified()"| MV["mumei verification pipeline"]
+    AG["mumei-agent\n(proliferate / forge)"] -->|"Z3 unknown atoms"| ML
 ```
 
-The dashed loop on the right is the existing 3-tier import-verification
-machinery in mumei (`mumei-core/src/resolver.rs::verify_import_certificate`).
-mumei-lean does not modify it; it merely produces certificates the
-resolver can already read.
+`mumei-lean` is the box in the middle: it consumes per-module
+`.proof-cert.json` (or, in future, the richer `--emit verified-json`
+output) plus *unknown* atoms surfaced by `mumei-agent`'s proliferate /
+forge loops, runs Lean 4 theorems + tactics over them, and emits a
+mumei-compatible `.lean-cert.json` that the existing mumei resolver
+already understands. The 3-tier search inside
+`verify_import_certificate` is unchanged — mumei-lean simply produces
+artefacts that fit tier 1 (local `.proof-cert.json`) or tier 3
+(`MUMEI_PROOF_BUNDLE`).
+
+### Internal pipeline (mumei-lean side)
+
+```mermaid
+graph TD
+    I["scripts/ingest_cert.py"]
+      -->|"generated/&lt;Module&gt;.lean\n(one theorem per unknown atom)"| L["lake build\n(Lean 4 + mathlib4)"]
+    L -->|"build log + proved atom list"| E["scripts/export_cert.py"]
+    E -->|".lean-cert.json"| OUT["downstream:\nrename to .proof-cert.json (tier 1)\nor bundle into std-proof-bundle.json (tier 3)"]
+```
 
 ## Schema contract with mumei
 

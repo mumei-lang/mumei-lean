@@ -11,4 +11,5 @@ require mathlib from git
 
 @[default_target]
 lean_lib «MumeiLean» where
-  srcDir := "MumeiLean"
+  -- Default `srcDir = "."` is correct: the library root is `MumeiLean.lean`
+  -- at the repo root and submodules live under `MumeiLean/`.

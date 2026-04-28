@@ -25,10 +25,12 @@ and `MUMEI_PROOF_BUNDLE` machinery (SI-5 Phase 3-C).
 
 ```mermaid
 graph TD
-    M["mumei verify --emit proof-cert"] -->|".proof-cert.json"| I["scripts/ingest_cert.py"]
-    I -->|"generated/*.lean (theorems with sorry)"| L["lake build"]
-    L -->|"build log + Lean version"| E["scripts/export_cert.py"]
-    E -->|".lean-cert.json"| R["mumei resolver\n(tier 1: local cert / tier 3: MUMEI_PROOF_BUNDLE)"]
+    M["mumei verify --proof-cert"] -->|".proof-cert.json"| ML["mumei-lean"]
+    M2["mumei build --emit verified-json"] -->|".verified.json"| ML
+    ML -->|"Lean 4 theorem + tactic"| LP["Lean Proof Check"]
+    LP -->|".lean-cert.json"| MR["mumei resolver\n(verify_import_certificate)"]
+    MR -->|"mark_verified()"| MV["mumei verification pipeline"]
+    AG["mumei-agent\n(proliferate / forge)"] -->|"Z3 unknown atoms"| ML
 ```
 
 Full diagram and field-by-field schema in

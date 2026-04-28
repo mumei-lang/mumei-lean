@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+
+jobs:
+  python-bridge:
+    name: Python bridge
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pytest
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+
+      - name: Run pytest
+        run: python -m pytest -v
+
+  lean-build:
+    name: lake build
+    runs-on: ubuntu-latest
+    # The Lean job is informational while we bootstrap mathlib4 dependency
+    # graph; failures should not block PRs that only touch Python or docs.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install elan + Lean toolchain
+        run: |
+          curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Lake build artefacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            .lake
+            ~/.elan
+          key: lake-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lakefile.lean') }}
+          restore-keys: |
+            lake-${{ runner.os }}-
+
+      - name: lake build
+        run: |
+          lake --version
+          lake update -R
+          # mathlib4 ships a precompiled cache; pull it before building so we
+          # don't recompile the whole library from source.
+          lake exe cache get || true
+          lake build

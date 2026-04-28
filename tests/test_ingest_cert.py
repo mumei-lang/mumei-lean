@@ -1,0 +1,164 @@
+"""Tests for ``scripts.ingest_cert``."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from ingest_cert import (
+    _classify_input,
+    _module_to_lean_namespace,
+    collect_unknown_atoms,
+    render_module,
+    render_theorem,
+    write_modules,
+)
+
+
+def _make_atom(
+    name: str,
+    requires: str = "",
+    ensures: str = "",
+    z3: str = "unknown",
+    status: str = "unknown",
+) -> dict:
+    return {
+        "name": name,
+        "requires": requires,
+        "ensures": ensures,
+        "z3_check_result": z3,
+        "status": status,
+        "content_hash": "",
+        "proof_hash": "",
+        "dependencies": [],
+        "effects": [],
+    }
+
+
+def _make_certificate(file: str, atoms: list) -> dict:
+    return {
+        "version": "1.0",
+        "timestamp": "2026-04-28T00:00:00Z",
+        "mumei_version": "0.5.6",
+        "z3_version": "4.12.2",
+        "file": file,
+        "atoms": atoms,
+        "package_name": "test",
+        "package_version": "0.0.0",
+        "certificate_hash": "",
+        "all_verified": False,
+    }
+
+
+def test_classify_input_recognises_certificate_and_bundle():
+    cert = _make_certificate("a.mm", [_make_atom("a")])
+    assert _classify_input(cert) == "certificate"
+
+    bundle = {
+        "bundle_version": "1.0",
+        "modules": {"std/core": cert},
+        "summary": {},
+    }
+    assert _classify_input(bundle) == "bundle"
+
+    with pytest.raises(ValueError):
+        _classify_input({"unrelated": True})
+
+
+def test_collect_unknown_atoms_filters_by_z3_check_result():
+    cert = _make_certificate(
+        "math.mm",
+        [
+            _make_atom("a", z3="unknown"),
+            _make_atom("b", z3="unsat"),
+            _make_atom("c", z3="unknown"),
+        ],
+    )
+    atoms = collect_unknown_atoms(cert)
+    assert [a.name for a in atoms] == ["a", "c"]
+
+
+def test_collect_unknown_atoms_handles_bundle():
+    cert_a = _make_certificate("std/core.mm", [_make_atom("ax", z3="unknown")])
+    cert_b = _make_certificate(
+        "std/list.mm",
+        [_make_atom("bx", z3="unsat"), _make_atom("cx", z3="unknown")],
+    )
+    bundle = {
+        "bundle_version": "1.0",
+        "modules": {"std/core": cert_a, "std/list": cert_b},
+        "summary": {},
+    }
+    atoms = collect_unknown_atoms(bundle)
+    names = sorted(a.name for a in atoms)
+    assert names == ["ax", "cx"]
+    keys = {a.module_key for a in atoms}
+    assert keys == {"std/core", "std/list"}
+
+
+def test_module_to_lean_namespace_capitalises_and_sanitises():
+    assert _module_to_lean_namespace("std/core", "Generated") == "Generated.Std.Core"
+    assert _module_to_lean_namespace("std/sub-mod/0name", "G") == "G.Std.Sub_mod.M0name"
+
+
+def test_render_theorem_includes_atom_name_and_sorry():
+    cert = _make_certificate(
+        "m.mm",
+        [_make_atom("inc", requires="x > 0", ensures="result >= x")],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "theorem inc_correct" in rendered
+    assert "sorry" in rendered
+    # both x and result should appear in the params declaration
+    assert "x" in rendered
+    assert "result" in rendered
+
+
+def test_render_module_emits_namespace_header_and_imports():
+    cert = _make_certificate(
+        "math.mm",
+        [_make_atom("inc", requires="x > 0", ensures="result >= x")],
+    )
+    atoms = collect_unknown_atoms(cert)
+    src = render_module("std/math", "Generated", atoms)
+    assert "namespace Generated.Std.Math" in src
+    assert "import MumeiLean" in src
+    assert "end Generated.Std.Math" in src.strip().split("\n")[-1]
+
+
+def test_write_modules_groups_by_module_key(tmp_path: Path):
+    cert_a = _make_certificate("std/core.mm", [_make_atom("ax", z3="unknown")])
+    cert_b = _make_certificate("std/list.mm", [_make_atom("bx", z3="unknown")])
+    bundle = {
+        "bundle_version": "1.0",
+        "modules": {"std/core": cert_a, "std/list": cert_b},
+        "summary": {},
+    }
+    atoms = collect_unknown_atoms(bundle)
+    out_dir = tmp_path / "generated"
+    written = write_modules(atoms, out_dir, "Generated")
+    rels = sorted(p.relative_to(out_dir).as_posix() for p in written)
+    assert rels == ["Generated/Std/Core.lean", "Generated/Std/List.lean"]
+    for path in written:
+        assert path.exists()
+        assert "namespace Generated.Std." in path.read_text()
+
+
+def test_main_writes_files(tmp_path: Path):
+    from ingest_cert import main
+
+    cert = _make_certificate(
+        "math.mm",
+        [_make_atom("inc", requires="x > 0", ensures="result >= x")],
+    )
+    cert_path = tmp_path / "cert.json"
+    cert_path.write_text(json.dumps(cert))
+    out_dir = tmp_path / "out"
+    rc = main([str(cert_path), "--out", str(out_dir), "--module-prefix", "Gen"])
+    assert rc == 0
+    expected = out_dir / "Gen" / "Math.lean"
+    assert expected.exists()
+    text = expected.read_text()
+    assert "theorem inc_correct" in text

@@ -150,6 +150,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         "Required unless --no-export is set.",
     )
     parser.add_argument(
+        "--summary-json",
+        type=Path,
+        default=None,
+        help="Optional path to write a JSON summary of unknown atoms "
+        "discovered (per module + names). Useful as a CI artifact when "
+        "running with --scan-unknown.",
+    )
+    parser.add_argument(
         "--lean-version",
         default="unknown",
         help="Lean toolchain version to record in the output certificate.",
@@ -185,6 +193,20 @@ def main(argv: Optional[List[str]] = None) -> int:
                 f"info: no certificates with unknown atoms found under "
                 f"{args.scan_unknown / 'std' / 'certs'}"
             )
+            if args.summary_json is not None:
+                # Still emit a summary so downstream CI artifacts have
+                # a deterministic file to upload even when the scan is
+                # empty.
+                args.summary_json.parent.mkdir(parents=True, exist_ok=True)
+                args.summary_json.write_text(
+                    json.dumps(
+                        {"total_unknown": 0, "modules": []},
+                        indent=2,
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+                print(f"wrote {args.summary_json} (0 unknown atoms)")
             return 0
 
     # Track proved atom names *per payload* so that, in multi-cert
@@ -210,6 +232,37 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"ingested {len(atoms):3d} unknown atom(s) from {src_path}"
         )
     write_modules(all_atoms, args.out_dir, args.module_prefix)
+
+    if args.summary_json is not None:
+        # Aggregate per-module unknown atom counts so CI / humans can
+        # see which mumei modules still rely on Lean to close their
+        # obligations. The summary is grouped by ``module_key`` rather
+        # than by source certificate so that bundle inputs collapse
+        # naturally into per-namespace stats.
+        modules_summary: dict[str, List[str]] = {}
+        for atom in all_atoms:
+            modules_summary.setdefault(atom.module_key, []).append(atom.name)
+        modules_list = [
+            {
+                "module": key,
+                "unknown_count": len(names),
+                "atoms": sorted(names),
+            }
+            for key, names in sorted(modules_summary.items())
+        ]
+        summary_payload = {
+            "total_unknown": len(all_atoms),
+            "modules": modules_list,
+        }
+        args.summary_json.parent.mkdir(parents=True, exist_ok=True)
+        args.summary_json.write_text(
+            json.dumps(summary_payload, indent=2, ensure_ascii=False) + "\n"
+        )
+        print(
+            f"wrote {args.summary_json} "
+            f"({summary_payload['total_unknown']} unknown atom(s) across "
+            f"{len(modules_list)} module(s))"
+        )
 
     if args.no_build:
         print("dry run: skipping `lake build`")

@@ -86,6 +86,52 @@ python /path/to/mumei/scripts/bundle_std_certs.py \
 and only re-emits certificates that contain at least one `unknown`
 atom; everything else is left untouched.
 
+## Bulk scanning (CI / observability)
+
+For dashboarding which mumei modules still rely on Lean to discharge
+their obligations, pair `--scan-unknown` with `--summary-json` and
+`--no-build`:
+
+```bash
+python scripts/bridge.py \
+    --scan-unknown /path/to/mumei \
+    --out-dir out/generated \
+    --lean-cert-out out/lean-certs \
+    --summary-json out/scan-summary.json \
+    --no-build
+```
+
+The summary JSON has the shape
+
+```json
+{
+  "total_unknown": 5,
+  "modules": [
+    {"module": "std/list", "unknown_count": 3, "atoms": ["a", "b", "c"]},
+    {"module": "std/math", "unknown_count": 2, "atoms": ["d", "e"]}
+  ]
+}
+```
+
+Useful properties:
+
+* `total_unknown` is the number of atoms with `z3_check_result == "unknown"`
+  ingested into Lean for this scan, *not* the count of certificates touched.
+* Modules are grouped by the certificate's `module` key (e.g. the bundle
+  shape's per-namespace key), so bundle inputs collapse naturally into
+  per-namespace stats.
+* The file is **always written** when `--summary-json` is set, even if
+  the scan finds zero unknown atoms (the payload is
+  `{"total_unknown": 0, "modules": []}`). This keeps CI artifact paths
+  deterministic.
+
+The `scan-unknown` job in `.github/workflows/ci.yml` runs this exact
+command against the upstream `mumei-lang/mumei` checkout on every PR
+and uploads `out/scan-summary.json` plus the regenerated
+`out/lean-certs/` as a workflow artifact named `scan-unknown-summary`.
+The job is informational (`continue-on-error: true`) so transient
+upstream-repo issues do not block PRs.
+
 ## Working with mumei-agent
 
 `mumei-agent`'s autonomous proliferation loop discovers gaps in

@@ -47,10 +47,12 @@ def test_unknown_token_marks_partial():
 
 
 def test_array_access_translates_to_function_application():
-    # PR 3: arr[i] becomes (arr i) — Lean function application.
+    # PR 3: arr[i] becomes (arr (i)) — Lean function application with
+    # the index always parenthesised so compound expressions like
+    # ``i + 1`` keep their meaning.
     result = translate_contract("arr[i] >= 0")
-    assert "(arr i)" in result.lean_expr
-    assert result.lean_expr.endswith(">= 0") or "≥ 0" in result.lean_expr
+    assert "(arr (i))" in result.lean_expr, result.lean_expr
+    assert "≥ 0" in result.lean_expr
     # Both `arr` and `i` are free identifiers at this level.
     assert "arr" in result.identifiers
     assert "i" in result.identifiers
@@ -58,19 +60,24 @@ def test_array_access_translates_to_function_application():
 
 
 def test_array_access_with_arithmetic_index():
-    # arr[i + 1] should still produce a single Lean function application.
+    # arr[i + 1] must produce ``(arr (i + 1))`` — NOT ``(arr i + 1)``.
+    # In Lean 4, function application binds tighter than arithmetic,
+    # so the inner parens are required for the call to mean what we
+    # think it means.
     result = translate_contract("arr[i + 1] > 0")
-    assert "(arr i + 1)" in result.lean_expr or "(arr (i + 1))" in result.lean_expr
+    assert "(arr (i + 1))" in result.lean_expr, result.lean_expr
+    # Defensive: the un-parenthesised form is a known footgun.
+    assert "(arr i + 1)" not in result.lean_expr, result.lean_expr
     assert result.is_partial is False
 
 
 def test_forall_basic_quantifier():
-    # PR 3: forall(i, 0, n, arr[i] >= 0) → (∀ i : Int, 0 ≤ i → i < n → ((arr i) ≥ 0))
+    # PR 3: forall(i, 0, n, arr[i] >= 0) → (∀ i : Int, 0 ≤ i → i < n → ((arr (i)) ≥ 0))
     result = translate_contract("forall(i, 0, n, arr[i] >= 0)")
     assert "∀ i : Int" in result.lean_expr
     assert "0 ≤ i" in result.lean_expr
     assert "i < n" in result.lean_expr
-    assert "(arr i)" in result.lean_expr
+    assert "(arr (i))" in result.lean_expr, result.lean_expr
     assert "≥ 0" in result.lean_expr
     # The bound variable `i` must NOT appear as a free identifier.
     assert "i" not in result.identifiers

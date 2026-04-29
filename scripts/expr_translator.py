@@ -250,7 +250,11 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                 i += 1
                 continue
             inner_src, p = _emit_tokens(tokens[i + 2 : close])
-            pieces.append(f"({text} {inner_src})")
+            # Wrap the index in its own parens: in Lean 4, function
+            # application binds tighter than arithmetic, so without
+            # the inner parens ``arr[i + 1]`` would emit ``(arr i + 1)``
+            # which Lean parses as ``((arr i) + 1)`` — wrong.
+            pieces.append(f"({text} ({inner_src}))")
             is_partial = is_partial or p
             i = close + 1
             continue

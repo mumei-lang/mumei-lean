@@ -201,11 +201,11 @@ def render_theorem(atom: IngestedAtom) -> str:
         atom.raw_requires, "result"
     ) or contains_identifier(atom.raw_ensures, "result")
 
-    # Identifiers used in ``arr[i]`` position must be typed as
-    # ``Int → Int``; the rest are scalar ``Int``. Without this split,
-    # generated theorems try to apply an ``Int`` as a function, which
-    # is a Lean type error (matches the hand-written
-    # ``MumeiLean/Pilot.lean`` signatures).
+    # Identifiers used in ``arr[i]`` or ``len(arr)`` position must be
+    # typed as ``List Int`` so that ``arr.get! i`` / ``arr.length``
+    # type-check; the rest are scalar ``Int``. Without this split,
+    # generated theorems try to call ``.get!`` / ``.length`` on a
+    # scalar, which is a Lean type error.
     array_idents: List[str] = []
     for tr in (req, ens):
         for ident in tr.array_identifiers:
@@ -220,7 +220,7 @@ def render_theorem(atom: IngestedAtom) -> str:
     if scalar_params:
         decl_parts.append("(" + " ".join(scalar_params) + " : Int)")
     for arr in array_idents:
-        decl_parts.append(f"({arr} : Int → Int)")
+        decl_parts.append(f"({arr} : List Int)")
     params_decl = " ".join(decl_parts)
 
     requires_lean = req.lean_expr

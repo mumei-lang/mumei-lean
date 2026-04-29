@@ -195,6 +195,33 @@ def test_write_modules_groups_by_module_key(tmp_path: Path):
         assert "namespace Generated.Std." in path.read_text()
 
 
+def test_render_theorem_forall_contract_uses_lean_quantifier_and_list_typing():
+    # Integration check that ``forall`` / ``arr[i]`` lower into the
+    # PR 4 surface end-to-end via render_theorem (not just the
+    # translator in isolation).
+    cert = _make_certificate(
+        "math.mm",
+        [
+            _make_atom(
+                "forall_atom",
+                requires="n >= 0 && forall(i, 0, n, arr[i] >= 0)",
+                ensures="forall(i, 0, n, arr[i] >= 0)",
+            )
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    # Lean ``∀`` quantifier in the theorem body.
+    assert "∀ i : Int" in rendered
+    # ``arr`` is reported as a list, not a scalar Int.
+    assert "(arr : List Int)" in rendered
+    assert "(arr : Int)" not in rendered
+    # ``arr.get! i`` lowering appears in the rendered body.
+    assert "arr.get! i" in rendered
+    # No unproven marker — this contract is fully within the v2 surface.
+    assert "TODO: unproven" not in rendered
+
+
 def test_main_writes_files(tmp_path: Path):
     from ingest_cert import main
 

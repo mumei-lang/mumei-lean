@@ -99,10 +99,13 @@ def test_main_dry_run_with_pilot_fixture(tmp_path: Path):
     assert "pilot_array_offset_correct" in text
     # Translator emitted the new forall / arr[i] shapes (Unicode ∀ + parens).
     assert "∀ i : Int" in text
-    # ``arr`` is used in ``arr[i]`` position so it must be typed as a
-    # function ``Int → Int``, not a scalar ``Int``. Otherwise the
-    # generated theorem fails to type-check (cannot apply an Int).
-    assert "(arr : Int → Int)" in text, text
+    # PR 4: ``arr`` is used in ``arr[i]`` position which lowers to
+    # ``arr.get! i`` (List.get! semantics), so it must be typed as a
+    # ``List Int``, not a scalar ``Int``. Otherwise the generated
+    # theorem fails to type-check (cannot call ``.get!`` on an Int).
+    assert "(arr : List Int)" in text, text
+    # And the lowered ``arr.get! i`` form must appear in the body.
+    assert "arr.get!" in text, text
     # Neither atom should be flagged as a partial / unproven translation:
     # both are entirely within the v1+forall+arr[i] surface.
     assert "TODO: unproven" not in text

@@ -46,27 +46,26 @@ def test_unknown_token_marks_partial():
     assert result.is_partial is True
 
 
-def test_array_access_translates_to_function_application():
-    # PR 3: arr[i] becomes (arr (i)) — Lean function application with
-    # the index always parenthesised so compound expressions like
-    # ``i + 1`` keep their meaning.
+def test_array_access():
+    # PR 4: arr[i] becomes ``arr.get! i`` (List.get! semantics) — a
+    # single ID/NUM index is emitted bare so the resulting Lean is
+    # idiomatic.
     result = translate_contract("arr[i] >= 0")
-    assert "(arr (i))" in result.lean_expr, result.lean_expr
-    assert "≥ 0" in result.lean_expr
+    assert "arr.get! i ≥ 0" in result.lean_expr, result.lean_expr
     # Both `arr` and `i` are free identifiers at this level.
     assert "arr" in result.identifiers
     assert "i" in result.identifiers
     # ``arr`` appears in array-access position, so it must be reported
-    # separately so the renderer can type it ``Int → Int``.
+    # separately so the renderer can type it ``List Int``.
     assert result.array_identifiers == ["arr"]
     assert result.is_partial is False
 
 
 def test_result_array_access_marks_partial():
     # ``result`` is reserved (bound separately as the return value) and
-    # cannot be re-typed as ``Int → Int``. If it appears in ``arr[i]``
+    # cannot be re-typed as ``List Int``. If it appears in ``arr[i]``
     # position, we must flag the contract as partial rather than emit
-    # ``(result (i))`` with a scalar ``result : Int`` binding.
+    # ``result.get! i`` with a scalar ``result : Int`` binding.
     result = translate_contract("forall(i, 0, n, result[i] >= 0)")
     assert result.is_partial is True
     assert "result" not in result.array_identifiers
@@ -91,25 +90,26 @@ def test_bare_comma_outside_forall_marks_partial():
 
 
 def test_array_access_with_arithmetic_index():
-    # arr[i + 1] must produce ``(arr (i + 1))`` — NOT ``(arr i + 1)``.
-    # In Lean 4, function application binds tighter than arithmetic,
-    # so the inner parens are required for the call to mean what we
-    # think it means.
+    # arr[i + 1] must produce ``arr.get! (i + 1)`` — NOT
+    # ``arr.get! i + 1``. In Lean 4, function application binds
+    # tighter than arithmetic, so the inner parens are required for
+    # the call to mean what we think it means.
     result = translate_contract("arr[i + 1] > 0")
-    assert "(arr (i + 1))" in result.lean_expr, result.lean_expr
-    # Defensive: the un-parenthesised form is a known footgun.
-    assert "(arr i + 1)" not in result.lean_expr, result.lean_expr
+    assert "arr.get! (i + 1)" in result.lean_expr, result.lean_expr
+    # Defensive: the un-parenthesised compound-index form is a known
+    # footgun and must not slip through.
+    assert "arr.get! i + 1" not in result.lean_expr, result.lean_expr
     assert result.is_partial is False
 
 
-def test_forall_basic_quantifier():
-    # PR 3: forall(i, 0, n, arr[i] >= 0) → (∀ i : Int, 0 ≤ i → i < n → ((arr (i)) ≥ 0))
+def test_forall_basic():
+    # PR 4: forall(i, 0, n, arr[i] >= 0) →
+    #   (∀ i : Int, 0 ≤ i → i < n → arr.get! i ≥ 0)
     result = translate_contract("forall(i, 0, n, arr[i] >= 0)")
     assert "∀ i : Int" in result.lean_expr
     assert "0 ≤ i" in result.lean_expr
     assert "i < n" in result.lean_expr
-    assert "(arr (i))" in result.lean_expr, result.lean_expr
-    assert "≥ 0" in result.lean_expr
+    assert "arr.get! i ≥ 0" in result.lean_expr, result.lean_expr
     # The bound variable `i` must NOT appear as a free identifier.
     assert "i" not in result.identifiers
     # The non-bound names should still be free.
@@ -146,6 +146,49 @@ def test_negation_is_translated():
     result = translate_contract("!flag")
     assert result.lean_expr.startswith("¬")
     assert result.identifiers == ["flag"]
+
+
+def test_len_translation():
+    # PR 4: len(arr) >= n → arr.length ≥ n. ``len`` is not bound as a
+    # free identifier, ``arr`` is reported as an array identifier so
+    # the renderer types it as ``List Int``.
+    result = translate_contract("len(arr) >= n")
+    assert "arr.length ≥ n" in result.lean_expr, result.lean_expr
+    assert "len" not in result.identifiers
+    assert "arr" in result.identifiers
+    assert "n" in result.identifiers
+    assert result.array_identifiers == ["arr"]
+    assert result.is_partial is False
+
+
+def test_nested_forall():
+    # forall inside forall over a 2-D array: every inner ``forall``
+    # body still translates cleanly, the inner bound variable does not
+    # leak as a free identifier, and ``arr`` remains a single array
+    # identifier (not duplicated).
+    src = "forall(i, 0, n, forall(j, 0, n, arr[i] >= 0))"
+    result = translate_contract(src)
+    # Two ``∀`` quantifiers, both bound to ``Int``.
+    assert result.lean_expr.count("∀ ") == 2
+    assert "∀ i : Int" in result.lean_expr
+    assert "∀ j : Int" in result.lean_expr
+    assert "arr.get! i ≥ 0" in result.lean_expr
+    # Bound variables are not free.
+    assert "i" not in result.identifiers
+    assert "j" not in result.identifiers
+    assert "arr" in result.identifiers
+    assert "n" in result.identifiers
+    assert result.array_identifiers == ["arr"]
+    assert result.is_partial is False
+
+
+def test_unknown_function_call_is_partial():
+    # Generic function calls are emitted verbatim but must mark the
+    # contract as partial so the generated theorem carries a
+    # ``-- TODO: unproven`` triage marker.
+    result = translate_contract("custom_fn(x)")
+    assert result.is_partial is True
+    assert "custom_fn" in result.lean_expr
 
 
 def test_contains_identifier_respects_token_boundaries():

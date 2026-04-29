@@ -81,6 +81,12 @@ class TranslationResult:
     handle (e.g. function calls, indexing). The caller should mark the
     generated theorem as ``-- TODO: unproven``."""
 
+    array_identifiers: List[str]
+    """Subset of ``identifiers`` that appear in ``arr[i]`` array-access
+    position. These must be typed as ``Int → Int`` (not ``Int``) when
+    emitted as theorem parameters, because the translator lowers
+    ``arr[i]`` to Lean function application ``(arr (i))``."""
+
 
 def _extract_identifiers(tokens: List[tuple]) -> List[str]:
     seen: List[str] = []
@@ -290,6 +296,7 @@ def translate_contract(source: str) -> TranslationResult:
             identifiers=[],
             is_trivial=True,
             is_partial=False,
+            array_identifiers=[],
         )
     if stripped == "false":
         return TranslationResult(
@@ -297,10 +304,50 @@ def translate_contract(source: str) -> TranslationResult:
             identifiers=[],
             is_trivial=False,
             is_partial=False,
+            array_identifiers=[],
         )
 
     tokens = _tokenize(stripped)
     lean_expr, is_partial = _emit_tokens(tokens)
+    # Collect identifiers that appear in ``arr[i]`` position. These need
+    # ``Int → Int`` typing in the rendered theorem signature.
+    array_idents: List[str] = []
+    for j, (kind, text) in enumerate(tokens):
+        if (
+            kind == "ID"
+            and j + 1 < len(tokens)
+            and tokens[j + 1] == ("OP", "[")
+            and text not in _RESERVED_IDENTS
+            and text not in array_idents
+        ):
+            array_idents.append(text)
+    # Stand-alone commas outside ``forall(..)`` / ``arr[..]`` are not
+    # part of the v1 surface; mark such contracts as partial so the
+    # generated theorem still carries the ``-- TODO: unproven`` triage
+    # marker (the tokenizer accepts ``,`` as an OP for forall's sake).
+    if not is_partial:
+        depth = 0
+        forall_depths: List[int] = []
+        bracket_depth = 0
+        for j, (kind, text) in enumerate(tokens):
+            if kind == "OP" and text == "(":
+                depth += 1
+            elif kind == "OP" and text == ")":
+                if forall_depths and forall_depths[-1] == depth:
+                    forall_depths.pop()
+                depth -= 1
+            elif kind == "OP" and text == "[":
+                bracket_depth += 1
+            elif kind == "OP" and text == "]":
+                bracket_depth -= 1
+            elif kind == "KW" and text == "forall" and j + 1 < len(tokens) \
+                    and tokens[j + 1] == ("OP", "("):
+                forall_depths.append(depth + 1)
+            elif kind == "OP" and text == ",":
+                inside_forall = bool(forall_depths) and depth >= forall_depths[-1]
+                if not inside_forall and bracket_depth == 0:
+                    is_partial = True
+                    break
     # Free identifiers are everything except reserved names AND the
     # bound variables of any ``forall``. The latter are still reported
     # as ID tokens by ``_extract_identifiers`` because we don't track
@@ -331,4 +378,5 @@ def translate_contract(source: str) -> TranslationResult:
         identifiers=free,
         is_trivial=False,
         is_partial=is_partial,
+        array_identifiers=[a for a in array_idents if a in free],
     )

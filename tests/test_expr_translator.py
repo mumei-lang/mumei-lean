@@ -56,7 +56,19 @@ def test_array_access_translates_to_function_application():
     # Both `arr` and `i` are free identifiers at this level.
     assert "arr" in result.identifiers
     assert "i" in result.identifiers
+    # ``arr`` appears in array-access position, so it must be reported
+    # separately so the renderer can type it ``Int → Int``.
+    assert result.array_identifiers == ["arr"]
     assert result.is_partial is False
+
+
+def test_bare_comma_outside_forall_marks_partial():
+    # The tokenizer accepts ``,`` for forall's sake, but a stray comma
+    # outside any ``forall(..)`` / ``arr[..]`` is still outside the v1
+    # surface and must be flagged so the generated theorem carries the
+    # ``-- TODO: unproven`` marker.
+    result = translate_contract("f(a, b)")
+    assert result.is_partial is True
 
 
 def test_array_access_with_arithmetic_index():

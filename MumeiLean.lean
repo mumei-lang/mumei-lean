@@ -16,11 +16,11 @@ and the theorem-generation helpers used by the Python bridge.
 Top-level layout:
 
 * `MumeiLean.Basic`      – core type / contract / proof-result types
-* `MumeiLean.CertParser` – `.proof-cert.json` parser (skeleton)
+* `MumeiLean.CertParser` – native `.proof-cert.json` parser (`Lean.Json`)
 * `MumeiLean.TheoremGen` – mumei `requires`/`ensures` → Lean `Prop` translator
 * `MumeiLean.Tactics`    – mathlib4-backed `mumei_arith` combinator
 * `MumeiLean.Verify`     – Lean-side proof checking helpers
-* `MumeiLean.CertWriter` – `.lean-cert.json` emitter (skeleton)
+* `MumeiLean.CertWriter` – native `.lean-cert.json` emitter (`Lean.Json`)
 * `MumeiLean.Pilot`      – hand-proven pilot theorems exercising the
   bridge translator's `forall(..)` / `arr[i]` lowering (PR 3)
 

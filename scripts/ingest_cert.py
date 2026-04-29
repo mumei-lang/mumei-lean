@@ -226,7 +226,13 @@ def render_theorem(atom: IngestedAtom) -> str:
     requires_lean = req.lean_expr
     ensures_lean = ens.lean_expr
 
-    body = "  sorry"
+    # Default tactic body: try ``mumei_arith`` (mathlib4-backed
+    # ``omega`` / ``linarith`` / ``norm_num`` / ``simp`` cascade) on
+    # every subgoal, then ``sorry`` whatever it could not close. When
+    # ``mumei_arith`` discharges the obligation the ``sorry`` is
+    # unreachable and ``lake build`` emits no warning, so
+    # ``scripts/export_cert.py`` records the atom as ``lean_verified``.
+    body = "  mumei_arith <;> sorry"
     notes: List[str] = []
     if req.is_partial or ens.is_partial:
         notes.append(

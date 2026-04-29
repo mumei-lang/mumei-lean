@@ -1,6 +1,7 @@
 import MumeiLean.Basic
 import MumeiLean.CertParser
 import MumeiLean.TheoremGen
+import MumeiLean.Tactics
 import MumeiLean.Verify
 import MumeiLean.CertWriter
 import MumeiLean.Pilot
@@ -17,6 +18,7 @@ Top-level layout:
 * `MumeiLean.Basic`      – core type / contract / proof-result types
 * `MumeiLean.CertParser` – `.proof-cert.json` parser (skeleton)
 * `MumeiLean.TheoremGen` – mumei `requires`/`ensures` → Lean `Prop` translator
+* `MumeiLean.Tactics`    – mathlib4-backed `mumei_arith` combinator
 * `MumeiLean.Verify`     – Lean-side proof checking helpers
 * `MumeiLean.CertWriter` – `.lean-cert.json` emitter (skeleton)
 * `MumeiLean.Pilot`      – hand-proven pilot theorems exercising the

@@ -102,7 +102,11 @@ def test_module_to_lean_namespace_capitalises_and_sanitises():
     assert _module_to_lean_namespace("std/sub-mod/0name", "G") == "G.Std.Sub_mod.M0name"
 
 
-def test_render_theorem_includes_atom_name_and_sorry():
+def test_render_theorem_includes_atom_name_and_mumei_arith_body():
+    # PR 4: render_theorem now defaults to ``mumei_arith <;> sorry``
+    # (mathlib4-backed automation with a ``sorry`` fallback) instead
+    # of a bare ``sorry``. The ``sorry`` substring is still present so
+    # ``scripts/export_cert.py``'s warning detection keeps working.
     cert = _make_certificate(
         "m.mm",
         [_make_atom("inc", requires="x > 0", ensures="result >= x")],
@@ -110,7 +114,7 @@ def test_render_theorem_includes_atom_name_and_sorry():
     [atom] = collect_unknown_atoms(cert)
     rendered = render_theorem(atom)
     assert "theorem inc_correct" in rendered
-    assert "sorry" in rendered
+    assert "mumei_arith <;> sorry" in rendered
     # both x and result should appear in the params declaration
     assert "x" in rendered
     assert "result" in rendered
@@ -218,6 +222,8 @@ def test_render_theorem_forall_contract_uses_lean_quantifier_and_list_typing():
     assert "(arr : Int)" not in rendered
     # ``arr.get! i`` lowering appears in the rendered body.
     assert "arr.get! i" in rendered
+    # Default body now uses the mumei_arith automation.
+    assert "mumei_arith <;> sorry" in rendered
     # No unproven marker — this contract is fully within the v2 surface.
     assert "TODO: unproven" not in rendered
 

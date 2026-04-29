@@ -317,10 +317,16 @@ def translate_contract(source: str) -> TranslationResult:
             kind == "ID"
             and j + 1 < len(tokens)
             and tokens[j + 1] == ("OP", "[")
-            and text not in _RESERVED_IDENTS
-            and text not in array_idents
         ):
-            array_idents.append(text)
+            if text in _RESERVED_IDENTS:
+                # Reserved names like ``result`` cannot be re-typed as
+                # ``Int → Int`` (``render_theorem`` binds them as the
+                # scalar return value). Flag as partial so the generated
+                # theorem carries a ``-- TODO: unproven`` marker rather
+                # than silently emitting ill-typed Lean.
+                is_partial = True
+            elif text not in array_idents:
+                array_idents.append(text)
     # Stand-alone commas outside ``forall(..)`` / ``arr[..]`` are not
     # part of the v1 surface; mark such contracts as partial so the
     # generated theorem still carries the ``-- TODO: unproven`` triage
@@ -373,6 +379,35 @@ def translate_contract(source: str) -> TranslationResult:
                     bound.add(parts[0][0][1])
         i += 1
     free = [name for name in _extract_identifiers(tokens) if name not in bound]
+    # Scope-awareness guard: ``bound`` is a flat set so an ID shared
+    # between a forall's binder and a free occurrence outside that
+    # forall would be silently dropped from ``free``, producing Lean
+    # that references an undeclared name. Detect any such collision
+    # and flag the contract as partial rather than emit broken output.
+    if bound:
+        scope_stack: List[tuple] = []  # (close_index, bound_name)
+        for j, (kind, text) in enumerate(tokens):
+            while scope_stack and scope_stack[-1][0] <= j:
+                scope_stack.pop()
+            if (
+                kind == "KW"
+                and text == "forall"
+                and j + 1 < len(tokens)
+                and tokens[j + 1] == ("OP", "(")
+            ):
+                close = _find_matching(tokens, j + 1, "(", ")")
+                if close != -1:
+                    parts = _split_top_level(tokens, j + 2, close)
+                    if (
+                        len(parts) == 4
+                        and len(parts[0]) == 1
+                        and parts[0][0][0] == "ID"
+                    ):
+                        scope_stack.append((close, parts[0][0][1]))
+            elif kind == "ID" and text in bound:
+                if not any(name == text for _, name in scope_stack):
+                    is_partial = True
+                    break
     return TranslationResult(
         lean_expr=lean_expr,
         identifiers=free,

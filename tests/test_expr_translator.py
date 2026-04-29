@@ -62,6 +62,25 @@ def test_array_access_translates_to_function_application():
     assert result.is_partial is False
 
 
+def test_result_array_access_marks_partial():
+    # ``result`` is reserved (bound separately as the return value) and
+    # cannot be re-typed as ``Int → Int``. If it appears in ``arr[i]``
+    # position, we must flag the contract as partial rather than emit
+    # ``(result (i))`` with a scalar ``result : Int`` binding.
+    result = translate_contract("forall(i, 0, n, result[i] >= 0)")
+    assert result.is_partial is True
+    assert "result" not in result.array_identifiers
+
+
+def test_forall_bound_name_reused_as_free_marks_partial():
+    # Sharing a name between a forall binder and a free occurrence
+    # outside the forall scope is ambiguous — flag as partial rather
+    # than silently drop the free use (which would produce Lean that
+    # references an undeclared identifier).
+    result = translate_contract("i > 0 && forall(i, 0, n, arr[i] >= 0)")
+    assert result.is_partial is True
+
+
 def test_bare_comma_outside_forall_marks_partial():
     # The tokenizer accepts ``,`` for forall's sake, but a stray comma
     # outside any ``forall(..)`` / ``arr[..]`` is still outside the v1

@@ -1,0 +1,28 @@
+# Lake / Lean build artefacts
+/.lake/
+/build/
+*.olean
+*.ilean
+*.hash
+
+# Generated Lean sources from mumei .proof-cert.json.
+# The namespace root (`generated/Generated.lean`) IS committed so
+# `lake build` can resolve the `Generated` lib on a fresh checkout;
+# the ingested submodules under `generated/Generated/` are not.
+/generated/*
+!/generated/Generated.lean
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp

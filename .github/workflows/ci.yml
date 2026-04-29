@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+
+jobs:
+  python-bridge:
+    name: Python bridge
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pytest
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+
+      - name: Run pytest
+        run: python -m pytest -v
+
+  lean-build:
+    name: lake build
+    runs-on: ubuntu-latest
+    # The Lean job is informational while we bootstrap the mathlib4
+    # dependency graph in CI: mathlib master is fast-moving and a full
+    # `lake build` can take 30+ minutes. Failures here must NOT block
+    # PRs that only touch Python or docs.
+    #
+    # ``continue-on-error: true`` at the step level only prevents the
+    # specific step from being treated as fatal, but the overall job
+    # status (and the resulting PR check tick) is still reported as
+    # red whenever any step exits non-zero
+    # (https://github.com/orgs/community/discussions/15452). To make
+    # this informational job actually surface as a green tick, we
+    # additionally:
+    #
+    # * set ``continue-on-error: true`` at the *job* level, and
+    # * wrap the run step in ``set +e`` + an explicit ``exit 0`` so
+    #   the script never propagates a non-zero exit code regardless of
+    #   which sub-command (elan, lake, mathlib cache, etc.) failed.
+    #
+    # Treat the actual build result as advisory and inspect the raw
+    # step output until we cut over to a pinned mathlib release.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      # GitHub-hosted Ubuntu runners only have ~14 GiB free on /. Pulling
+      # mathlib4 (even before compiling anything) plus the Lean toolchain
+      # is enough to exhaust the disk and kill the runner worker itself
+      # ("System.IO.IOException: No space left on device"), which
+      # propagates as a red job status even with job-level
+      # ``continue-on-error: true``. Reclaim ~14 GiB of pre-installed
+      # tooling we don't need before touching lake.
+      - name: Free disk space
+        continue-on-error: true
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: true
+
+      - name: Install elan + Lean toolchain
+        continue-on-error: true
+        run: |
+          set +e
+          curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          exit 0
+
+      - name: Cache Lake build artefacts
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: |
+            .lake
+            ~/.elan
+          key: lake-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lakefile.lean') }}
+          restore-keys: |
+            lake-${{ runner.os }}-
+
+      - name: lake build (informational)
+        continue-on-error: true
+        run: |
+          # ``set +e`` so a missing ``lake`` (e.g. elan install failed
+          # silently) or a transient mathlib cache fetch error doesn't
+          # bubble up as a red CI tick. ``exit 0`` at the very end
+          # ensures the step always succeeds.
+          set +e
+          # ``lean_lib `Generated`` uses `globs := .andSubmodules `Generated`,
+          # which requires `generated/Generated/` to exist so lake can
+          # walk it for submodules. `scripts/bridge.py` creates this
+          # directory on real runs via `write_modules`; on a fresh CI
+          # checkout with no ingested certs it doesn't exist yet, so
+          # create an empty one here.
+          mkdir -p generated/Generated
+          lake --version
+          lake update -R
+          # mathlib4 ships a precompiled cache; pull it before building so we
+          # don't recompile the whole library from source.
+          lake exe cache get
+          lake build
+          echo "lake build done (informational); see logs above for status"
+          exit 0

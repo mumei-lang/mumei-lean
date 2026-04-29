@@ -41,8 +41,59 @@ def test_result_is_reserved_and_not_listed_as_free_identifier():
 
 
 def test_unknown_token_marks_partial():
-    # Square brackets are outside the v1 surface and trigger UNK tokens.
-    result = translate_contract("arr[0] > 0")
+    # ``@`` is outside the v1 surface and triggers an UNK token.
+    result = translate_contract("x @ 0")
+    assert result.is_partial is True
+
+
+def test_array_access_translates_to_function_application():
+    # PR 3: arr[i] becomes (arr i) — Lean function application.
+    result = translate_contract("arr[i] >= 0")
+    assert "(arr i)" in result.lean_expr
+    assert result.lean_expr.endswith(">= 0") or "≥ 0" in result.lean_expr
+    # Both `arr` and `i` are free identifiers at this level.
+    assert "arr" in result.identifiers
+    assert "i" in result.identifiers
+    assert result.is_partial is False
+
+
+def test_array_access_with_arithmetic_index():
+    # arr[i + 1] should still produce a single Lean function application.
+    result = translate_contract("arr[i + 1] > 0")
+    assert "(arr i + 1)" in result.lean_expr or "(arr (i + 1))" in result.lean_expr
+    assert result.is_partial is False
+
+
+def test_forall_basic_quantifier():
+    # PR 3: forall(i, 0, n, arr[i] >= 0) → (∀ i : Int, 0 ≤ i → i < n → ((arr i) ≥ 0))
+    result = translate_contract("forall(i, 0, n, arr[i] >= 0)")
+    assert "∀ i : Int" in result.lean_expr
+    assert "0 ≤ i" in result.lean_expr
+    assert "i < n" in result.lean_expr
+    assert "(arr i)" in result.lean_expr
+    assert "≥ 0" in result.lean_expr
+    # The bound variable `i` must NOT appear as a free identifier.
+    assert "i" not in result.identifiers
+    # The non-bound names should still be free.
+    assert "arr" in result.identifiers
+    assert "n" in result.identifiers
+    assert result.is_partial is False
+
+
+def test_forall_with_logical_connective():
+    # forall composed under && should still translate cleanly.
+    result = translate_contract("n >= 0 && forall(i, 0, n, arr[i] >= 0)")
+    assert "∧" in result.lean_expr
+    assert "∀ i : Int" in result.lean_expr
+    assert "n" in result.identifiers
+    assert "arr" in result.identifiers
+    assert "i" not in result.identifiers
+    assert result.is_partial is False
+
+
+def test_forall_arity_mismatch_marks_partial():
+    # `forall` with the wrong number of args is partial, not a crash.
+    result = translate_contract("forall(i, n)")
     assert result.is_partial is True
 
 

@@ -68,6 +68,42 @@ def test_main_dry_run_writes_generated_files(tmp_path: Path):
     assert (out_dir / "Gen" / "Std" / "Math.lean").exists()
 
 
+def test_main_dry_run_with_pilot_fixture(tmp_path: Path):
+    """PR 3: end-to-end pilot of forall(..) + arr[i] translation.
+
+    The fixture under ``tests/fixtures/pilot_proof_cert.json`` carries
+    two ``unknown`` atoms (``pilot_array_identity``, ``pilot_array_offset``)
+    whose contracts use the new ``forall`` and ``arr[i]`` shapes. A
+    dry-run bridge invocation must produce a Lean source file that
+    references both translated theorems and contains no UNK / sorry
+    fallbacks for the contract bodies themselves.
+    """
+    fixture = (
+        Path(__file__).resolve().parent / "fixtures" / "pilot_proof_cert.json"
+    )
+    out_dir = tmp_path / "generated"
+    rc = main(
+        [
+            "--cert", str(fixture),
+            "--out-dir", str(out_dir),
+            "--module-prefix", "Generated",
+            "--no-build",
+        ]
+    )
+    assert rc == 0
+    pilot_lean = out_dir / "Generated" / "Std" / "Pilot.lean"
+    assert pilot_lean.exists(), f"expected {pilot_lean} to be written"
+    text = pilot_lean.read_text()
+    # Both atoms produced theorem declarations.
+    assert "pilot_array_identity_correct" in text
+    assert "pilot_array_offset_correct" in text
+    # Translator emitted the new forall / arr[i] shapes (Unicode ∀ + parens).
+    assert "∀ i : Int" in text
+    # Neither atom should be flagged as a partial / unproven translation:
+    # both are entirely within the v1+forall+arr[i] surface.
+    assert "TODO: unproven" not in text
+
+
 def test_main_scan_unknown_returns_zero_when_dir_empty(tmp_path: Path):
     rc = main(
         [

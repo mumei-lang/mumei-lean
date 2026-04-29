@@ -49,7 +49,8 @@ mumei-lean/
 │   ├── CertParser.lean    # In-Lean .proof-cert.json parser (skeleton)
 │   ├── TheoremGen.lean    # Helpers used by generated Lean theorems
 │   ├── Verify.lean        # Per-atom proof outcome helpers
-│   └── CertWriter.lean    # In-Lean .lean-cert.json writer (skeleton)
+│   ├── CertWriter.lean    # In-Lean .lean-cert.json writer (skeleton)
+│   └── Pilot.lean         # Hand-proven pilot theorems (PR 3)
 ├── scripts/
 │   ├── expr_translator.py # mumei contract expr → Lean Prop translator
 │   ├── ingest_cert.py     # .proof-cert.json → generated/*.lean

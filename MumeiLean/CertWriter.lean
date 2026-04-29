@@ -96,6 +96,7 @@ def writeLeanCertificateJson
     ("timestamp",        Json.str cert.generatedAt),
     ("mumei_version",    Json.str cert.mumeiVersion),
     ("lean_version",     Json.str leanVersion),
+    ("lean_cert_schema_version", Json.str "1.0-lean"),
     ("z3_version",       Json.str cert.z3Version),
     ("file",             Json.str cert.file),
     ("package_name",     optStr cert.packageName),

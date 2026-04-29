@@ -38,6 +38,6 @@ unsolved subgoals for the caller to dispatch (e.g. via
 `<;> sorry`).
 -/
 macro "mumei_arith" : tactic =>
-  `(tactic| first | omega | linarith | norm_num | simp)
+  `(tactic| (intros; first | omega | linarith | norm_num | simp))
 
 end MumeiLean

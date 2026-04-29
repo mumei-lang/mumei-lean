@@ -51,16 +51,20 @@ def atomToJson (a : AtomCertificateData) : Json :=
 result is `verified`, upgrade the atom's `z3_check_result` to
 `"lean_verified"` and its `status` to `"verified"`; failed/timeout
 results leave the atom's existing fields intact (the mumei resolver
-already treats them as unproven). -/
+already treats them as unproven, so the original `z3_check_result`
+— typically `"unknown"` — is the most informative value to preserve).
+
+This mirrors `scripts/export_cert.py`, which only mutates atoms that
+pass `_atom_proved`; failed/timeout atoms are forwarded verbatim. -/
 def applyResult
     (results : List (String × ProofResult))
     (a : AtomCertificateData) : AtomCertificateData :=
   match results.find? (fun (n, _) => n == a.name) with
-  | none           => a
-  | some (_, r) =>
+  | some (_, .verified) =>
     { a with
-        z3CheckResult := r.toZ3CheckResult,
-        status        := r.toStatus }
+        z3CheckResult := ProofResult.verified.toZ3CheckResult,
+        status        := ProofResult.verified.toStatus }
+  | _ => a
 
 /-- Optional-string → JSON: `none` becomes `Json.null`. -/
 private def optStr : Option String → Json

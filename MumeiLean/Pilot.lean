@@ -54,7 +54,6 @@ theorem pilot_array_offset_correct
     (∀ i : Int, 0 ≤ i → i < n → (arr i) ≥ 0) := by
   intro i hlo hhi
   have hge1 := h.2 i hlo hhi
-  -- arr i ≥ 1 ≥ 0
-  exact le_trans (by decide : (0 : Int) ≤ 1) hge1
+  omega
 
 end MumeiLean.Pilot

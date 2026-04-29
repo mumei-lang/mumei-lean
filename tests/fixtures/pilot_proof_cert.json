@@ -1,0 +1,35 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-04-29T00:00:00Z",
+  "mumei_version": "0.5.6",
+  "z3_version": "Z3 version 4.12.2",
+  "file": "std/pilot.mm",
+  "atoms": [
+    {
+      "name": "pilot_array_identity",
+      "z3_check_result": "unknown",
+      "content_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "status": "unknown",
+      "proof_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "dependencies": [],
+      "effects": [],
+      "requires": "n >= 0 && forall(i, 0, n, arr[i] >= 0)",
+      "ensures": "forall(i, 0, n, arr[i] >= 0)"
+    },
+    {
+      "name": "pilot_array_offset",
+      "z3_check_result": "unknown",
+      "content_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "status": "unknown",
+      "proof_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "dependencies": [],
+      "effects": [],
+      "requires": "n >= 0 && forall(i, 0, n, arr[i] >= 1)",
+      "ensures": "forall(i, 0, n, arr[i] >= 0)"
+    }
+  ],
+  "package_name": "std",
+  "package_version": "0",
+  "certificate_hash": "",
+  "all_verified": false
+}

@@ -293,11 +293,13 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
             i = close + 1
             continue
 
-        # id[expr] → ``id.get! expr`` (single ID/NUM index) or
-        # ``id.get! (expr)`` (compound index). Lean's ``List.get!``
-        # takes a ``Nat`` index; we keep the index as-is and let the
-        # downstream ``mumei_arith <;> sorry`` body handle any residual
-        # ``Int`` ↔ ``Nat`` coercion obligations.
+        # id[expr] → ``id.get! <nat-index>``. Lean 4's ``List.get!``
+        # takes a ``Nat`` index, but the surrounding mumei contract
+        # binds variables (and the ``forall(i, lo, hi, …)`` quantifier)
+        # at type ``Int``. We bridge the gap by emitting an ``.toNat``
+        # conversion on identifier / compound indices; numeric literals
+        # are left bare so Lean's polymorphic numeric literal elaboration
+        # can pick the right ``Nat`` instance directly.
         if (
             kind == "ID"
             and i + 1 < n
@@ -311,14 +313,26 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                 continue
             inner_tokens = tokens[i + 2 : close]
             inner_src, p = _emit_tokens(inner_tokens)
-            simple_index = (
-                len(inner_tokens) == 1
-                and inner_tokens[0][0] in ("ID", "NUM")
+            num_only = (
+                len(inner_tokens) == 1 and inner_tokens[0][0] == "NUM"
             )
-            if simple_index:
+            id_only = (
+                len(inner_tokens) == 1 and inner_tokens[0][0] == "ID"
+            )
+            if num_only:
+                # ``arr[5]`` → ``arr.get! 5`` (literal, infers as ``Nat``).
                 pieces.append(f"{text}.get! {inner_src}")
+            elif id_only:
+                # ``arr[i]`` → ``arr.get! i.toNat``. Method-call binding
+                # is tighter than function application in Lean, so the
+                # parens around ``i.toNat`` are unnecessary.
+                pieces.append(f"{text}.get! {inner_src}.toNat")
             else:
-                pieces.append(f"{text}.get! ({inner_src})")
+                # ``arr[i + 1]`` → ``arr.get! (i + 1).toNat``. The outer
+                # parens are required for ``.toNat`` to bind to the
+                # whole compound expression rather than just the last
+                # token.
+                pieces.append(f"{text}.get! ({inner_src}).toNat")
             is_partial = is_partial or p
             i = close + 1
             continue

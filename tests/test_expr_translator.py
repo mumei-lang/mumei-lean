@@ -47,11 +47,10 @@ def test_unknown_token_marks_partial():
 
 
 def test_array_access():
-    # PR 4: arr[i] becomes ``arr.get! i`` (List.get! semantics) — a
-    # single ID/NUM index is emitted bare so the resulting Lean is
-    # idiomatic.
+    # PR 4: arr[i] becomes ``arr.get! i.toNat`` (List.get! takes Nat;
+    # ``i`` is bound as Int by the surrounding contract).
     result = translate_contract("arr[i] >= 0")
-    assert "arr.get! i ≥ 0" in result.lean_expr, result.lean_expr
+    assert "arr.get! i.toNat ≥ 0" in result.lean_expr, result.lean_expr
     # Both `arr` and `i` are free identifiers at this level.
     assert "arr" in result.identifiers
     assert "i" in result.identifiers
@@ -90,26 +89,27 @@ def test_bare_comma_outside_forall_marks_partial():
 
 
 def test_array_access_with_arithmetic_index():
-    # arr[i + 1] must produce ``arr.get! (i + 1)`` — NOT
-    # ``arr.get! i + 1``. In Lean 4, function application binds
-    # tighter than arithmetic, so the inner parens are required for
-    # the call to mean what we think it means.
+    # arr[i + 1] must produce ``arr.get! (i + 1).toNat`` — NOT
+    # ``arr.get! i + 1``. ``List.get!`` takes ``Nat``, so the
+    # compound expression needs both the outer parens (to bind the
+    # whole sum) and a ``.toNat`` conversion at the end.
     result = translate_contract("arr[i + 1] > 0")
-    assert "arr.get! (i + 1)" in result.lean_expr, result.lean_expr
-    # Defensive: the un-parenthesised compound-index form is a known
-    # footgun and must not slip through.
+    assert "arr.get! (i + 1).toNat" in result.lean_expr, result.lean_expr
+    # Defensive: the un-parenthesised / un-coerced forms are known
+    # footguns and must not slip through.
     assert "arr.get! i + 1" not in result.lean_expr, result.lean_expr
+    assert "arr.get! (i + 1) " not in result.lean_expr, result.lean_expr
     assert result.is_partial is False
 
 
 def test_forall_basic():
     # PR 4: forall(i, 0, n, arr[i] >= 0) →
-    #   (∀ i : Int, 0 ≤ i → i < n → arr.get! i ≥ 0)
+    #   (∀ i : Int, 0 ≤ i → i < n → arr.get! i.toNat ≥ 0)
     result = translate_contract("forall(i, 0, n, arr[i] >= 0)")
     assert "∀ i : Int" in result.lean_expr
     assert "0 ≤ i" in result.lean_expr
     assert "i < n" in result.lean_expr
-    assert "arr.get! i ≥ 0" in result.lean_expr, result.lean_expr
+    assert "arr.get! i.toNat ≥ 0" in result.lean_expr, result.lean_expr
     # The bound variable `i` must NOT appear as a free identifier.
     assert "i" not in result.identifiers
     # The non-bound names should still be free.
@@ -172,7 +172,7 @@ def test_nested_forall():
     assert result.lean_expr.count("∀ ") == 2
     assert "∀ i : Int" in result.lean_expr
     assert "∀ j : Int" in result.lean_expr
-    assert "arr.get! i ≥ 0" in result.lean_expr
+    assert "arr.get! i.toNat ≥ 0" in result.lean_expr
     # Bound variables are not free.
     assert "i" not in result.identifiers
     assert "j" not in result.identifiers

@@ -220,8 +220,9 @@ def test_render_theorem_forall_contract_uses_lean_quantifier_and_list_typing():
     # ``arr`` is reported as a list, not a scalar Int.
     assert "(arr : List Int)" in rendered
     assert "(arr : Int)" not in rendered
-    # ``arr.get! i`` lowering appears in the rendered body.
-    assert "arr.get! i" in rendered
+    # ``arr.get! i.toNat`` lowering appears in the rendered body.
+    # (List.get! takes ``Nat``; ``i`` is bound at ``Int`` by ``forall``.)
+    assert "arr.get! i.toNat" in rendered
     # Default body now uses the mumei_arith automation.
     assert "mumei_arith <;> sorry" in rendered
     # No unproven marker — this contract is fully within the v2 surface.

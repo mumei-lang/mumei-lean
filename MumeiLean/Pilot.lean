@@ -36,8 +36,8 @@ proof is trivial: `ensures` is literally the `requires` quantifier, so
 the proof is reflexive. -/
 theorem pilot_array_identity_correct
     (arr : List Int) (n : Int)
-    (h : n ≥ 0 ∧ (∀ i : Int, 0 ≤ i → i < n → arr.get! i ≥ 0)) :
-    (∀ i : Int, 0 ≤ i → i < n → arr.get! i ≥ 0) :=
+    (h : n ≥ 0 ∧ (∀ i : Int, 0 ≤ i → i < n → arr.get! i.toNat ≥ 0)) :
+    (∀ i : Int, 0 ≤ i → i < n → arr.get! i.toNat ≥ 0) :=
   h.2
 
 /-- Pilot 2: lower bound shifts under a constant offset.
@@ -51,8 +51,8 @@ mumei atom shape::
 A weaker lower bound on every element follows from the stronger one. -/
 theorem pilot_array_offset_correct
     (arr : List Int) (n : Int)
-    (h : n ≥ 0 ∧ (∀ i : Int, 0 ≤ i → i < n → arr.get! i ≥ 1)) :
-    (∀ i : Int, 0 ≤ i → i < n → arr.get! i ≥ 0) := by
+    (h : n ≥ 0 ∧ (∀ i : Int, 0 ≤ i → i < n → arr.get! i.toNat ≥ 1)) :
+    (∀ i : Int, 0 ≤ i → i < n → arr.get! i.toNat ≥ 0) := by
   intro i hlo hhi
   have hge1 := h.2 i hlo hhi
   omega

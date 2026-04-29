@@ -76,6 +76,7 @@ def test_cert_writer_lean_has_real_implementation():
         "version",
         "mumei_version",
         "lean_version",
+        "lean_cert_schema_version",
         "z3_version",
         "file",
         "z3_check_result",

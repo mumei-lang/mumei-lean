@@ -24,12 +24,18 @@ from typing import List, Set, Tuple
 
 # Tokens we recognise. Order matters: longer prefixes must come first
 # so e.g. ``>=`` is not split into ``>`` + ``=``.
+#
+# The translator's call / array-access / comma handling lives in the
+# translation phase rather than the lexer: the lexer keeps ``(``,
+# ``)``, ``[``, ``]``, ``,`` as plain ``OP`` tokens and the
+# ``_emit_tokens`` walker pattern-matches ``ID (`` / ``ID [`` /
+# ``forall (`` / ``len (`` to drive the rewrites added in PR 4.
 _TOKEN_RE = re.compile(
     r"""
     \s+                          |  # whitespace
     (?P<NUM>\d+)                 |  # integer literal
     (?P<BOOL>\btrue\b|\bfalse\b) |  # boolean literal
-    (?P<KW>\bforall\b)           |  # quantifier keyword (PR 3)
+    (?P<KW>\bforall\b|\blen\b)   |  # quantifier / length keywords
     (?P<ID>[A-Za-z_][A-Za-z0-9_]*) |  # identifier
     (?P<OP>
         ==|!=|>=|<=|&&|\|\||
@@ -44,6 +50,12 @@ _TOKEN_RE = re.compile(
 _RESERVED_IDENTS: Set[str] = {
     "true", "false",
     "result",  # bound separately as the theorem's return-value parameter
+    # Mumei built-ins handled inline by ``_emit_tokens`` (forall as a
+    # bounded quantifier, len as ``List.length``). Listing them keeps
+    # ``_extract_identifiers`` from binding them as theorem parameters
+    # if they accidentally show up as a bare ID token (e.g. as the
+    # ``len`` keyword without a following ``(``).
+    "forall", "len",
     # Lean keywords we never want to over-bind even if the contract uses
     # them as identifier names (it should not, but defensively).
     "Type", "Prop", "fun", "let", "do", "match", "with", "by",
@@ -188,11 +200,14 @@ def _split_top_level(
 
 
 def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
-    """Token-level emit pass with ``forall(..)`` and ``arr[i]`` rewrites.
+    """Token-level emit pass with ``forall(..)``, ``len(..)``, ``arr[i]``,
+    and general function-call rewrites.
 
     Returns ``(lean_source, is_partial)``. ``is_partial`` is True when
-    we encountered an UNK token, an unmatched bracket, or a malformed
-    ``forall`` (wrong number of arguments).
+    we encountered an UNK token, an unmatched bracket, a malformed
+    ``forall`` (wrong number of arguments), or a function call that is
+    not one of the known built-ins (``forall`` / ``len``) — the
+    generated theorem then carries a ``-- TODO: unproven`` marker.
     """
     pieces: List[str] = []
     is_partial = any(kind == "UNK" for kind, _ in tokens)
@@ -237,13 +252,54 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
             body_src, p3 = _emit_tokens(body_tokens)
             pieces.append(
                 f"(∀ {var_name} : Int, {start_src} ≤ {var_name} → "
-                f"{var_name} < {end_src} → ({body_src}))"
+                f"{var_name} < {end_src} → {body_src})"
             )
             is_partial = is_partial or p1 or p2 or p3
             i = close + 1
             continue
 
-        # id[expr] → (id (expr))
+        # len(arr) → arr.length (for a single ID argument); len(<expr>) →
+        # (<expr>).length otherwise. The result is a Lean ``Nat``, but
+        # generated theorems compare it against ``Int`` parameters; the
+        # downstream ``mumei_arith <;> sorry`` body lets unsolved
+        # obligations fall through cleanly so this is acceptable today.
+        if (
+            kind == "KW"
+            and text == "len"
+            and i + 1 < n
+            and tokens[i + 1] == ("OP", "(")
+        ):
+            close = _find_matching(tokens, i + 1, "(", ")")
+            if close == -1:
+                pieces.append(text)
+                is_partial = True
+                i += 1
+                continue
+            parts = _split_top_level(tokens, i + 2, close)
+            if len(parts) != 1:
+                # ``len`` only takes a single argument; anything else is
+                # outside the v2 surface.
+                pieces.append(text)
+                is_partial = True
+                i += 1
+                continue
+            arg_tokens = parts[0]
+            inner_src, p = _emit_tokens(arg_tokens)
+            if len(arg_tokens) == 1 and arg_tokens[0][0] == "ID":
+                pieces.append(f"{arg_tokens[0][1]}.length")
+            else:
+                pieces.append(f"({inner_src}).length")
+            is_partial = is_partial or p
+            i = close + 1
+            continue
+
+        # id[expr] → ``id.get! <nat-index>``. Lean 4's ``List.get!``
+        # takes a ``Nat`` index, but the surrounding mumei contract
+        # binds variables (and the ``forall(i, lo, hi, …)`` quantifier)
+        # at type ``Int``. We bridge the gap by emitting an ``.toNat``
+        # conversion on identifier / compound indices; numeric literals
+        # are left bare so Lean's polymorphic numeric literal elaboration
+        # can pick the right ``Nat`` instance directly.
         if (
             kind == "ID"
             and i + 1 < n
@@ -255,13 +311,57 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                 is_partial = True
                 i += 1
                 continue
-            inner_src, p = _emit_tokens(tokens[i + 2 : close])
-            # Wrap the index in its own parens: in Lean 4, function
-            # application binds tighter than arithmetic, so without
-            # the inner parens ``arr[i + 1]`` would emit ``(arr i + 1)``
-            # which Lean parses as ``((arr i) + 1)`` — wrong.
-            pieces.append(f"({text} ({inner_src}))")
+            inner_tokens = tokens[i + 2 : close]
+            inner_src, p = _emit_tokens(inner_tokens)
+            num_only = (
+                len(inner_tokens) == 1 and inner_tokens[0][0] == "NUM"
+            )
+            id_only = (
+                len(inner_tokens) == 1 and inner_tokens[0][0] == "ID"
+            )
+            if num_only:
+                # ``arr[5]`` → ``arr.get! 5`` (literal, infers as ``Nat``).
+                pieces.append(f"{text}.get! {inner_src}")
+            elif id_only:
+                # ``arr[i]`` → ``arr.get! i.toNat``. Method-call binding
+                # is tighter than function application in Lean, so the
+                # parens around ``i.toNat`` are unnecessary.
+                pieces.append(f"{text}.get! {inner_src}.toNat")
+            else:
+                # ``arr[i + 1]`` → ``arr.get! (i + 1).toNat``. The outer
+                # parens are required for ``.toNat`` to bind to the
+                # whole compound expression rather than just the last
+                # token.
+                pieces.append(f"{text}.get! ({inner_src}).toNat")
             is_partial = is_partial or p
+            i = close + 1
+            continue
+
+        # Unknown function call ``f(args)`` (anything other than
+        # ``forall`` and ``len`` which are handled above). We emit the
+        # call verbatim with a leading ``f `` and parenthesised
+        # argument list so Lean still sees something parseable, and
+        # flag the contract as partial — the bridge marks the
+        # generated theorem with ``-- TODO: unproven``.
+        if (
+            kind == "ID"
+            and i + 1 < n
+            and tokens[i + 1] == ("OP", "(")
+        ):
+            close = _find_matching(tokens, i + 1, "(", ")")
+            if close == -1:
+                pieces.append(text)
+                is_partial = True
+                i += 1
+                continue
+            arg_parts = _split_top_level(tokens, i + 2, close)
+            arg_srcs: List[str] = []
+            for ap in arg_parts:
+                src, p = _emit_tokens(ap)
+                arg_srcs.append(src)
+                is_partial = is_partial or p
+            pieces.append(f"{text} ({', '.join(arg_srcs)})")
+            is_partial = True
             i = close + 1
             continue
 
@@ -270,8 +370,9 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
         elif kind == "BOOL":
             pieces.append("True" if text == "true" else "False")
         elif kind == "KW":
-            # `forall` reaching here means it was not followed by `(` —
-            # leave the literal in and flag as partial.
+            # ``forall`` / ``len`` reaching here means the keyword was
+            # not followed by ``(`` — leave the literal in and flag as
+            # partial so the generated theorem carries a TODO marker.
             pieces.append(text)
             is_partial = True
         else:
@@ -309,10 +410,12 @@ def translate_contract(source: str) -> TranslationResult:
 
     tokens = _tokenize(stripped)
     lean_expr, is_partial = _emit_tokens(tokens)
-    # Collect identifiers that appear in ``arr[i]`` position. These need
-    # ``Int → Int`` typing in the rendered theorem signature.
+    # Collect identifiers that appear in ``arr[i]`` or ``len(arr)``
+    # position. These need ``List Int`` typing in the rendered theorem
+    # signature so that ``arr.get! i`` / ``arr.length`` type-check.
     array_idents: List[str] = []
     for j, (kind, text) in enumerate(tokens):
+        # ``arr[i]``
         if (
             kind == "ID"
             and j + 1 < len(tokens)
@@ -320,13 +423,34 @@ def translate_contract(source: str) -> TranslationResult:
         ):
             if text in _RESERVED_IDENTS:
                 # Reserved names like ``result`` cannot be re-typed as
-                # ``Int → Int`` (``render_theorem`` binds them as the
+                # ``List Int`` (``render_theorem`` binds them as the
                 # scalar return value). Flag as partial so the generated
                 # theorem carries a ``-- TODO: unproven`` marker rather
                 # than silently emitting ill-typed Lean.
                 is_partial = True
             elif text not in array_idents:
                 array_idents.append(text)
+        # ``len(arr)`` — when the sole argument is a single ID token,
+        # that name is the underlying list/array.
+        if (
+            kind == "KW"
+            and text == "len"
+            and j + 1 < len(tokens)
+            and tokens[j + 1] == ("OP", "(")
+        ):
+            close = _find_matching(tokens, j + 1, "(", ")")
+            if close == -1:
+                continue
+            parts = _split_top_level(tokens, j + 2, close)
+            if len(parts) != 1:
+                continue
+            arg = parts[0]
+            if len(arg) == 1 and arg[0][0] == "ID":
+                name = arg[0][1]
+                if name in _RESERVED_IDENTS:
+                    is_partial = True
+                elif name not in array_idents:
+                    array_idents.append(name)
     # Stand-alone commas outside ``forall(..)`` / ``arr[..]`` are not
     # part of the v1 surface; mark such contracts as partial so the
     # generated theorem still carries the ``-- TODO: unproven`` triage

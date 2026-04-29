@@ -135,12 +135,23 @@ Anything else is forwarded verbatim and the theorem is marked with
   used by the generated theorem files.
 * `MumeiLean.Verify` — record helpers for assembling the
   `proved/failed` list consumed by `scripts/export_cert.py`.
-* `MumeiLean.CertParser` / `MumeiLean.CertWriter` — placeholder
-  in-Lean parsers/writers for the future native path.
+* `MumeiLean.CertParser` — native `.proof-cert.json` parser built on
+  `Lean.Json`. Exposes `parseProofCertificate : String → Except String
+  ProofCertificateData` and an atom-level `parseAtomCertificate`,
+  tolerating optional fields the way `scripts/ingest_cert.py` does.
+* `MumeiLean.CertWriter` — native `.lean-cert.json` emitter, also on
+  `Lean.Json`. `writeLeanCertificate` re-serialises a parsed
+  `ProofCertificateData` after merging a `(name, ProofResult)` list,
+  flipping `z3_check_result` to `"lean_verified"` for proved atoms,
+  recomputing `all_verified`, and inlining `lean_version`.
 
-The Python bridge does not depend on `MumeiLean.CertParser` /
-`MumeiLean.CertWriter` at runtime; they only document the eventual
-schema contract on the Lean side.
+The Python bridge (`scripts/bridge.py`) is still the production
+entry point; the Lean modules above mirror the same logic so
+embedded consumers (e.g. `lake env lean --run`) can do a full
+parse → mutate → write → reparse cycle without leaving Lean. The
+test suite exercises this round trip via
+`tests/test_cert_roundtrip.py` (the live `lake env lean --run` arm
+is skipped when no toolchain is reachable).
 
 ## Failure semantics
 

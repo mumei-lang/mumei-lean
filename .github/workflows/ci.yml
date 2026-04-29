@@ -112,3 +112,66 @@ jobs:
           lake build
           echo "lake build done (informational); see logs above for status"
           exit 0
+
+  scan-unknown:
+    name: scan std for unknown atoms
+    runs-on: ubuntu-latest
+    # Informational: the upstream ``mumei`` repo is the source of truth
+    # for the ``std/certs/`` directory we scan, and a missing checkout
+    # or an empty ``std/`` should not fail this PR's CI tick. The job
+    # uploads a JSON summary so humans can inspect drift between the
+    # mumei verifier and Lean's coverage of ``unknown`` atoms.
+    continue-on-error: true
+    steps:
+      - name: Checkout mumei-lean
+        uses: actions/checkout@v4
+        with:
+          path: mumei-lean
+
+      - name: Checkout mumei-lang/mumei (for std/certs)
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          repository: mumei-lang/mumei
+          path: mumei
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run --scan-unknown bridge dry run
+        working-directory: mumei-lean
+        run: |
+          set +e
+          mkdir -p out
+          python scripts/bridge.py \
+              --scan-unknown ../mumei \
+              --out-dir out/generated \
+              --lean-cert-out out/lean-certs \
+              --summary-json out/scan-summary.json \
+              --no-build || true
+
+      - name: Print summary
+        working-directory: mumei-lean
+        continue-on-error: true
+        run: |
+          if [ -f out/scan-summary.json ]; then
+            echo "::group::Unknown-atom scan summary"
+            python -c "import json,sys; d=json.load(open('out/scan-summary.json')); \
+                print(f\"total_unknown={d['total_unknown']}\"); \
+                [print(f\"  {m['module']}: {m['unknown_count']} ({', '.join(m['atoms'])})\") for m in d['modules']]"
+            echo "::endgroup::"
+          else
+            echo "no scan summary produced (mumei checkout missing or scan failed)"
+          fi
+
+      - name: Upload scan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-unknown-summary
+          path: |
+            mumei-lean/out/scan-summary.json
+            mumei-lean/out/lean-certs/
+          if-no-files-found: ignore

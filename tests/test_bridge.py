@@ -99,10 +99,13 @@ def test_main_dry_run_with_pilot_fixture(tmp_path: Path):
     assert "pilot_array_offset_correct" in text
     # Translator emitted the new forall / arr[i] shapes (Unicode ∀ + parens).
     assert "∀ i : Int" in text
-    # ``arr`` is used in ``arr[i]`` position so it must be typed as a
-    # function ``Int → Int``, not a scalar ``Int``. Otherwise the
-    # generated theorem fails to type-check (cannot apply an Int).
-    assert "(arr : Int → Int)" in text, text
+    # PR 4: ``arr`` is used in ``arr[i]`` position which lowers to
+    # ``arr.get! i`` (List.get! semantics), so it must be typed as a
+    # ``List Int``, not a scalar ``Int``. Otherwise the generated
+    # theorem fails to type-check (cannot call ``.get!`` on an Int).
+    assert "(arr : List Int)" in text, text
+    # And the lowered ``arr.get! i`` form must appear in the body.
+    assert "arr.get!" in text, text
     # Neither atom should be flagged as a partial / unproven translation:
     # both are entirely within the v1+forall+arr[i] surface.
     assert "TODO: unproven" not in text
@@ -118,6 +121,59 @@ def test_main_scan_unknown_returns_zero_when_dir_empty(tmp_path: Path):
         ]
     )
     assert rc == 0
+
+
+def test_main_scan_unknown_writes_summary_json(tmp_path: Path):
+    """``--summary-json`` aggregates discovered unknown atoms by module."""
+    certs_dir = tmp_path / "std" / "certs"
+    certs_dir.mkdir(parents=True)
+    (certs_dir / "list.json").write_text(
+        json.dumps(
+            _cert(
+                "std/list.mm",
+                [_atom("a", z3="unknown"), _atom("b", z3="unsat")],
+            )
+        )
+    )
+    (certs_dir / "math.json").write_text(
+        json.dumps(_cert("std/math.mm", [_atom("c", z3="unknown")]))
+    )
+    summary = tmp_path / "summary.json"
+    rc = main(
+        [
+            "--scan-unknown", str(tmp_path),
+            "--out-dir", str(tmp_path / "g"),
+            "--summary-json", str(summary),
+            "--no-build",
+            "--no-export",
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(summary.read_text())
+    assert payload["total_unknown"] == 2
+    by_module = {m["module"]: m for m in payload["modules"]}
+    assert set(by_module) == {"std/list", "std/math"}
+    assert by_module["std/list"]["unknown_count"] == 1
+    assert by_module["std/list"]["atoms"] == ["a"]
+    assert by_module["std/math"]["unknown_count"] == 1
+    assert by_module["std/math"]["atoms"] == ["c"]
+
+
+def test_main_scan_unknown_writes_empty_summary_when_dir_empty(tmp_path: Path):
+    """Empty scans still produce a summary so CI artefacts are stable."""
+    summary = tmp_path / "summary.json"
+    rc = main(
+        [
+            "--scan-unknown", str(tmp_path),
+            "--out-dir", str(tmp_path / "g"),
+            "--summary-json", str(summary),
+            "--no-build",
+            "--no-export",
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(summary.read_text())
+    assert payload == {"total_unknown": 0, "modules": []}
 
 
 def _patch_lake(monkeypatch, rc: int, log: str) -> None:

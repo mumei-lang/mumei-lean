@@ -201,11 +201,11 @@ def render_theorem(atom: IngestedAtom) -> str:
         atom.raw_requires, "result"
     ) or contains_identifier(atom.raw_ensures, "result")
 
-    # Identifiers used in ``arr[i]`` position must be typed as
-    # ``Int → Int``; the rest are scalar ``Int``. Without this split,
-    # generated theorems try to apply an ``Int`` as a function, which
-    # is a Lean type error (matches the hand-written
-    # ``MumeiLean/Pilot.lean`` signatures).
+    # Identifiers used in ``arr[i]`` or ``len(arr)`` position must be
+    # typed as ``List Int`` so that ``arr.get! i`` / ``arr.length``
+    # type-check; the rest are scalar ``Int``. Without this split,
+    # generated theorems try to call ``.get!`` / ``.length`` on a
+    # scalar, which is a Lean type error.
     array_idents: List[str] = []
     for tr in (req, ens):
         for ident in tr.array_identifiers:
@@ -220,13 +220,19 @@ def render_theorem(atom: IngestedAtom) -> str:
     if scalar_params:
         decl_parts.append("(" + " ".join(scalar_params) + " : Int)")
     for arr in array_idents:
-        decl_parts.append(f"({arr} : Int → Int)")
+        decl_parts.append(f"({arr} : List Int)")
     params_decl = " ".join(decl_parts)
 
     requires_lean = req.lean_expr
     ensures_lean = ens.lean_expr
 
-    body = "  sorry"
+    # Default tactic body: try ``mumei_arith`` (mathlib4-backed
+    # ``omega`` / ``linarith`` / ``norm_num`` / ``simp`` cascade) on
+    # every subgoal, then ``sorry`` whatever it could not close. When
+    # ``mumei_arith`` discharges the obligation the ``sorry`` is
+    # unreachable and ``lake build`` emits no warning, so
+    # ``scripts/export_cert.py`` records the atom as ``lean_verified``.
+    body = "  mumei_arith <;> sorry"
     notes: List[str] = []
     if req.is_partial or ens.is_partial:
         notes.append(

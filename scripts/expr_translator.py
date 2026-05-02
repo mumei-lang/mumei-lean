@@ -361,6 +361,13 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
             pieces.append(text)
             is_partial = True
         else:
+            # Bare ``len`` / ``abs`` / ``min`` / ``max`` (without a
+            # following ``(``) cannot be lowered to a Lean helper call
+            # and would reference an undeclared name. Flag as partial so
+            # the generated theorem carries a ``-- TODO: unproven``
+            # marker rather than silently emitting broken Lean.
+            if kind == "ID" and text in _KNOWN_FUNCTIONS:
+                is_partial = True
             pieces.append(text)
         i += 1
 
@@ -415,6 +422,28 @@ def translate_contract(source: str) -> TranslationResult:
                 is_partial = True
             elif text not in array_idents:
                 array_idents.append(text)
+    # Type-conflict guard: an identifier passed to a scalar known call
+    # (``len`` / ``abs`` / ``min`` / ``max``, all ``Int → Int`` or
+    # ``Int → Int → Int``) that *also* appears in ``arr[i]`` position
+    # would be typed as ``List Int`` by the renderer, producing a Lean
+    # type error. Flag such contracts as partial so they carry a
+    # ``-- TODO: unproven`` marker instead of silently emitting
+    # ill-typed Lean.
+    for j, (kind, text) in enumerate(tokens):
+        if (
+            kind == "ID"
+            and text in _KNOWN_FUNCTIONS
+            and j + 1 < len(tokens)
+            and tokens[j + 1] == ("OP", "(")
+        ):
+            close = _find_matching(tokens, j + 1, "(", ")")
+            if close == -1:
+                continue
+            for ap in _split_top_level(tokens, j + 2, close):
+                for ak, at in ap:
+                    if ak == "ID" and at in array_idents:
+                        is_partial = True
+                        break
     # Stand-alone commas outside known function calls / ``forall(..)`` /
     # ``arr[..]`` are not part of the supported surface; mark such
     # contracts as partial so the generated theorem still carries the

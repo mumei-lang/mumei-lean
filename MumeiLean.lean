@@ -5,6 +5,7 @@ import MumeiLean.Tactics
 import MumeiLean.Verify
 import MumeiLean.CertWriter
 import MumeiLean.Pilot
+import MumeiLean.Ownership
 
 /-!
 # MumeiLean
@@ -23,6 +24,8 @@ Top-level layout:
 * `MumeiLean.CertWriter` – native `.lean-cert.json` emitter (`Lean.Json`)
 * `MumeiLean.Pilot`      – hand-proven pilot theorems exercising the
   bridge translator's `forall(..)` / `arr[i]` lowering (PR 3)
+* `MumeiLean.Ownership`  – finite-state Ownership Transfer Protocol
+  proof that transfer is unreachable without `accept`
 
 The Python bridge under `scripts/` does the heavy lifting of
 JSON ↔ Lean source translation; the modules above provide the

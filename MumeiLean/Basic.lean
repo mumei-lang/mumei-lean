@@ -21,6 +21,12 @@ intentionally deferred to follow-up modules.
 
 namespace MumeiLean
 
+/-- mumei's `len(arr)` maps to an integer-sized domain length parameter. -/
+def mumei_len (n : Int) : Int := n
+
+/-- mumei's `abs(x)` as an `Int → Int` helper. -/
+def mumei_abs (x : Int) : Int := if x ≥ 0 then x else -x
+
 /-- mumei atom contract represented as a pair of `Prop`s.
 
 `requires` is the precondition the caller must establish, `ensures`

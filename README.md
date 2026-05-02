@@ -129,9 +129,10 @@ lake build                # Lean library
    it in `Lean.Json`; the `MumeiLean.CertParser` / `MumeiLean.CertWriter`
    modules are deliberate stubs for the day we want a native path.
 3. **Scope is intentionally small.** The expression translator handles
-   arithmetic comparisons, boolean connectives, and integer literals.
-   Anything else is preserved verbatim and tagged `-- TODO: unproven`
-   so generated files remain easy to triage.
+   arithmetic comparisons, boolean connectives, integer literals,
+   bounded `forall(..)`, `arr[i]`, and known calls (`len`, `abs`, `min`,
+   `max`). Anything else is preserved verbatim and tagged
+   `-- TODO: unproven` so generated files remain easy to triage.
 4. **Targeted at Z3-`unknown`.** `mumei-lean` is *not* a replacement for
    Z3. Use it for the atoms Z3 cannot close (cryptographic correctness,
    abstract-algebraic invariants, etc.).

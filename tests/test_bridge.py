@@ -111,6 +111,38 @@ def test_main_dry_run_with_pilot_fixture(tmp_path: Path):
     assert "TODO: unproven" not in text
 
 
+def test_main_dry_run_with_len_function_contract(tmp_path: Path):
+    cert_path = tmp_path / "cert.json"
+    cert_path.write_text(
+        json.dumps(
+            _cert(
+                "std/functions.mm",
+                [
+                    {
+                        **_atom("len_guard", z3="unknown"),
+                        "requires": "n >= 0",
+                        "ensures": "len(arr) >= n",
+                    }
+                ],
+            )
+        )
+    )
+    out_dir = tmp_path / "generated"
+    rc = main(
+        [
+            "--cert", str(cert_path),
+            "--out-dir", str(out_dir),
+            "--module-prefix", "Generated",
+            "--no-build",
+        ]
+    )
+    assert rc == 0
+    text = (out_dir / "Generated" / "Std" / "Functions.lean").read_text()
+    assert "open MumeiLean" in text
+    assert "mumei_len arr" in text
+    assert "TODO: unproven" not in text
+
+
 def test_main_scan_unknown_returns_zero_when_dir_empty(tmp_path: Path):
     rc = main(
         [

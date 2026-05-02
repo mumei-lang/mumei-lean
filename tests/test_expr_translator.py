@@ -149,15 +149,48 @@ def test_negation_is_translated():
 
 
 def test_len_translation():
-    # PR 4: len(arr) >= n → arr.length ≥ n. ``len`` is not bound as a
-    # free identifier, ``arr`` is reported as an array identifier so
-    # the renderer types it as ``List Int``.
+    # v3: len(arr) >= n → (mumei_len arr) ≥ n. ``len`` is not bound as a
+    # free identifier, and ``arr`` remains scalar so mumei certificates can
+    # pass an explicit length parameter.
     result = translate_contract("len(arr) >= n")
-    assert "arr.length ≥ n" in result.lean_expr, result.lean_expr
+    assert "(mumei_len arr)" in result.lean_expr, result.lean_expr
     assert "len" not in result.identifiers
     assert "arr" in result.identifiers
     assert "n" in result.identifiers
-    assert result.array_identifiers == ["arr"]
+    assert result.array_identifiers == []
+    assert result.is_partial is False
+
+
+def test_len_function_call():
+    result = translate_contract("len(arr) >= n")
+    assert "(mumei_len arr)" in result.lean_expr or "mumei_len" in result.lean_expr
+    assert result.is_partial is False
+
+
+def test_abs_function_call():
+    result = translate_contract("abs(x) >= 0")
+    assert "mumei_abs" in result.lean_expr
+    assert result.is_partial is False
+
+
+def test_min_max_function_call():
+    result = translate_contract("min(a, b) <= a")
+    assert "(min a b)" in result.lean_expr
+    assert result.is_partial is False
+
+    result_max = translate_contract("max(a, b) >= a")
+    assert "(max a b)" in result_max.lean_expr
+    assert result_max.is_partial is False
+
+
+def test_unknown_function_remains_partial():
+    result = translate_contract("custom_fn(x, y) > 0")
+    assert result.is_partial is True
+
+
+def test_result_equals_expr():
+    result = translate_contract("result == x + 1")
+    assert "result = x + 1" in result.lean_expr
     assert result.is_partial is False
 
 

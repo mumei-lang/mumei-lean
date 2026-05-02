@@ -130,6 +130,31 @@ Anything else is forwarded verbatim and the theorem is marked with
 known calls are part of the supported surface; bare commas elsewhere
 still mark the contract partial.
 
+### `len(x)` semantics
+
+`mumei_len` is defined as the identity `Int → Int` (see
+[`MumeiLean/Basic.lean`](../MumeiLean/Basic.lean)). The argument `x`
+is treated as a **scalar `Int` length parameter**, *not* as a
+`List Int` value: contracts are expected to pass the length of an
+array as an explicit integer parameter, and `len(n)` simply names
+that parameter at the Lean side.
+
+As a consequence, an identifier that appears in **both** `arr[i]`
+position (which forces `arr : List Int`) and `len(arr)` position
+(which expects `arr : Int`) cannot be typed consistently and is
+flagged partial — the generated theorem carries a
+`-- TODO: unproven` marker rather than ill-typed Lean. Recommended
+contract pattern when both forms are needed:
+
+```text
+// Pass the length as a separate Int parameter `n`, not via len(arr):
+forall(i, 0, n, arr[i] >= 0)
+```
+
+If a future revision needs to extract the actual list length, the
+translator can be extended to context-dispatch `len(arr)` to
+`arr.length` when `arr` is also used in `arr[i]` position.
+
 ## Lean-side surface
 
 `MumeiLean` is intentionally tiny:

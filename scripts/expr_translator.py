@@ -1,6 +1,6 @@
 """Translate mumei contract expressions into Lean 4 ``Prop`` source.
 
-This is the *initial* (v1) translator used by ``scripts/ingest_cert.py``
+This is the translator used by ``scripts/ingest_cert.py``
 to turn a mumei atom's ``requires`` / ``ensures`` strings into Lean
 theorem statements. It deliberately handles a small, well-documented
 subset:
@@ -10,6 +10,8 @@ subset:
 * arithmetic operators:   ``+``, ``-``, ``*``, ``/``, ``%``
 * integer / boolean literals, identifiers (including ``result``)
 * parentheses
+* bounded ``forall(..)``, ``arr[i]`` access, and known calls:
+  ``len``, ``abs``, ``min``, ``max``
 
 Anything outside this subset is preserved verbatim and emitted as a
 Lean fragment that almost certainly will not type-check; the generated
@@ -29,13 +31,13 @@ from typing import List, Set, Tuple
 # translation phase rather than the lexer: the lexer keeps ``(``,
 # ``)``, ``[``, ``]``, ``,`` as plain ``OP`` tokens and the
 # ``_emit_tokens`` walker pattern-matches ``ID (`` / ``ID [`` /
-# ``forall (`` / ``len (`` to drive the rewrites added in PR 4.
+# ``forall (`` to drive the rewrites added by the bridge translator.
 _TOKEN_RE = re.compile(
     r"""
     \s+                          |  # whitespace
     (?P<NUM>\d+)                 |  # integer literal
     (?P<BOOL>\btrue\b|\bfalse\b) |  # boolean literal
-    (?P<KW>\bforall\b|\blen\b)   |  # quantifier / length keywords
+    (?P<KW>\bforall\b)           |  # bounded quantifier keyword
     (?P<ID>[A-Za-z_][A-Za-z0-9_]*) |  # identifier
     (?P<OP>
         ==|!=|>=|<=|&&|\|\||
@@ -50,12 +52,10 @@ _TOKEN_RE = re.compile(
 _RESERVED_IDENTS: Set[str] = {
     "true", "false",
     "result",  # bound separately as the theorem's return-value parameter
-    # Mumei built-ins handled inline by ``_emit_tokens`` (forall as a
-    # bounded quantifier, len as ``List.length``). Listing them keeps
-    # ``_extract_identifiers`` from binding them as theorem parameters
-    # if they accidentally show up as a bare ID token (e.g. as the
-    # ``len`` keyword without a following ``(``).
-    "forall", "len",
+    # Mumei built-ins handled inline by ``_emit_tokens``. Listing them
+    # keeps ``_extract_identifiers`` from binding them as theorem
+    # parameters if they show up as bare ID tokens.
+    "forall", "len", "abs", "min", "max",
     # Lean keywords we never want to over-bind even if the contract uses
     # them as identifier names (it should not, but defensively).
     "Type", "Prop", "fun", "let", "do", "match", "with", "by",
@@ -71,6 +71,20 @@ _OP_TRANSLATION = {
     # passthrough for the rest
     ">=": "≥",
     "<=": "≤",
+}
+
+_KNOWN_FUNCTIONS = {
+    "len": "mumei_len",
+    "abs": "mumei_abs",
+    "min": "min",
+    "max": "max",
+}
+
+_KNOWN_FUNCTION_ARITY = {
+    "len": 1,
+    "abs": 1,
+    "min": 2,
+    "max": 2,
 }
 
 
@@ -200,13 +214,13 @@ def _split_top_level(
 
 
 def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
-    """Token-level emit pass with ``forall(..)``, ``len(..)``, ``arr[i]``,
-    and general function-call rewrites.
+    """Token-level emit pass with ``forall(..)``, known calls, ``arr[i]``,
+    and unknown function-call rewrites.
 
     Returns ``(lean_source, is_partial)``. ``is_partial`` is True when
     we encountered an UNK token, an unmatched bracket, a malformed
     ``forall`` (wrong number of arguments), or a function call that is
-    not one of the known built-ins (``forall`` / ``len``) — the
+    not one of the known built-ins (``len`` / ``abs`` / ``min`` / ``max``) — the
     generated theorem then carries a ``-- TODO: unproven`` marker.
     """
     pieces: List[str] = []
@@ -258,41 +272,6 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
             i = close + 1
             continue
 
-        # len(arr) → arr.length (for a single ID argument); len(<expr>) →
-        # (<expr>).length otherwise. The result is a Lean ``Nat``, but
-        # generated theorems compare it against ``Int`` parameters; the
-        # downstream ``mumei_arith <;> sorry`` body lets unsolved
-        # obligations fall through cleanly so this is acceptable today.
-        if (
-            kind == "KW"
-            and text == "len"
-            and i + 1 < n
-            and tokens[i + 1] == ("OP", "(")
-        ):
-            close = _find_matching(tokens, i + 1, "(", ")")
-            if close == -1:
-                pieces.append(text)
-                is_partial = True
-                i += 1
-                continue
-            parts = _split_top_level(tokens, i + 2, close)
-            if len(parts) != 1:
-                # ``len`` only takes a single argument; anything else is
-                # outside the v2 surface.
-                pieces.append(text)
-                is_partial = True
-                i += 1
-                continue
-            arg_tokens = parts[0]
-            inner_src, p = _emit_tokens(arg_tokens)
-            if len(arg_tokens) == 1 and arg_tokens[0][0] == "ID":
-                pieces.append(f"{arg_tokens[0][1]}.length")
-            else:
-                pieces.append(f"({inner_src}).length")
-            is_partial = is_partial or p
-            i = close + 1
-            continue
-
         # id[expr] → ``id.get! <nat-index>``. Lean 4's ``List.get!``
         # takes a ``Nat`` index, but the surrounding mumei contract
         # binds variables (and the ``forall(i, lo, hi, …)`` quantifier)
@@ -337,12 +316,10 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
             i = close + 1
             continue
 
-        # Unknown function call ``f(args)`` (anything other than
-        # ``forall`` and ``len`` which are handled above). We emit the
-        # call verbatim with a leading ``f `` and parenthesised
-        # argument list so Lean still sees something parseable, and
-        # flag the contract as partial — the bridge marks the
-        # generated theorem with ``-- TODO: unproven``.
+        # Known calls lower into Lean helper / standard functions:
+        # ``len(arr)`` → ``(mumei_len arr)``, ``abs(x)`` → ``(mumei_abs x)``,
+        # ``min(a, b)`` → ``(min a b)``, ``max(a, b)`` → ``(max a b)``.
+        # Unknown calls are emitted verbatim and marked partial.
         if (
             kind == "ID"
             and i + 1 < n
@@ -360,8 +337,16 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                 src, p = _emit_tokens(ap)
                 arg_srcs.append(src)
                 is_partial = is_partial or p
-            pieces.append(f"{text} ({', '.join(arg_srcs)})")
-            is_partial = True
+            if text in _KNOWN_FUNCTIONS:
+                expected_arity = _KNOWN_FUNCTION_ARITY[text]
+                if len(arg_parts) != expected_arity or any(not ap for ap in arg_parts):
+                    pieces.append(f"{text} ({', '.join(arg_srcs)})")
+                    is_partial = True
+                else:
+                    pieces.append(f"({_KNOWN_FUNCTIONS[text]} {' '.join(arg_srcs)})")
+            else:
+                pieces.append(f"{text} ({', '.join(arg_srcs)})")
+                is_partial = True
             i = close + 1
             continue
 
@@ -370,7 +355,7 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
         elif kind == "BOOL":
             pieces.append("True" if text == "true" else "False")
         elif kind == "KW":
-            # ``forall`` / ``len`` reaching here means the keyword was
+            # ``forall`` reaching here means the keyword was
             # not followed by ``(`` — leave the literal in and flag as
             # partial so the generated theorem carries a TODO marker.
             pieces.append(text)
@@ -410,9 +395,9 @@ def translate_contract(source: str) -> TranslationResult:
 
     tokens = _tokenize(stripped)
     lean_expr, is_partial = _emit_tokens(tokens)
-    # Collect identifiers that appear in ``arr[i]`` or ``len(arr)``
-    # position. These need ``List Int`` typing in the rendered theorem
-    # signature so that ``arr.get! i`` / ``arr.length`` type-check.
+    # Collect identifiers that appear in ``arr[i]`` position. These need
+    # ``List Int`` typing in the rendered theorem signature so that
+    # ``arr.get! i`` type-checks.
     array_idents: List[str] = []
     for j, (kind, text) in enumerate(tokens):
         # ``arr[i]``
@@ -430,52 +415,41 @@ def translate_contract(source: str) -> TranslationResult:
                 is_partial = True
             elif text not in array_idents:
                 array_idents.append(text)
-        # ``len(arr)`` — when the sole argument is a single ID token,
-        # that name is the underlying list/array.
-        if (
-            kind == "KW"
-            and text == "len"
-            and j + 1 < len(tokens)
-            and tokens[j + 1] == ("OP", "(")
-        ):
-            close = _find_matching(tokens, j + 1, "(", ")")
-            if close == -1:
-                continue
-            parts = _split_top_level(tokens, j + 2, close)
-            if len(parts) != 1:
-                continue
-            arg = parts[0]
-            if len(arg) == 1 and arg[0][0] == "ID":
-                name = arg[0][1]
-                if name in _RESERVED_IDENTS:
-                    is_partial = True
-                elif name not in array_idents:
-                    array_idents.append(name)
-    # Stand-alone commas outside ``forall(..)`` / ``arr[..]`` are not
-    # part of the v1 surface; mark such contracts as partial so the
-    # generated theorem still carries the ``-- TODO: unproven`` triage
-    # marker (the tokenizer accepts ``,`` as an OP for forall's sake).
+    # Stand-alone commas outside known function calls / ``forall(..)`` /
+    # ``arr[..]`` are not part of the supported surface; mark such
+    # contracts as partial so the generated theorem still carries the
+    # ``-- TODO: unproven`` triage marker.
     if not is_partial:
         depth = 0
-        forall_depths: List[int] = []
+        allowed_comma_depths: List[int] = []
         bracket_depth = 0
         for j, (kind, text) in enumerate(tokens):
             if kind == "OP" and text == "(":
                 depth += 1
             elif kind == "OP" and text == ")":
-                if forall_depths and forall_depths[-1] == depth:
-                    forall_depths.pop()
+                while allowed_comma_depths and allowed_comma_depths[-1] >= depth:
+                    allowed_comma_depths.pop()
                 depth -= 1
             elif kind == "OP" and text == "[":
                 bracket_depth += 1
             elif kind == "OP" and text == "]":
                 bracket_depth -= 1
-            elif kind == "KW" and text == "forall" and j + 1 < len(tokens) \
-                    and tokens[j + 1] == ("OP", "("):
-                forall_depths.append(depth + 1)
+            elif (
+                (
+                    (kind == "KW" and text == "forall")
+                    or (kind == "ID" and text in _KNOWN_FUNCTIONS)
+                )
+                and j + 1 < len(tokens)
+                and tokens[j + 1] == ("OP", "(")
+            ):
+                close = _find_matching(tokens, j + 1, "(", ")")
+                if close != -1:
+                    allowed_comma_depths.append(depth + 1)
             elif kind == "OP" and text == ",":
-                inside_forall = bool(forall_depths) and depth >= forall_depths[-1]
-                if not inside_forall and bracket_depth == 0:
+                inside_allowed_call = (
+                    bool(allowed_comma_depths) and depth >= allowed_comma_depths[-1]
+                )
+                if not inside_allowed_call and bracket_depth == 0:
                     is_partial = True
                     break
     # Free identifiers are everything except reserved names AND the

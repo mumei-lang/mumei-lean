@@ -112,7 +112,7 @@ end Generated.Std.Math
 ```
 
 The expression translator (`scripts/expr_translator.py`) handles a
-v1 surface:
+v3 surface:
 
 | Category    | Operators / forms                                              |
 |-------------|----------------------------------------------------------------|
@@ -121,16 +121,22 @@ v1 surface:
 | Arithmetic  | `+`, `-`, `*`, `/`, `%`                                        |
 | Literals    | integer literals, `true`/`false`                               |
 | Variables   | identifiers, including `result`                                |
+| Quantifier  | `forall(i, lo, hi, body)` (→ bounded `∀ i : Int, ...`)          |
+| Arrays      | `arr[i]` (→ `arr.get! i.toNat`)                                |
+| Calls       | `len(x)` (→ `mumei_len x`), `abs(x)` (→ `mumei_abs x`), `min(a, b)`, `max(a, b)` |
 
 Anything else is forwarded verbatim and the theorem is marked with
-`-- TODO: unproven` so it can be triaged via `git grep`.
+`-- TODO: unproven` so it can be triaged via `git grep`. Commas inside
+known calls are part of the supported surface; bare commas elsewhere
+still mark the contract partial.
 
 ## Lean-side surface
 
 `MumeiLean` is intentionally tiny:
 
-* `MumeiLean.Basic` — `MumeiContract`, `ProofResult`, helpers to map
-  results back to mumei `z3_check_result`/`status` strings.
+* `MumeiLean.Basic` — `MumeiContract`, `ProofResult`, `mumei_len`,
+  `mumei_abs`, and helpers to map results back to mumei
+  `z3_check_result`/`status` strings.
 * `MumeiLean.TheoremGen` — `MumeiBool`, `unproven`, and `MumeiResult`
   used by the generated theorem files.
 * `MumeiLean.Verify` — record helpers for assembling the
@@ -160,7 +166,7 @@ is skipped when no toolchain is reachable).
 | Input cert has no unknown atoms                          | `ingest_cert.py` writes nothing; `bridge.py` exits 0 with a friendly message. |
 | `lake` is not on PATH                                    | `bridge.py` warns and produces an empty / conservative `.lean-cert.json`.    |
 | Generated theorem still uses `sorry` after `lake build`  | `export_cert.py` records the atom as failed (`z3_check_result` unchanged).   |
-| Source contract uses constructs outside the v1 surface   | Theorem is emitted verbatim with `-- TODO: unproven` and almost certainly fails to type-check, which `lake build` reports.        |
+| Source contract uses constructs outside the v3 surface   | Theorem is emitted verbatim with `-- TODO: unproven` and almost certainly fails to type-check, which `lake build` reports.        |
 | Bundle entry whose module key cannot be sanitised        | Falls back to `Generated` (single-segment) so the file is still generated.   |
 
 ## Versioning

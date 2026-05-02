@@ -201,10 +201,9 @@ def render_theorem(atom: IngestedAtom) -> str:
         atom.raw_requires, "result"
     ) or contains_identifier(atom.raw_ensures, "result")
 
-    # Identifiers used in ``arr[i]`` or ``len(arr)`` position must be
-    # typed as ``List Int`` so that ``arr.get! i`` / ``arr.length``
-    # type-check; the rest are scalar ``Int``. Without this split,
-    # generated theorems try to call ``.get!`` / ``.length`` on a
+    # Identifiers used in ``arr[i]`` position must be typed as ``List Int``
+    # so that ``arr.get! i`` type-checks; the rest are scalar ``Int``.
+    # Without this split, generated theorems try to call ``.get!`` on a
     # scalar, which is a Lean type error.
     array_idents: List[str] = []
     for tr in (req, ens):

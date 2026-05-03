@@ -16,6 +16,23 @@ This module proves two key properties:
 
 The balance conservation proof builds on
 `MumeiLean.Patterns.list_transfer_preserves_sum`.
+
+## Scope and non-goals
+
+This module proves only the **global sum** is invariant under transfers.
+The following properties are intentionally **out of scope** and are left
+for future modules:
+
+* **Individual non-negativity** — `Transfer` requires `amount ≥ 0` but
+  does not require `balances[from_idx] ≥ amount`. As a result,
+  `apply_transfer` can drive an individual account balance negative
+  (`balances : List Int`, not `List Nat`, by design). A real RTGS system
+  would reject transfers with insufficient funds; modelling that
+  requires an additional `SufficientFunds` predicate on `ValidTransfer`
+  and a separate `non_negativity_preserved` theorem.
+* **Rejection of validated transactions** — `step` only allows `reject`
+  from `Pending`, not from `Validated`. Extending the state machine is
+  orthogonal to the conservation proof.
 -/
 
 namespace MumeiLean.Settlement

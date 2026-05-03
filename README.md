@@ -52,7 +52,8 @@ mumei-lean/
 │   ├── CertWriter.lean    # In-Lean .lean-cert.json writer (skeleton)
 │   ├── Pilot.lean         # Hand-proven pilot theorems (PR 3)
 │   ├── Ownership.lean     # Ownership Transfer Protocol state proof
-│   └── Patterns.lean      # Reusable SC proof patterns
+│   ├── Patterns.lean      # Reusable SC proof patterns
+│   └── Settlement.lean    # RTGS settlement and balance proofs
 ├── scripts/
 │   ├── expr_translator.py # mumei contract expr → Lean Prop translator
 │   ├── ingest_cert.py     # .proof-cert.json → generated/*.lean

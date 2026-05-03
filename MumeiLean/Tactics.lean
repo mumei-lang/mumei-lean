@@ -9,7 +9,7 @@ mathlib4-backed tactic combinators reused by the Lean theorems that
 The bridge previously emitted `sorry` as the proof body for every
 generated theorem, which forced every contract — even purely
 arithmetic ones — to be hand-proven. PR 4 wires up `mumei_arith`
-instead: a small `first` cascade over the four mathlib tactics that
+instead: a small `first` cascade over the five mathlib tactics that
 between them discharge most of the obligations the mumei verifier
 flags as `unknown` (linear arithmetic, congruence, normalisation,
 finite-state decidability, and generic simp closure).

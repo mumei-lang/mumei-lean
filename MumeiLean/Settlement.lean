@@ -11,7 +11,8 @@ This module proves two key properties:
 1. **No settlement without validation**: `Settled` is unreachable
    without passing through `Validated` (temporal safety).
 2. **Balance conservation**: the sum of all account balances is
-   invariant under transfer operations (global conservation).
+   invariant under any sequence of transfer operations (global
+   conservation).
 
 The balance conservation proof builds on
 `MumeiLean.Patterns.list_transfer_preserves_sum`.
@@ -93,5 +94,35 @@ theorem single_transfer_preserves_sum (balances : List Int) (t : Transfer)
   unfold apply_transfer
   exact MumeiLean.Patterns.list_transfer_preserves_sum
     balances t.from_idx t.to_idx t.amount hf ht hne t.h_amount
+
+structure ValidTransfer (balances : List Int) where
+  transfer : Transfer
+  h_from : transfer.from_idx < balances.length
+  h_to : transfer.to_idx < balances.length
+  h_ne : transfer.from_idx ≠ transfer.to_idx
+
+def apply_valid_transfer (balances : List Int) (t : ValidTransfer balances) : List Int :=
+  apply_transfer balances t.transfer t.h_from t.h_to t.h_ne
+
+theorem valid_transfer_preserves_sum (balances : List Int) (t : ValidTransfer balances) :
+    (apply_valid_transfer balances t).sum = balances.sum := by
+  exact single_transfer_preserves_sum
+    balances t.transfer t.h_from t.h_to t.h_ne
+
+inductive TransferTrace : List Int → List Int → Type where
+  | nil (balances : List Int) : TransferTrace balances balances
+  | cons {before after final : List Int} (t : ValidTransfer before)
+      (h_after : after = apply_valid_transfer before t)
+      (rest : TransferTrace after final) : TransferTrace before final
+
+theorem balance_conservation {initial final : List Int}
+    (trace : TransferTrace initial final) :
+    final.sum = initial.sum := by
+  induction trace with
+  | nil balances =>
+      simp
+  | cons t h_after rest ih =>
+      rw [ih, h_after]
+      exact valid_transfer_preserves_sum _ t
 
 end MumeiLean.Settlement

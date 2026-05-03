@@ -34,6 +34,8 @@ def test_settlement_lean_declares_expected_rtgs_proofs():
         "structure Transfer",
         "def apply_transfer",
         "theorem single_transfer_preserves_sum",
+        "inductive TransferTrace",
+        "theorem balance_conservation",
         "MumeiLean.Patterns.list_transfer_preserves_sum",
     ):
         assert declaration in src

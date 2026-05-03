@@ -9,10 +9,10 @@ mathlib4-backed tactic combinators reused by the Lean theorems that
 The bridge previously emitted `sorry` as the proof body for every
 generated theorem, which forced every contract — even purely
 arithmetic ones — to be hand-proven. PR 4 wires up `mumei_arith`
-instead: a small `first` cascade over the four mathlib tactics that
+instead: a small `first` cascade over the five mathlib tactics that
 between them discharge most of the obligations the mumei verifier
-flags as `unknown` (linear arithmetic, congruence, normalisation, and
-generic simp closure).
+flags as `unknown` (linear arithmetic, congruence, normalisation,
+finite-state decidability, and generic simp closure).
 
 `scripts/ingest_cert.py` emits
 
@@ -31,13 +31,14 @@ namespace MumeiLean
 
 /-- Combined tactic for mumei arithmetic obligations.
 
-Tries `omega`, then `linarith`, then `norm_num`, then `simp`. The
-final `simp` always succeeds (it may simplify rather than close the
-goal), which means `mumei_arith` itself never fails — it just leaves
-unsolved subgoals for the caller to dispatch (e.g. via
-`<;> sorry`).
+Tries `omega`, then `linarith`, then `norm_num`, then `decide`, then
+`simp`. The `decide` stage discharges finite-state machine properties
+when all relevant propositions have `Decidable` instances. The final
+`simp` always succeeds (it may simplify rather than close the goal),
+which means `mumei_arith` itself never fails — it just leaves unsolved
+subgoals for the caller to dispatch (e.g. via `<;> sorry`).
 -/
 macro "mumei_arith" : tactic =>
-  `(tactic| (intros; first | omega | linarith | norm_num | simp))
+  `(tactic| (intros; first | omega | linarith | norm_num | decide | simp))
 
 end MumeiLean

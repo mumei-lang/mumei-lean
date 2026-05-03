@@ -201,3 +201,26 @@ is skipped when no toolchain is reachable).
 * mumei-side schema changes (e.g. new `AtomCertificate` fields) are
   forward-compatible: `export_cert.py` deep-copies the input and only
   rewrites fields it explicitly understands.
+
+## Roadmap
+
+### Completed
+
+| 項目 | PR | 内容 |
+|---|---|---|
+| Lean 4 プロジェクト初期構成 | #1 | lakefile.lean, MumeiLean/{Basic,CertParser,TheoremGen,Verify,CertWriter}.lean |
+| Python ブリッジ | #1 | scripts/{expr_translator,ingest_cert,export_cert,bridge}.py |
+| Pilot 証明 | #3 | pilot_array_identity_correct, pilot_array_offset_correct |
+| Ownership 到達不可能性証明 | #5 | MumeiLean/Ownership.lean — no_transfer_without_accept 定理 |
+| mumei_arith に decide 追加 | #5 | 有限状態マシンの性質証明用 |
+
+### Planned
+
+| 項目 | 優先度 | 備考 |
+|---|---|---|
+| SC 頻出パターン証明ライブラリ | 高 | 加算+上限チェック、保存則（a - x + (b + x) = a + b）、単調性 |
+| RTGS 残高保存の帰納的証明 | 高 | Phase 2 Demo。balance_conservation 定理。omega/linarith で自動証明可能 |
+| 契約式トランスレータ拡張 | 中 | 量化子・有限体・群論。ブリッジ v1 は算術+論理+整数のみ |
+| mumei_arith 拡張 | 中 | ring, field_simp 等の追加。暗号プリミティブ証明用 |
+| CertParser.lean / CertWriter.lean ネイティブ実装 | 低 | 現在はスケルトン。Python ブリッジが主要パス |
+| 実 std/ unknown atom の Lean 証明成功 | 高 | Pilot 以外の実用的な証明成功例を出す |

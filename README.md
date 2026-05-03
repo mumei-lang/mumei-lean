@@ -50,7 +50,9 @@ mumei-lean/
 │   ├── TheoremGen.lean    # Helpers used by generated Lean theorems
 │   ├── Verify.lean        # Per-atom proof outcome helpers
 │   ├── CertWriter.lean    # In-Lean .lean-cert.json writer (skeleton)
-│   └── Pilot.lean         # Hand-proven pilot theorems (PR 3)
+│   ├── Pilot.lean         # Hand-proven pilot theorems (PR 3)
+│   ├── Ownership.lean     # Ownership Transfer Protocol state proof
+│   └── Patterns.lean      # Reusable SC proof patterns
 ├── scripts/
 │   ├── expr_translator.py # mumei contract expr → Lean Prop translator
 │   ├── ingest_cert.py     # .proof-cert.json → generated/*.lean

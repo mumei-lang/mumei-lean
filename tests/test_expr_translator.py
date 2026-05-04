@@ -183,6 +183,49 @@ def test_min_max_function_call():
     assert result_max.is_partial is False
 
 
+def test_old_function_call_lowers_to_old_identifier():
+    result = translate_contract("old(balance) >= balance")
+    assert "old_balance ≥ balance" in result.lean_expr, result.lean_expr
+    assert "old_balance" in result.identifiers
+    assert "balance" in result.identifiers
+    assert result.is_partial is False
+
+
+def test_starts_with_function_call():
+    result = translate_contract('starts_with(url, "https://")')
+    assert result.lean_expr == '(mumei_starts_with url "https://")'
+    assert result.identifiers == ["url"]
+    assert result.string_identifiers == ["url"]
+    assert result.is_partial is False
+
+
+def test_ends_with_function_call():
+    result = translate_contract('ends_with(path, ".json")')
+    assert result.lean_expr == '(mumei_ends_with path ".json")'
+    assert result.identifiers == ["path"]
+    assert result.string_identifiers == ["path"]
+    assert result.is_partial is False
+
+
+def test_if_then_else_expression():
+    result = translate_contract("if x > 0 then x else 0")
+    assert result.lean_expr == "if x > 0 then x else 0"
+    assert result.identifiers == ["x"]
+    assert result.is_partial is False
+
+
+def test_new_constructs_compose_without_partial_marker():
+    result = translate_contract(
+        'old(balance) >= amount && starts_with(url, "https://")'
+    )
+    assert 'old_balance ≥ amount' in result.lean_expr, result.lean_expr
+    assert '∧' in result.lean_expr
+    assert '(mumei_starts_with url "https://")' in result.lean_expr
+    assert result.identifiers == ["old_balance", "amount", "url"]
+    assert result.string_identifiers == ["url"]
+    assert result.is_partial is False
+
+
 def test_unknown_function_remains_partial():
     result = translate_contract("custom_fn(x, y) > 0")
     assert result.is_partial is True

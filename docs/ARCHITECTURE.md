@@ -119,11 +119,13 @@ v3 surface:
 | Comparisons | `>`, `>=` (→ `≥`), `<`, `<=` (→ `≤`), `==` (→ `=`), `!=` (→ `≠`) |
 | Logical     | `&&` (→ `∧`), `||` (→ `∨`), `!` prefix (→ `¬`)                  |
 | Arithmetic  | `+`, `-`, `*`, `/`, `%`                                        |
-| Literals    | integer literals, `true`/`false`                               |
+| Literals    | integer literals, string literals, `true`/`false`               |
 | Variables   | identifiers, including `result`                                |
+| Conditionals | `if cond then a else b`                                       |
 | Quantifier  | `forall(i, lo, hi, body)` (→ bounded `∀ i : Int, ...`)          |
 | Arrays      | `arr[i]` (→ `arr.get! i.toNat`)                                |
-| Calls       | `len(x)` (→ `mumei_len x`), `abs(x)` (→ `mumei_abs x`), `min(a, b)`, `max(a, b)` |
+| Calls       | `len(x)` (→ `mumei_len x`), `abs(x)` (→ `mumei_abs x`), `min(a, b)`, `max(a, b)`, `old(x)` (→ `old_x`) |
+| Strings     | `starts_with(s, prefix)` (→ `mumei_starts_with s prefix`), `ends_with(s, suffix)` (→ `mumei_ends_with s suffix`) |
 
 Anything else is forwarded verbatim and the theorem is marked with
 `-- TODO: unproven` so it can be triaged via `git grep`. Commas inside
@@ -160,7 +162,7 @@ translator can be extended to context-dispatch `len(arr)` to
 `MumeiLean` is intentionally tiny:
 
 * `MumeiLean.Basic` — `MumeiContract`, `ProofResult`, `mumei_len`,
-  `mumei_abs`, and helpers to map results back to mumei
+  `mumei_abs`, `mumei_starts_with`, `mumei_ends_with`, and helpers to map results back to mumei
   `z3_check_result`/`status` strings.
 * `MumeiLean.TheoremGen` — `MumeiBool`, `unproven`, and `MumeiResult`
   used by the generated theorem files.

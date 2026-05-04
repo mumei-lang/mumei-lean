@@ -226,6 +226,23 @@ def test_new_constructs_compose_without_partial_marker():
     assert result.is_partial is False
 
 
+def test_string_identifier_used_in_scalar_call_marks_partial():
+    result = translate_contract('len(name) >= 3 && starts_with(name, "Mr")')
+    assert result.is_partial is True
+    assert result.string_identifiers == ["name"]
+
+
+def test_embedded_if_then_else_marks_partial_when_tail_is_ambiguous():
+    result = translate_contract("a > 0 && if x > 0 then x else 0 && b > 0")
+    assert result.is_partial is True
+
+
+def test_if_then_else_allows_non_operator_else_tail():
+    result = translate_contract("if x > 0 then x else y + 1")
+    assert result.lean_expr == "if x > 0 then x else y + 1"
+    assert result.is_partial is False
+
+
 def test_unknown_function_remains_partial():
     result = translate_contract("custom_fn(x, y) > 0")
     assert result.is_partial is True

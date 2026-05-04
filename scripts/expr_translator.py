@@ -250,6 +250,21 @@ def _split_top_level(
     return out
 
 
+def _if_else_tail_is_supported(tokens: List[tuple]) -> bool:
+    depth = 0
+    for kind, text in tokens:
+        if kind == "OP" and text in ("(", "["):
+            depth += 1
+        elif kind == "OP" and text in (")", "]"):
+            depth -= 1
+        elif depth == 0 and (
+            kind == "KW"
+            or (kind == "OP" and text in {"&&", "||", "==", "!=", ">=", "<=", ">", "<"})
+        ):
+            return False
+    return True
+
+
 def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
     """Token-level emit pass with ``forall(..)``, known calls, ``arr[i]``,
     and unknown function-call rewrites.
@@ -306,6 +321,8 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
             else_src, p3 = _emit_tokens(tokens[else_idx + 1 :])
             pieces.append(f"if {cond_src} then {then_src} else {else_src}")
             is_partial = is_partial or p1 or p2 or p3
+            if i != 0 or not _if_else_tail_is_supported(tokens[else_idx + 1 :]):
+                is_partial = True
             i = n
             continue
 
@@ -530,18 +547,18 @@ def translate_contract(source: str) -> TranslationResult:
                         and at not in string_idents
                     ):
                         string_idents.append(at)
+    scalar_call_idents: List[str] = []
     # Type-conflict guard: an identifier passed to a scalar known call
     # (e.g. ``len`` / ``abs`` / ``min`` / ``max``) that *also* appears in
     # ``arr[i]`` position
-    # would be typed as ``List Int`` by the renderer, producing a Lean
-    # type error. Flag such contracts as partial so they carry a
-    # ``-- TODO: unproven`` marker instead of silently emitting
+    # or string-predicate position would be typed non-``Int`` by the
+    # renderer, producing a Lean type error. Flag such contracts as partial
+    # so they carry a ``-- TODO: unproven`` marker instead of silently emitting
     # ill-typed Lean.
     for j, (kind, text) in enumerate(tokens):
         if (
             kind == "ID"
-            and text in _KNOWN_FUNCTIONS
-            and text not in ("old",)
+            and text in ("len", "abs", "min", "max")
             and j + 1 < len(tokens)
             and tokens[j + 1] == ("OP", "(")
         ):
@@ -550,9 +567,12 @@ def translate_contract(source: str) -> TranslationResult:
                 continue
             for ap in _split_top_level(tokens, j + 2, close):
                 for ak, at in ap:
-                    if ak == "ID" and at in array_idents:
-                        is_partial = True
-                        break
+                    if ak == "ID" and at not in _RESERVED_IDENTS:
+                        if at not in scalar_call_idents:
+                            scalar_call_idents.append(at)
+                        if at in array_idents or at in string_idents:
+                            is_partial = True
+                            break
     # Stand-alone commas outside known function calls / ``forall(..)`` /
     # ``arr[..]`` are not part of the supported surface; mark such
     # contracts as partial so the generated theorem still carries the

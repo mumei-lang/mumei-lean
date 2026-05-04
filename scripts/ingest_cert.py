@@ -202,7 +202,8 @@ def render_theorem(atom: IngestedAtom) -> str:
     ) or contains_identifier(atom.raw_ensures, "result")
 
     # Identifiers used in ``arr[i]`` position must be typed as ``List Int``
-    # so that ``arr.get! i`` type-checks; the rest are scalar ``Int``.
+    # so that ``arr.get! i`` type-checks. Identifiers passed to string
+    # predicates are typed as ``String``; the rest are scalar ``Int``.
     # Without this split, generated theorems try to call ``.get!`` on a
     # scalar, which is a Lean type error.
     array_idents: List[str] = []
@@ -210,8 +211,15 @@ def render_theorem(atom: IngestedAtom) -> str:
         for ident in tr.array_identifiers:
             if ident not in array_idents:
                 array_idents.append(ident)
+    string_idents: List[str] = []
+    for tr in (req, ens):
+        for ident in tr.string_identifiers:
+            if ident not in string_idents:
+                string_idents.append(ident)
 
-    scalar_params: List[str] = [i for i in idents if i not in array_idents]
+    scalar_params: List[str] = [
+        i for i in idents if i not in array_idents and i not in string_idents
+    ]
     if has_result and "result" not in scalar_params and "result" not in array_idents:
         scalar_params.append("result")
 
@@ -220,6 +228,8 @@ def render_theorem(atom: IngestedAtom) -> str:
         decl_parts.append("(" + " ".join(scalar_params) + " : Int)")
     for arr in array_idents:
         decl_parts.append(f"({arr} : List Int)")
+    if string_idents:
+        decl_parts.append("(" + " ".join(string_idents) + " : String)")
     params_decl = " ".join(decl_parts)
 
     requires_lean = req.lean_expr

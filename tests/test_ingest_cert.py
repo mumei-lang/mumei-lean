@@ -229,6 +229,25 @@ def test_render_theorem_forall_contract_uses_lean_quantifier_and_list_typing():
     assert "TODO: unproven" not in rendered
 
 
+def test_render_theorem_types_string_predicate_identifiers_as_string():
+    cert = _make_certificate(
+        "http.mm",
+        [
+            _make_atom(
+                "secure_get",
+                requires='starts_with(url, "https://")',
+                ensures="result >= 0",
+            )
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert '(mumei_starts_with url "https://")' in rendered
+    assert "(url : String)" in rendered
+    assert "(url : Int)" not in rendered
+    assert "TODO: unproven" not in rendered
+
+
 def test_main_writes_files(tmp_path: Path):
     from ingest_cert import main
 

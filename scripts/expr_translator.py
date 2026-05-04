@@ -8,10 +8,10 @@ subset:
 * arithmetic comparisons: ``>``, ``>=``, ``<``, ``<=``, ``==``, ``!=``
 * logical connectives:    ``&&`` (∧), ``||`` (∨), ``!`` (¬, prefix only)
 * arithmetic operators:   ``+``, ``-``, ``*``, ``/``, ``%``
-* integer / boolean literals, identifiers (including ``result``)
+* integer / boolean / string literals, identifiers (including ``result``)
 * parentheses
-* bounded ``forall(..)``, ``arr[i]`` access, and known calls:
-  ``len``, ``abs``, ``min``, ``max``
+* bounded ``forall(..)``, ``if .. then .. else ..``, ``arr[i]`` access, and known calls:
+  ``len``, ``abs``, ``min``, ``max``, ``old``, ``starts_with``, ``ends_with``
 
 Anything outside this subset is preserved verbatim and emitted as a
 Lean fragment that almost certainly will not type-check; the generated
@@ -35,9 +35,10 @@ from typing import List, Set, Tuple
 _TOKEN_RE = re.compile(
     r"""
     \s+                          |  # whitespace
+    (?P<STR>"(?:\\.|[^"\\])*") |  # string literal
     (?P<NUM>\d+)                 |  # integer literal
     (?P<BOOL>\btrue\b|\bfalse\b) |  # boolean literal
-    (?P<KW>\bforall\b)           |  # bounded quantifier keyword
+    (?P<KW>\bforall\b|\bif\b|\bthen\b|\belse\b) |  # keywords
     (?P<ID>[A-Za-z_][A-Za-z0-9_]*) |  # identifier
     (?P<OP>
         ==|!=|>=|<=|&&|\|\||
@@ -55,7 +56,9 @@ _RESERVED_IDENTS: Set[str] = {
     # Mumei built-ins handled inline by ``_emit_tokens``. Listing them
     # keeps ``_extract_identifiers`` from binding them as theorem
     # parameters if they show up as bare ID tokens.
-    "forall", "len", "abs", "min", "max",
+    "forall", "len", "abs", "min", "max", "old",
+    "starts_with", "ends_with",
+    "if", "then", "else",
     # Lean keywords we never want to over-bind even if the contract uses
     # them as identifier names (it should not, but defensively).
     "Type", "Prop", "fun", "let", "do", "match", "with", "by",
@@ -78,6 +81,9 @@ _KNOWN_FUNCTIONS = {
     "abs": "mumei_abs",
     "min": "min",
     "max": "max",
+    "old": "old_",
+    "starts_with": "mumei_starts_with",
+    "ends_with": "mumei_ends_with",
 }
 
 _KNOWN_FUNCTION_ARITY = {
@@ -85,8 +91,10 @@ _KNOWN_FUNCTION_ARITY = {
     "abs": 1,
     "min": 2,
     "max": 2,
+    "old": 1,
+    "starts_with": 2,
+    "ends_with": 2,
 }
-
 
 @dataclass
 class TranslationResult:
@@ -113,16 +121,45 @@ class TranslationResult:
     emitted as theorem parameters, because the translator lowers
     ``arr[i]`` to Lean function application ``(arr (i))``."""
 
+    string_identifiers: List[str]
+    """Subset of ``identifiers`` that are passed to string predicates
+    such as ``starts_with`` / ``ends_with``. The renderer types these
+    identifiers as ``String`` instead of the scalar ``Int`` default."""
+
 
 def _extract_identifiers(tokens: List[tuple]) -> List[str]:
     seen: List[str] = []
-    for kind, text in tokens:
+    i = 0
+    while i < len(tokens):
+        kind, text = tokens[i]
+        if (
+            kind == "ID"
+            and text == "old"
+            and i + 1 < len(tokens)
+            and tokens[i + 1] == ("OP", "(")
+        ):
+            close = _find_matching(tokens, i + 1, "(", ")")
+            if close != -1:
+                parts = _split_top_level(tokens, i + 2, close)
+                if (
+                    len(parts) == 1
+                    and len(parts[0]) == 1
+                    and parts[0][0][0] == "ID"
+                ):
+                    old_name = f"old_{parts[0][0][1]}"
+                    if old_name not in seen:
+                        seen.append(old_name)
+                    i = close + 1
+                    continue
         if kind != "ID":
+            i += 1
             continue
         if text in _RESERVED_IDENTS:
+            i += 1
             continue
         if text not in seen:
             seen.append(text)
+        i += 1
     return seen
 
 
@@ -213,6 +250,21 @@ def _split_top_level(
     return out
 
 
+def _if_else_tail_is_supported(tokens: List[tuple]) -> bool:
+    depth = 0
+    for kind, text in tokens:
+        if kind == "OP" and text in ("(", "["):
+            depth += 1
+        elif kind == "OP" and text in (")", "]"):
+            depth -= 1
+        elif depth == 0 and (
+            kind == "KW"
+            or (kind == "OP" and text in {"&&", "||", "==", "!=", ">=", "<=", ">", "<"})
+        ):
+            return False
+    return True
+
+
 def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
     """Token-level emit pass with ``forall(..)``, known calls, ``arr[i]``,
     and unknown function-call rewrites.
@@ -229,6 +281,50 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
     n = len(tokens)
     while i < n:
         kind, text = tokens[i]
+
+        # if cond then a else b → if cond then a else b
+        if kind == "KW" and text == "if":
+            depth = 0
+            then_idx = -1
+            else_idx = -1
+            j = i + 1
+            while j < n:
+                tk, tt = tokens[j]
+                if tk == "OP" and tt in ("(", "["):
+                    depth += 1
+                elif tk == "OP" and tt in (")", "]"):
+                    depth -= 1
+                elif tk == "KW" and tt == "then" and depth == 0:
+                    then_idx = j
+                    break
+                j += 1
+            if then_idx != -1:
+                depth = 0
+                j = then_idx + 1
+                while j < n:
+                    tk, tt = tokens[j]
+                    if tk == "OP" and tt in ("(", "["):
+                        depth += 1
+                    elif tk == "OP" and tt in (")", "]"):
+                        depth -= 1
+                    elif tk == "KW" and tt == "else" and depth == 0:
+                        else_idx = j
+                        break
+                    j += 1
+            if then_idx == -1 or else_idx == -1:
+                pieces.append(text)
+                is_partial = True
+                i += 1
+                continue
+            cond_src, p1 = _emit_tokens(tokens[i + 1 : then_idx])
+            then_src, p2 = _emit_tokens(tokens[then_idx + 1 : else_idx])
+            else_src, p3 = _emit_tokens(tokens[else_idx + 1 :])
+            pieces.append(f"if {cond_src} then {then_src} else {else_src}")
+            is_partial = is_partial or p1 or p2 or p3
+            if i != 0 or not _if_else_tail_is_supported(tokens[else_idx + 1 :]):
+                is_partial = True
+            i = n
+            continue
 
         # forall(var, start, end, body) → (∀ var : Int, start ≤ var → var < end → body)
         if (
@@ -342,6 +438,13 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                 if len(arg_parts) != expected_arity or any(not ap for ap in arg_parts):
                     pieces.append(f"{text} ({', '.join(arg_srcs)})")
                     is_partial = True
+                elif text == "old":
+                    old_arg = arg_parts[0]
+                    if len(old_arg) == 1 and old_arg[0][0] == "ID":
+                        pieces.append(f"old_{old_arg[0][1]}")
+                    else:
+                        pieces.append(f"old_ ({arg_srcs[0]})")
+                        is_partial = True
                 else:
                     pieces.append(f"({_KNOWN_FUNCTIONS[text]} {' '.join(arg_srcs)})")
             else:
@@ -355,11 +458,12 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
         elif kind == "BOOL":
             pieces.append("True" if text == "true" else "False")
         elif kind == "KW":
-            # ``forall`` reaching here means the keyword was
-            # not followed by ``(`` — leave the literal in and flag as
-            # partial so the generated theorem carries a TODO marker.
             pieces.append(text)
+            # Keywords reaching here are malformed in the supported surface
+            # (for example ``forall`` without ``(`` or a stray ``then``).
             is_partial = True
+        elif kind == "STR":
+            pieces.append(text)
         else:
             # Bare ``len`` / ``abs`` / ``min`` / ``max`` (without a
             # following ``(``) cannot be lowered to a Lean helper call
@@ -390,6 +494,7 @@ def translate_contract(source: str) -> TranslationResult:
             is_trivial=True,
             is_partial=False,
             array_identifiers=[],
+            string_identifiers=[],
         )
     if stripped == "false":
         return TranslationResult(
@@ -398,6 +503,7 @@ def translate_contract(source: str) -> TranslationResult:
             is_trivial=False,
             is_partial=False,
             array_identifiers=[],
+            string_identifiers=[],
         )
 
     tokens = _tokenize(stripped)
@@ -422,17 +528,11 @@ def translate_contract(source: str) -> TranslationResult:
                 is_partial = True
             elif text not in array_idents:
                 array_idents.append(text)
-    # Type-conflict guard: an identifier passed to a scalar known call
-    # (``len`` / ``abs`` / ``min`` / ``max``, all ``Int → Int`` or
-    # ``Int → Int → Int``) that *also* appears in ``arr[i]`` position
-    # would be typed as ``List Int`` by the renderer, producing a Lean
-    # type error. Flag such contracts as partial so they carry a
-    # ``-- TODO: unproven`` marker instead of silently emitting
-    # ill-typed Lean.
+    string_idents: List[str] = []
     for j, (kind, text) in enumerate(tokens):
         if (
             kind == "ID"
-            and text in _KNOWN_FUNCTIONS
+            and text in ("starts_with", "ends_with")
             and j + 1 < len(tokens)
             and tokens[j + 1] == ("OP", "(")
         ):
@@ -441,9 +541,38 @@ def translate_contract(source: str) -> TranslationResult:
                 continue
             for ap in _split_top_level(tokens, j + 2, close):
                 for ak, at in ap:
-                    if ak == "ID" and at in array_idents:
-                        is_partial = True
-                        break
+                    if (
+                        ak == "ID"
+                        and at not in _RESERVED_IDENTS
+                        and at not in string_idents
+                    ):
+                        string_idents.append(at)
+    scalar_call_idents: List[str] = []
+    # Type-conflict guard: an identifier passed to a scalar known call
+    # (e.g. ``len`` / ``abs`` / ``min`` / ``max``) that *also* appears in
+    # ``arr[i]`` position
+    # or string-predicate position would be typed non-``Int`` by the
+    # renderer, producing a Lean type error. Flag such contracts as partial
+    # so they carry a ``-- TODO: unproven`` marker instead of silently emitting
+    # ill-typed Lean.
+    for j, (kind, text) in enumerate(tokens):
+        if (
+            kind == "ID"
+            and text in ("len", "abs", "min", "max")
+            and j + 1 < len(tokens)
+            and tokens[j + 1] == ("OP", "(")
+        ):
+            close = _find_matching(tokens, j + 1, "(", ")")
+            if close == -1:
+                continue
+            for ap in _split_top_level(tokens, j + 2, close):
+                for ak, at in ap:
+                    if ak == "ID" and at not in _RESERVED_IDENTS:
+                        if at not in scalar_call_idents:
+                            scalar_call_idents.append(at)
+                        if at in array_idents or at in string_idents:
+                            is_partial = True
+                            break
     # Stand-alone commas outside known function calls / ``forall(..)`` /
     # ``arr[..]`` are not part of the supported surface; mark such
     # contracts as partial so the generated theorem still carries the
@@ -506,6 +635,9 @@ def translate_contract(source: str) -> TranslationResult:
                     bound.add(parts[0][0][1])
         i += 1
     free = [name for name in _extract_identifiers(tokens) if name not in bound]
+    for ident in string_idents:
+        if ident in array_idents:
+            is_partial = True
     # Scope-awareness guard: ``bound`` is a flat set so an ID shared
     # between a forall's binder and a free occurrence outside that
     # forall would be silently dropped from ``free``, producing Lean
@@ -541,4 +673,5 @@ def translate_contract(source: str) -> TranslationResult:
         is_trivial=False,
         is_partial=is_partial,
         array_identifiers=[a for a in array_idents if a in free],
+        string_identifiers=[s for s in string_idents if s in free],
     )

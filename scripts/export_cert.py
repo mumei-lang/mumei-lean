@@ -88,6 +88,7 @@ def _failed_theorem_attributions(
         file_match = _FILE_PREFIX_RE.match(line)
         file_path: Optional[str] = file_match.group(1) if file_match else None
         attribution: Optional[str] = None
+        attribution_from_def = False
         for j in range(idx, max(-1, idx - 12), -1):
             if file_path is None:
                 fm = _FILE_PREFIX_RE.match(lines[j])
@@ -102,11 +103,16 @@ def _failed_theorem_attributions(
                 # Errors inside a body-semantics ``def`` block belong
                 # to the atom named by the camelCase prefix of the
                 # ``def``'s identifier (without the ``Result`` suffix).
+                # ``_camel_to_snake`` already returns the originating
+                # atom name verbatim, so we mark this attribution as
+                # "from def" to skip the ``_correct`` suffix stripping
+                # that only applies to ``theorem <atom>_correct`` names.
                 attribution = _camel_to_snake(dm.group(1))
+                attribution_from_def = True
                 break
         if not attribution:
             continue
-        if attribution.endswith("_correct"):
+        if not attribution_from_def and attribution.endswith("_correct"):
             name = attribution[: -len("_correct")]
         else:
             name = attribution

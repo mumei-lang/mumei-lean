@@ -170,6 +170,25 @@ def test_render_theorem_falls_back_for_complex_body():
     assert "mumei_arith <;> sorry" in rendered
 
 
+def test_render_theorem_falls_back_when_body_references_result():
+    cert = _make_certificate(
+        "m.mm",
+        [
+            _make_atom(
+                "self_ref",
+                requires="true",
+                ensures="result >= 0",
+                body_expr="result + 1",
+            )
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "def selfRefResult" not in rendered
+    assert "body semantics unsupported" in rendered
+    assert "mumei_arith <;> sorry" in rendered
+
+
 def test_render_theorem_does_not_add_result_param_for_substring_matches():
     # Identifier ``results`` must not trigger a spurious ``result : Int``
     # parameter in the emitted theorem signature.

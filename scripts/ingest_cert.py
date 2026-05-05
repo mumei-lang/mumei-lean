@@ -271,7 +271,7 @@ def render_theorem(atom: IngestedAtom) -> str:
         body_tr is not None
         and not body_tr.is_partial
         and bool(body_tr.lean_expr.strip())
-        and "result" not in body_tr.identifiers
+        and not contains_identifier(atom.body_expr, "result")
         and not body_tr.array_identifiers
         and not body_tr.string_identifiers
         and not array_idents

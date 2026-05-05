@@ -50,13 +50,21 @@ def mumei_contains' (s sub : String) : Bool :=
 def mumei_not_contains (s sub : String) : Prop :=
   ¬ ∃ pre post : String, s = pre ++ sub ++ post
 
-/-- Sum the first `n` elements of an integer list. -/
-def mumei_sum (arr : List Int) (n : Nat) : Int :=
-  (arr.take n).foldl (· + ·) 0
+/-- Sum the first `n` elements of an integer list.
 
-/-- Count occurrences of an integer value in a list. -/
-def mumei_count (arr : List Int) (val : Int) : Nat :=
-  (arr.filter (· == val)).length
+`n` is accepted as `Int` to match the scalar typing used by the bridge's
+expression translator; negative or out-of-range values fall through to
+`List.take`'s saturating `Nat` semantics via `Int.toNat`. -/
+def mumei_sum (arr : List Int) (n : Int) : Int :=
+  (arr.take n.toNat).foldl (· + ·) 0
+
+/-- Count occurrences of an integer value in a list.
+
+Returns an `Int` (rather than `Nat`) so the result composes with the
+scalar-`Int` parameters and literals emitted by the bridge translator
+without introducing `Nat`/`Int` coercions at each use site. -/
+def mumei_count (arr : List Int) (val : Int) : Int :=
+  Int.ofNat (arr.filter (· == val)).length
 
 /-- mumei atom contract represented as a pair of `Prop`s.
 

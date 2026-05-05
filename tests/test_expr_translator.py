@@ -230,6 +230,10 @@ def test_sum_function_call():
     result = translate_contract("sum(arr, n)")
     assert result.lean_expr == "(mumei_sum arr n)"
     assert result.identifiers == ["arr", "n"]
+    # ``arr`` is the ``List Int`` first argument of ``mumei_sum`` and
+    # must be reported as an array identifier so the renderer types it
+    # as ``List Int`` rather than the scalar-``Int`` default.
+    assert result.array_identifiers == ["arr"]
     assert result.is_partial is False
 
 
@@ -237,6 +241,7 @@ def test_count_function_call():
     result = translate_contract("count(arr, 0)")
     assert result.lean_expr == "(mumei_count arr 0)"
     assert result.identifiers == ["arr"]
+    assert result.array_identifiers == ["arr"]
     assert result.is_partial is False
 
 

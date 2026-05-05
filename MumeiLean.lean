@@ -8,6 +8,7 @@ import MumeiLean.Pilot
 import MumeiLean.Ownership
 import MumeiLean.Patterns
 import MumeiLean.Settlement
+import MumeiLean.StdMathAbs
 
 /-!
 # MumeiLean
@@ -32,6 +33,8 @@ Top-level layout:
   conservation, monotonicity)
 * `MumeiLean.Settlement` – RTGS settlement temporal safety + balance
   conservation
+* `MumeiLean.StdMathAbs` – hand-written std/math + std/list proof
+  witnesses for real standard-library atom contracts
 
 The Python bridge under `scripts/` does the heavy lifting of
 JSON ↔ Lean source translation; the modules above provide the

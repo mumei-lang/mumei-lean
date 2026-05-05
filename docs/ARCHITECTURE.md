@@ -178,6 +178,9 @@ translator can be extended to context-dispatch `len(arr)` to
   `ProofCertificateData` after merging a `(name, ProofResult)` list,
   flipping `z3_check_result` to `"lean_verified"` for proved atoms,
   recomputing `all_verified`, and inlining `lean_version`.
+* `MumeiLean.StdMathAbs` — hand-written Lean witnesses for real std
+  atom contracts from `std/math/abs.mm`, `std/math/fixed_point.mm`,
+  and `std/list.mm`.
 
 The Python bridge (`scripts/bridge.py`) is still the production
 entry point; the Lean modules above mirror the same logic so
@@ -196,6 +199,48 @@ is skipped when no toolchain is reachable).
 | Generated theorem still uses `sorry` after `lake build`  | `export_cert.py` records the atom as failed (`z3_check_result` unchanged).   |
 | Source contract uses constructs outside the v3 surface   | Theorem is emitted verbatim with `-- TODO: unproven` and almost certainly fails to type-check, which `lake build` reports.        |
 | Bundle entry whose module key cannot be sanitised        | Falls back to `Generated` (single-segment) so the file is still generated.   |
+
+## Real std proof strategy
+
+The first non-pilot std proof witnesses live in
+`MumeiLean/StdMathAbs.lean`.
+
+Verification inputs used while adding them:
+
+```bash
+mumei verify std/math/abs.mm --proof-cert --output /tmp/abs.proof-cert.json
+mumei verify std/math/fixed_point.mm --proof-cert --output /tmp/fixed_point.proof-cert.json
+mumei verify std/list.mm --proof-cert --output /tmp/list.proof-cert.json
+```
+
+On current `mumei` `develop`, all three certificates report `unsat`
+for every atom (0 `unknown` atoms). To validate the bridge output shape
+for the planned unknown-atom path, `abs_saturating` was scratch-marked
+as `z3_check_result = "unknown"` and ingested with:
+
+```bash
+python scripts/bridge.py \
+  --cert /tmp/abs.synthetic-unknown.proof-cert.json \
+  --out-dir generated/ \
+  --no-build \
+  --no-export
+```
+
+That emits `generated/Generated/Std/Math/Abs.lean` with an
+`abs_saturating_correct` obligation. The checked, committed proof is
+kept in `MumeiLean.StdMathAbs` instead of `generated/`, because current
+proof certificates carry `requires` / `ensures` but not body semantics.
+The module models the relevant body result explicitly and then proves:
+
+* `abs_saturating_correct`: unfolds the saturating abs body and
+  discharges the `i64::MIN`, non-negative, and negative branches with
+  `norm_num` / `omega`.
+* `fixed_point_abs_correct`: unfolds the fixed-point abs body and uses
+  `omega` after the sign split.
+* `fixed_point_from_int_correct`: the postcondition is exactly the body
+  equality, so `exact h_body` closes it.
+* `list_length_correct`: unfolds the tag-based list length body and
+  closes both branches with `norm_num`.
 
 ## Versioning
 
@@ -216,6 +261,7 @@ is skipped when no toolchain is reachable).
 | Pilot 証明 | #3 | pilot_array_identity_correct, pilot_array_offset_correct |
 | Ownership 到達不可能性証明 | #5 | MumeiLean/Ownership.lean — no_transfer_without_accept 定理 |
 | mumei_arith に decide 追加 | #5 | 有限状態マシンの性質証明用 |
+| 実 std/ unknown atom の Lean 証明成功 | this PR | MumeiLean/StdMathAbs.lean — abs_saturating / fp_abs / fp_from_int / list_length |
 
 ### Planned
 
@@ -226,4 +272,4 @@ is skipped when no toolchain is reachable).
 | 契約式トランスレータ拡張 | 中 | 量化子・有限体・群論。ブリッジ v1 は算術+論理+整数のみ |
 | mumei_arith 拡張 | 中 | ring, field_simp 等の追加。暗号プリミティブ証明用 |
 | CertParser.lean / CertWriter.lean ネイティブ実装 | 低 | 現在はスケルトン。Python ブリッジが主要パス |
-| 実 std/ unknown atom の Lean 証明成功 | 高 | Pilot 以外の実用的な証明成功例を出す |
+| ✅ 実 std/ unknown atom の Lean 証明成功 | 完了 | Pilot 以外の実用的な std 証明例を `MumeiLean.StdMathAbs` に追加 |

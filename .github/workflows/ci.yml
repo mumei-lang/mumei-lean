@@ -25,6 +25,61 @@ jobs:
       - name: Run pytest
         run: python -m pytest -v
 
+  bridge-e2e:
+    name: bridge body-semantics E2E
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        continue-on-error: true
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pytest
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+
+      - name: Install elan + Lean toolchain
+        continue-on-error: true
+        run: |
+          set +e
+          curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          ~/.elan/bin/elan toolchain install "$(cat lean-toolchain)"
+          exit 0
+
+      - name: Run bridge E2E if lake is available
+        run: |
+          if ! command -v lake >/dev/null 2>&1; then
+            echo "lake not available; skipping bridge E2E"
+            exit 0
+          fi
+          mkdir -p out
+          python scripts/bridge.py \
+              --cert tests/fixtures/std_math_abs.proof-cert.json \
+              --out-dir generated \
+              --lean-cert-out out/std_math_abs.lean-cert.json
+          python - <<'PY'
+          import json
+          payload = json.load(open("out/std_math_abs.lean-cert.json"))
+          atom = next(a for a in payload["atoms"] if a["name"] == "abs_saturating_auto")
+          assert atom["z3_check_result"] == "lean_verified", atom
+          PY
+
   lean-build:
     name: lake build
     runs-on: ubuntu-latest
@@ -145,12 +200,17 @@ jobs:
         run: |
           set +e
           mkdir -p out
+          if command -v lake >/dev/null 2>&1; then
+            BUILD_FLAG=""
+          else
+            BUILD_FLAG="--no-build"
+          fi
           python scripts/bridge.py \
               --scan-unknown ../mumei \
               --out-dir out/generated \
               --lean-cert-out out/lean-certs \
               --summary-json out/scan-summary.json \
-              --no-build || true
+              $BUILD_FLAG || true
 
       - name: Print summary
         working-directory: mumei-lean

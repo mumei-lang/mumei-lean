@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-05-05T00:00:00Z",
+  "mumei_version": "0.5.6",
+  "z3_version": "Z3 version 4.12.2",
+  "file": "std/math/abs.mm",
+  "atoms": [
+    {
+      "name": "abs_saturating_auto",
+      "z3_check_result": "unknown",
+      "content_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "status": "unknown",
+      "proof_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "dependencies": [],
+      "effects": [],
+      "requires": "true",
+      "ensures": "result >= 0",
+      "body_summary": "absolute value lowered as a simple conditional body",
+      "body_expr": "if x >= 0 then x else -x"
+    }
+  ],
+  "package_name": "std",
+  "package_version": "0",
+  "certificate_hash": "",
+  "all_verified": false
+}

@@ -10,7 +10,8 @@ subset:
 * arithmetic operators:   ``+``, ``-``, ``*``, ``/``, ``%``
 * integer / boolean / string literals, identifiers (including ``result``)
 * parentheses
-* bounded ``forall(..)``, ``if .. then .. else ..``, ``arr[i]`` access, and known calls:
+* bounded ``forall(..)``, ``if .. then .. else ..``, ``match`` expressions,
+  ``arr[i]`` access, and known calls:
   ``len``, ``abs``, ``min``, ``max``, ``old``, ``starts_with``, ``ends_with``,
   ``not_contains``
 
@@ -39,11 +40,11 @@ _TOKEN_RE = re.compile(
     (?P<STR>"(?:\\.|[^"\\])*") |  # string literal
     (?P<NUM>\d+)                 |  # integer literal
     (?P<BOOL>\btrue\b|\bfalse\b) |  # boolean literal
-    (?P<KW>\bforall\b|\bif\b|\bthen\b|\belse\b) |  # keywords
+    (?P<KW>\bforall\b|\bif\b|\bthen\b|\belse\b|\bmatch\b) |  # keywords
     (?P<ID>[A-Za-z_][A-Za-z0-9_]*) |  # identifier
     (?P<OP>
-        ==|!=|>=|<=|&&|\|\||
-        [+\-*/%<>!()\[\],]
+        ==|!=|>=|<=|&&|\|\||=>|
+        [+\-*/%<>!()\[\]{},]
     )
     """,
     re.VERBOSE,
@@ -59,7 +60,7 @@ _RESERVED_IDENTS: Set[str] = {
     # parameters if they show up as bare ID tokens.
     "forall", "len", "abs", "min", "max", "old",
     "starts_with", "ends_with", "not_contains",
-    "if", "then", "else",
+    "if", "then", "else", "match", "_",
     # Lean keywords we never want to over-bind even if the contract uses
     # them as identifier names (it should not, but defensively).
     "Type", "Prop", "fun", "let", "do", "match", "with", "by",
@@ -240,10 +241,10 @@ def _split_top_level(
     depth = 0
     for j in range(start, end):
         kind, text = tokens[j]
-        if kind == "OP" and text in ("(", "["):
+        if kind == "OP" and text in ("(", "[", "{"):
             depth += 1
             out[-1].append(tokens[j])
-        elif kind == "OP" and text in (")", "]"):
+        elif kind == "OP" and text in (")", "]", "}"):
             depth -= 1
             out[-1].append(tokens[j])
         elif kind == "OP" and text == "," and depth == 0:
@@ -253,15 +254,27 @@ def _split_top_level(
     return out
 
 
+def _find_top_level_arrow(tokens: List[tuple]) -> int:
+    depth = 0
+    for idx, (kind, text) in enumerate(tokens):
+        if kind == "OP" and text in ("(", "[", "{"):
+            depth += 1
+        elif kind == "OP" and text in (")", "]", "}"):
+            depth -= 1
+        elif kind == "OP" and text == "=>" and depth == 0:
+            return idx
+    return -1
+
+
 def _if_else_tail_is_supported(tokens: List[tuple]) -> bool:
     depth = 0
     for kind, text in tokens:
-        if kind == "OP" and text in ("(", "["):
+        if kind == "OP" and text in ("(", "[", "{"):
             depth += 1
-        elif kind == "OP" and text in (")", "]"):
+        elif kind == "OP" and text in (")", "]", "}"):
             depth -= 1
         elif depth == 0 and (
-            kind == "KW"
+            (kind == "KW" and text != "match")
             or (kind == "OP" and text in {"&&", "||", "==", "!=", ">=", "<=", ">", "<"})
         ):
             return False
@@ -327,6 +340,61 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
             if i != 0 or not _if_else_tail_is_supported(tokens[else_idx + 1 :]):
                 is_partial = True
             i = n
+            continue
+
+        # match x { 0 => a, 1 => b, _ => c } →
+        #   match x with | 0 => a | 1 => b | _ => c
+        if kind == "KW" and text == "match":
+            brace_idx = -1
+            depth = 0
+            j = i + 1
+            while j < n:
+                tk, tt = tokens[j]
+                if tk == "OP" and tt in ("(", "["):
+                    depth += 1
+                elif tk == "OP" and tt in (")", "]"):
+                    depth -= 1
+                elif tk == "OP" and tt == "{" and depth == 0:
+                    brace_idx = j
+                    break
+                j += 1
+            if brace_idx == -1:
+                pieces.append(text)
+                is_partial = True
+                i += 1
+                continue
+            close = _find_matching(tokens, brace_idx, "{", "}")
+            if close == -1:
+                pieces.append(text)
+                is_partial = True
+                i += 1
+                continue
+            scrutinee_src, p_scrutinee = _emit_tokens(tokens[i + 1 : brace_idx])
+            arm_parts = _split_top_level(tokens, brace_idx + 1, close)
+            arm_srcs: List[str] = []
+            match_partial = p_scrutinee or close != n - 1
+            for arm in arm_parts:
+                arrow_idx = _find_top_level_arrow(arm)
+                if arrow_idx == -1:
+                    match_partial = True
+                    continue
+                pattern_tokens = arm[:arrow_idx]
+                value_tokens = arm[arrow_idx + 1 :]
+                if not pattern_tokens or not value_tokens:
+                    match_partial = True
+                    continue
+                pattern_src = " ".join(text for _kind, text in pattern_tokens)
+                value_src, p_value = _emit_tokens(value_tokens)
+                arm_srcs.append(f"| {pattern_src} => {value_src}")
+                match_partial = match_partial or p_value
+            if not arm_srcs:
+                pieces.append(text)
+                is_partial = True
+                i += 1
+                continue
+            pieces.append(f"(match {scrutinee_src} with {' '.join(arm_srcs)})")
+            is_partial = is_partial or match_partial
+            i = n if close == n - 1 else close + 1
             continue
 
         # forall(var, start, end, body) → (∀ var : Int, start ≤ var → var < end → body)
@@ -584,6 +652,7 @@ def translate_contract(source: str) -> TranslationResult:
         depth = 0
         allowed_comma_depths: List[int] = []
         bracket_depth = 0
+        brace_depth = 0
         for j, (kind, text) in enumerate(tokens):
             if kind == "OP" and text == "(":
                 depth += 1
@@ -595,6 +664,10 @@ def translate_contract(source: str) -> TranslationResult:
                 bracket_depth += 1
             elif kind == "OP" and text == "]":
                 bracket_depth -= 1
+            elif kind == "OP" and text == "{":
+                brace_depth += 1
+            elif kind == "OP" and text == "}":
+                brace_depth -= 1
             elif (
                 (
                     (kind == "KW" and text == "forall")
@@ -610,7 +683,7 @@ def translate_contract(source: str) -> TranslationResult:
                 inside_allowed_call = (
                     bool(allowed_comma_depths) and depth >= allowed_comma_depths[-1]
                 )
-                if not inside_allowed_call and bracket_depth == 0:
+                if not inside_allowed_call and bracket_depth == 0 and brace_depth == 0:
                     is_partial = True
                     break
     # Free identifiers are everything except reserved names AND the
@@ -678,3 +751,28 @@ def translate_contract(source: str) -> TranslationResult:
         array_identifiers=[a for a in array_idents if a in free],
         string_identifiers=[s for s in string_idents if s in free],
     )
+
+
+def translate_body(body_expr: str) -> TranslationResult:
+    """Translate a mumei atom body expression to a Lean term.
+
+    The supported body surface intentionally mirrors the simple term
+    subset used in contracts: arithmetic, conditionals, known pure
+    calls, and compact ``match x { ... }`` arms. Empty or unsupported
+    bodies are marked partial so callers can fall back to the legacy
+    theorem shape.
+    """
+    stripped = (body_expr or "").strip()
+    if not stripped:
+        return TranslationResult(
+            lean_expr="",
+            identifiers=[],
+            is_trivial=False,
+            is_partial=True,
+            array_identifiers=[],
+            string_identifiers=[],
+        )
+    result = translate_contract(stripped)
+    if "=>" in stripped and "=>" not in result.lean_expr:
+        result.is_partial = True
+    return result

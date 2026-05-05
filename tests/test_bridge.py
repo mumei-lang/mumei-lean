@@ -2,7 +2,11 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 from pathlib import Path
+
+import pytest
 
 import bridge
 from bridge import _scan_unknown_certs, main
@@ -20,6 +24,17 @@ def _atom(name: str, z3: str = "unknown") -> dict:
         "dependencies": [],
         "effects": [],
     }
+
+
+def _lake_env() -> dict[str, str]:
+    env = os.environ.copy()
+    elan_bin = Path.home() / ".elan" / "bin"
+    env["PATH"] = f"{elan_bin}:{env.get('PATH', '')}"
+    return env
+
+
+def _have_lake() -> bool:
+    return shutil.which("lake", path=_lake_env()["PATH"]) is not None
 
 
 def _cert(file: str, atoms: list) -> dict:
@@ -141,6 +156,68 @@ def test_main_dry_run_with_len_function_contract(tmp_path: Path):
     assert "open MumeiLean" in text
     assert "mumei_len arr" in text
     assert "TODO: unproven" not in text
+
+
+def test_main_dry_run_with_body_semantics_fixture(tmp_path: Path):
+    fixture = Path(__file__).resolve().parent / "fixtures" / "std_math_abs.proof-cert.json"
+    out_dir = tmp_path / "generated"
+    rc = main(
+        [
+            "--cert", str(fixture),
+            "--out-dir", str(out_dir),
+            "--module-prefix", "Generated",
+            "--no-build",
+        ]
+    )
+    assert rc == 0
+    text = (out_dir / "Generated" / "Std" / "Math" / "Abs.lean").read_text()
+    assert "def absSaturatingAutoResult" in text
+    assert "h_body : result = absSaturatingAutoResult x" in text
+    assert "rw [h_body]" in text
+    assert "mumei_arith_deep <;> sorry" in text
+
+
+@pytest.mark.skipif(not _have_lake(),
+                    reason="lake not on PATH; skipping live bridge E2E")
+@pytest.mark.skipif(os.environ.get("MUMEI_LEAN_SKIP_LIVE") == "1",
+                    reason="MUMEI_LEAN_SKIP_LIVE=1 set")
+def test_body_semantics_bridge_e2e_exports_lean_verified(tmp_path: Path):
+    fixture = Path(__file__).resolve().parent / "fixtures" / "std_math_abs.proof-cert.json"
+    out_cert = tmp_path / "std_math_abs.lean-cert.json"
+    out_dir = tmp_path / "generated"
+    rc = main(
+        [
+            "--cert", str(fixture),
+            "--out-dir", str(out_dir),
+            "--lean-cert-out", str(out_cert),
+            "--module-prefix", "Generated",
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(out_cert.read_text())
+    atom = next(a for a in payload["atoms"] if a["name"] == "abs_saturating_auto")
+    assert atom["z3_check_result"] == "lean_verified"
+    assert atom["status"] == "verified"
+
+
+def test_body_semantics_export_path_marks_verified_with_clean_lake_log(
+    tmp_path: Path, monkeypatch
+):
+    fixture = Path(__file__).resolve().parent / "fixtures" / "std_math_abs.proof-cert.json"
+    out_cert = tmp_path / "std_math_abs.lean-cert.json"
+    _patch_lake(monkeypatch, rc=0, log="")
+    rc = main(
+        [
+            "--cert", str(fixture),
+            "--out-dir", str(tmp_path / "generated"),
+            "--lean-cert-out", str(out_cert),
+            "--module-prefix", "Generated",
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(out_cert.read_text())
+    atom = next(a for a in payload["atoms"] if a["name"] == "abs_saturating_auto")
+    assert atom["z3_check_result"] == "lean_verified"
 
 
 def test_main_scan_unknown_returns_zero_when_dir_empty(tmp_path: Path):

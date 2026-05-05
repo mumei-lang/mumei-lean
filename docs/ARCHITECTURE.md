@@ -31,7 +31,7 @@ artefacts that fit tier 1 (local `.proof-cert.json`) or tier 3
 ```mermaid
 graph TD
     I["scripts/ingest_cert.py"]
-      -->|"generated/&lt;Module&gt;.lean\n(one theorem per unknown atom)"| L["lake build\n(Lean 4 + mathlib4)"]
+      -->|"generated/&lt;Module&gt;.lean\n(one theorem per unknown atom,\noptional body-result def)"| L["lake build\n(Lean 4 + mathlib4)"]
     L -->|"build log + proved atom list"| E["scripts/export_cert.py"]
     E -->|".lean-cert.json"| OUT["downstream:\nrename to .proof-cert.json (tier 1)\nor bundle into std-proof-bundle.json (tier 3)"]
 ```
@@ -106,9 +106,24 @@ open MumeiLean
 /-- Auto-generated from mumei atom `inc` (z3_check_result=unknown). -/
 theorem inc_correct (x result : Int) :
     (x > 0) → (result ≥ x) := by
-  sorry
+  mumei_arith <;> sorry
 
 end Generated.Std.Math
+```
+
+When an input `AtomCertificate` includes a simple `body_expr`, the
+renderer also emits body semantics:
+
+```lean
+def absSaturatingAutoResult (x : Int) : Int :=
+  if x ≥ 0 then x else -x
+
+theorem abs_saturating_auto_correct (x result : Int)
+    (h_body : result = absSaturatingAutoResult x) :
+    (True) → (result ≥ 0) := by
+  rw [h_body]
+  unfold absSaturatingAutoResult
+  mumei_arith_deep <;> sorry
 ```
 
 The expression translator (`scripts/expr_translator.py`) handles a
@@ -122,6 +137,7 @@ v3 surface:
 | Literals    | integer literals, string literals, `true`/`false`               |
 | Variables   | identifiers, including `result`                                |
 | Conditionals | `if cond then a else b`                                       |
+| Match       | `match x { 0 => a, 1 => b, _ => c }` (→ Lean `match x with ...`) |
 | Quantifier  | `forall(i, lo, hi, body)` (→ bounded `∀ i : Int, ...`)          |
 | Arrays      | `arr[i]` (→ `arr.get! i.toNat`)                                |
 | Calls       | `len(x)` (→ `mumei_len x`), `abs(x)` (→ `mumei_abs x`), `min(a, b)`, `max(a, b)`, `old(x)` (→ `old_x`) |
@@ -129,8 +145,9 @@ v3 surface:
 
 Anything else is forwarded verbatim and the theorem is marked with
 `-- TODO: unproven` so it can be triaged via `git grep`. Commas inside
-known calls are part of the supported surface; bare commas elsewhere
-still mark the contract partial.
+known calls, `forall(..)`, and compact `match { ... }` arms are part of
+the supported surface; bare commas elsewhere still mark the expression
+partial.
 
 ### `len(x)` semantics
 

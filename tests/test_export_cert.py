@@ -198,6 +198,30 @@ def test_failed_theorem_attributions_includes_file_path():
     assert len(attributions) == 2
 
 
+def test_failed_theorem_names_attributes_errors_inside_def_result_block():
+    # ``ingest_cert.render_theorem`` emits ``def <atom>Result`` ahead of
+    # the owning ``theorem`` when body semantics are enabled. An error
+    # inside the ``def`` would otherwise hit no ``theorem`` keyword on
+    # the backward walk and be misattributed as a file-level failure.
+    log = (
+        "Generated/Std/Math/Abs.lean:5:0: def absSaturatingAutoResult\n"
+        "Generated/Std/Math/Abs.lean:5:7: error: type mismatch\n"
+    )
+    failures = _failed_theorem_names(log)
+    assert failures == ["abs_saturating_auto"]
+    # And the unattributable-failure fallback must not fire.
+    assert _has_unattributable_failures(log) is False
+
+
+def test_failed_theorem_names_preserves_correct_suffix_from_def_result_block():
+    log = (
+        "Generated/Std/Math/Abs.lean:5:0: def checkCorrectResult\n"
+        "Generated/Std/Math/Abs.lean:5:7: error: type mismatch\n"
+    )
+    failures = _failed_theorem_names(log)
+    assert failures == ["check_correct"]
+
+
 def test_failed_theorem_attributions_emits_none_when_no_file_prefix():
     # Older / non-Lake-formatted logs may surface ``error:`` /
     # ``sorry`` lines without a ``file:line:col:`` prefix; the

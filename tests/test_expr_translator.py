@@ -1,7 +1,7 @@
 """Unit tests for ``scripts.expr_translator``."""
 from __future__ import annotations
 
-from expr_translator import contains_identifier, translate_contract
+from expr_translator import contains_identifier, translate_body, translate_contract
 
 
 def test_trivial_contract_is_true():
@@ -222,6 +222,30 @@ def test_if_then_else_expression():
     result = translate_contract("if x > 0 then x else 0")
     assert result.lean_expr == "if x > 0 then x else 0"
     assert result.identifiers == ["x"]
+    assert result.is_partial is False
+
+
+def test_translate_body_handles_conditionals_and_arithmetic():
+    result = translate_body("if x >= 0 then x else -x")
+    assert result.lean_expr == "if x ≥ 0 then x else - x"
+    assert result.identifiers == ["x"]
+    assert result.is_partial is False
+
+
+def test_translate_body_handles_match_expression():
+    result = translate_body("match x { 0 => 0, 1 => 1, _ => x + 1 }")
+    assert result.lean_expr == "(match x with | 0 => 0 | 1 => 1 | _ => x + 1)"
+    assert result.identifiers == ["x"]
+    assert result.is_partial is False
+
+
+def test_translate_body_handles_if_else_match_expression():
+    result = translate_body("if x > 0 then x else match y { 0 => 0, _ => y }")
+    assert (
+        result.lean_expr
+        == "if x > 0 then x else (match y with | 0 => 0 | _ => y)"
+    )
+    assert result.identifiers == ["x", "y"]
     assert result.is_partial is False
 
 

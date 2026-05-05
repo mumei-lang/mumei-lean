@@ -207,6 +207,17 @@ def test_ends_with_function_call():
     assert result.is_partial is False
 
 
+def test_not_contains_function_call():
+    result = translate_contract('not_contains(path, "..")')
+    assert result.lean_expr == '(mumei_not_contains path "..")'
+    assert result.is_partial is False
+
+
+def test_not_contains_string_identifiers():
+    result = translate_contract('not_contains(path, "..")')
+    assert "path" in result.string_identifiers
+
+
 def test_if_then_else_expression():
     result = translate_contract("if x > 0 then x else 0")
     assert result.lean_expr == "if x > 0 then x else 0"

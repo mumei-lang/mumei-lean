@@ -33,6 +33,10 @@ def mumei_starts_with (s needle : String) : Prop := needle.isPrefixOf s
 /-- mumei's `ends_with(s, suffix)` string predicate. -/
 def mumei_ends_with (s needle : String) : Prop := s.endsWith needle
 
+/-- mumei's `not_contains(s, sub)` string predicate. -/
+def mumei_not_contains (s sub : String) : Prop :=
+  ¬ ∃ pre post : String, s = pre ++ sub ++ post
+
 /-- mumei atom contract represented as a pair of `Prop`s.
 
 `requires` is the precondition the caller must establish, `ensures`

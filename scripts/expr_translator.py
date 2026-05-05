@@ -11,7 +11,8 @@ subset:
 * integer / boolean / string literals, identifiers (including ``result``)
 * parentheses
 * bounded ``forall(..)``, ``if .. then .. else ..``, ``arr[i]`` access, and known calls:
-  ``len``, ``abs``, ``min``, ``max``, ``old``, ``starts_with``, ``ends_with``
+  ``len``, ``abs``, ``min``, ``max``, ``old``, ``starts_with``, ``ends_with``,
+  ``not_contains``
 
 Anything outside this subset is preserved verbatim and emitted as a
 Lean fragment that almost certainly will not type-check; the generated
@@ -57,7 +58,7 @@ _RESERVED_IDENTS: Set[str] = {
     # keeps ``_extract_identifiers`` from binding them as theorem
     # parameters if they show up as bare ID tokens.
     "forall", "len", "abs", "min", "max", "old",
-    "starts_with", "ends_with",
+    "starts_with", "ends_with", "not_contains",
     "if", "then", "else",
     # Lean keywords we never want to over-bind even if the contract uses
     # them as identifier names (it should not, but defensively).
@@ -84,6 +85,7 @@ _KNOWN_FUNCTIONS = {
     "old": "old_",
     "starts_with": "mumei_starts_with",
     "ends_with": "mumei_ends_with",
+    "not_contains": "mumei_not_contains",
 }
 
 _KNOWN_FUNCTION_ARITY = {
@@ -94,6 +96,7 @@ _KNOWN_FUNCTION_ARITY = {
     "old": 1,
     "starts_with": 2,
     "ends_with": 2,
+    "not_contains": 2,
 }
 
 @dataclass
@@ -532,7 +535,7 @@ def translate_contract(source: str) -> TranslationResult:
     for j, (kind, text) in enumerate(tokens):
         if (
             kind == "ID"
-            and text in ("starts_with", "ends_with")
+            and text in ("starts_with", "ends_with", "not_contains")
             and j + 1 < len(tokens)
             and tokens[j + 1] == ("OP", "(")
         ):

@@ -33,9 +33,38 @@ def mumei_starts_with (s needle : String) : Prop := needle.isPrefixOf s
 /-- mumei's `ends_with(s, suffix)` string predicate. -/
 def mumei_ends_with (s needle : String) : Prop := s.endsWith needle
 
+/-- mumei's `contains(s, sub)` string predicate. -/
+def mumei_contains (s sub : String) : Prop :=
+  ∃ pre post : String, s = pre ++ sub ++ post
+
+/-- Character-list substring helper for executable containment checks. -/
+def mumei_containsChars : List Char → List Char → Bool
+  | [], needle => needle.isPrefixOf []
+  | chars@(_ :: rest), needle => needle.isPrefixOf chars || mumei_containsChars rest needle
+
+/-- Executable string containment helper for generated witnesses. -/
+def mumei_contains' (s sub : String) : Bool :=
+  mumei_containsChars s.data sub.data
+
 /-- mumei's `not_contains(s, sub)` string predicate. -/
 def mumei_not_contains (s sub : String) : Prop :=
   ¬ ∃ pre post : String, s = pre ++ sub ++ post
+
+/-- Sum the first `n` elements of an integer list.
+
+`n` is accepted as `Int` to match the scalar typing used by the bridge's
+expression translator; negative or out-of-range values fall through to
+`List.take`'s saturating `Nat` semantics via `Int.toNat`. -/
+def mumei_sum (arr : List Int) (n : Int) : Int :=
+  (arr.take n.toNat).foldl (· + ·) 0
+
+/-- Count occurrences of an integer value in a list.
+
+Returns an `Int` (rather than `Nat`) so the result composes with the
+scalar-`Int` parameters and literals emitted by the bridge translator
+without introducing `Nat`/`Int` coercions at each use site. -/
+def mumei_count (arr : List Int) (val : Int) : Int :=
+  Int.ofNat (arr.filter (· == val)).length
 
 /-- mumei atom contract represented as a pair of `Prop`s.
 

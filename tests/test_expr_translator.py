@@ -207,6 +207,14 @@ def test_ends_with_function_call():
     assert result.is_partial is False
 
 
+def test_contains_function_call():
+    result = translate_contract('contains(s, "hello")')
+    assert result.lean_expr == '(mumei_contains s "hello")'
+    assert result.identifiers == ["s"]
+    assert result.string_identifiers == ["s"]
+    assert result.is_partial is False
+
+
 def test_not_contains_function_call():
     result = translate_contract('not_contains(path, "..")')
     assert result.lean_expr == '(mumei_not_contains path "..")'
@@ -216,6 +224,25 @@ def test_not_contains_function_call():
 def test_not_contains_string_identifiers():
     result = translate_contract('not_contains(path, "..")')
     assert "path" in result.string_identifiers
+
+
+def test_sum_function_call():
+    result = translate_contract("sum(arr, n)")
+    assert result.lean_expr == "(mumei_sum arr n)"
+    assert result.identifiers == ["arr", "n"]
+    # ``arr`` is the ``List Int`` first argument of ``mumei_sum`` and
+    # must be reported as an array identifier so the renderer types it
+    # as ``List Int`` rather than the scalar-``Int`` default.
+    assert result.array_identifiers == ["arr"]
+    assert result.is_partial is False
+
+
+def test_count_function_call():
+    result = translate_contract("count(arr, 0)")
+    assert result.lean_expr == "(mumei_count arr 0)"
+    assert result.identifiers == ["arr"]
+    assert result.array_identifiers == ["arr"]
+    assert result.is_partial is False
 
 
 def test_if_then_else_expression():
@@ -236,6 +263,24 @@ def test_translate_body_handles_match_expression():
     result = translate_body("match x { 0 => 0, 1 => 1, _ => x + 1 }")
     assert result.lean_expr == "(match x with | 0 => 0 | 1 => 1 | _ => x + 1)"
     assert result.identifiers == ["x"]
+    assert result.is_partial is False
+
+
+def test_translate_contract_handles_match_expression():
+    result = translate_contract("match x { 0 => 1, 1 => 2, _ => 0 }")
+    assert result.lean_expr == "(match x with | 0 => 1 | 1 => 2 | _ => 0)"
+    assert result.identifiers == ["x"]
+    assert result.is_partial is False
+
+
+def test_forall_with_nested_match_expression():
+    result = translate_contract(
+        "forall(i, 0, n, match arr[i] { 0 => true, _ => false })"
+    )
+    assert "∀ i : Int" in result.lean_expr
+    assert "match arr.get! i.toNat with | 0 => True | _ => False" in result.lean_expr
+    assert result.identifiers == ["n", "arr"]
+    assert result.array_identifiers == ["arr"]
     assert result.is_partial is False
 
 

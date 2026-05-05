@@ -13,7 +13,7 @@ subset:
 * bounded ``forall(..)``, ``if .. then .. else ..``, ``match`` expressions,
   ``arr[i]`` access, and known calls:
   ``len``, ``abs``, ``min``, ``max``, ``old``, ``starts_with``, ``ends_with``,
-  ``not_contains``
+  ``contains``, ``not_contains``, ``sum``, ``count``
 
 Anything outside this subset is preserved verbatim and emitted as a
 Lean fragment that almost certainly will not type-check; the generated
@@ -59,7 +59,7 @@ _RESERVED_IDENTS: Set[str] = {
     # keeps ``_extract_identifiers`` from binding them as theorem
     # parameters if they show up as bare ID tokens.
     "forall", "len", "abs", "min", "max", "old",
-    "starts_with", "ends_with", "not_contains",
+    "starts_with", "ends_with", "contains", "not_contains", "sum", "count",
     "if", "then", "else", "match", "_",
     # Lean keywords we never want to over-bind even if the contract uses
     # them as identifier names (it should not, but defensively).
@@ -86,7 +86,10 @@ _KNOWN_FUNCTIONS = {
     "old": "old_",
     "starts_with": "mumei_starts_with",
     "ends_with": "mumei_ends_with",
+    "contains": "mumei_contains",
     "not_contains": "mumei_not_contains",
+    "sum": "mumei_sum",
+    "count": "mumei_count",
 }
 
 _KNOWN_FUNCTION_ARITY = {
@@ -97,7 +100,10 @@ _KNOWN_FUNCTION_ARITY = {
     "old": 1,
     "starts_with": 2,
     "ends_with": 2,
+    "contains": 2,
     "not_contains": 2,
+    "sum": 2,
+    "count": 2,
 }
 
 @dataclass
@@ -599,11 +605,44 @@ def translate_contract(source: str) -> TranslationResult:
                 is_partial = True
             elif text not in array_idents:
                 array_idents.append(text)
+    # ``sum(arr, n)`` / ``count(arr, val)``: the first argument is a
+    # ``List Int`` in the Lean helper signatures (``mumei_sum`` /
+    # ``mumei_count``), so identifiers appearing there must be typed as
+    # ``List Int`` — not the scalar ``Int`` default that
+    # ``render_theorem`` would otherwise emit. Without this pass the
+    # generated theorem would reference ``mumei_sum arr n`` with
+    # ``arr : Int``, which is a Lean type error.
+    for j, (kind, text) in enumerate(tokens):
+        if (
+            kind == "ID"
+            and text in ("sum", "count")
+            and j + 1 < len(tokens)
+            and tokens[j + 1] == ("OP", "(")
+        ):
+            close = _find_matching(tokens, j + 1, "(", ")")
+            if close == -1:
+                continue
+            parts = _split_top_level(tokens, j + 2, close)
+            if not parts or not parts[0]:
+                continue
+            first_arg = parts[0]
+            if len(first_arg) == 1 and first_arg[0][0] == "ID":
+                name = first_arg[0][1]
+                if name in _RESERVED_IDENTS:
+                    is_partial = True
+                elif name not in array_idents:
+                    array_idents.append(name)
+            else:
+                # Non-trivial first argument (e.g. a nested call) cannot
+                # be re-typed at the parameter level; flag as partial so
+                # the generated theorem carries a ``-- TODO: unproven``
+                # marker.
+                is_partial = True
     string_idents: List[str] = []
     for j, (kind, text) in enumerate(tokens):
         if (
             kind == "ID"
-            and text in ("starts_with", "ends_with", "not_contains")
+            and text in ("starts_with", "ends_with", "contains", "not_contains")
             and j + 1 < len(tokens)
             and tokens[j + 1] == ("OP", "(")
         ):
@@ -629,14 +668,22 @@ def translate_contract(source: str) -> TranslationResult:
     for j, (kind, text) in enumerate(tokens):
         if (
             kind == "ID"
-            and text in ("len", "abs", "min", "max")
+            and text in ("len", "abs", "min", "max", "sum", "count")
             and j + 1 < len(tokens)
             and tokens[j + 1] == ("OP", "(")
         ):
             close = _find_matching(tokens, j + 1, "(", ")")
             if close == -1:
                 continue
-            for ap in _split_top_level(tokens, j + 2, close):
+            arg_parts = _split_top_level(tokens, j + 2, close)
+            # ``sum`` / ``count`` take a ``List Int`` first argument, so
+            # identifiers there are legitimately non-scalar and must not
+            # trip the scalar-vs-array conflict guard below.
+            if text in ("sum", "count"):
+                arg_parts_to_scan = arg_parts[1:]
+            else:
+                arg_parts_to_scan = arg_parts
+            for ap in arg_parts_to_scan:
                 for ak, at in ap:
                     if ak == "ID" and at not in _RESERVED_IDENTS:
                         if at not in scalar_call_idents:

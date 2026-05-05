@@ -49,6 +49,23 @@ _ERROR_RE = re.compile(r":\s*error:\s")
 # Lake prefixes every diagnostic line with the originating source
 # file, e.g. ``Generated/Std/Math.lean:12:0: warning: ...``.
 _FILE_PREFIX_RE = re.compile(r"^([^\s:]+\.lean):\d+:\d+:")
+# Body-semantics ``def <atom>Result`` blocks emitted by
+# ``ingest_cert.render_theorem`` precede their owning ``theorem``. When
+# Lean reports an error inside the ``def`` (e.g. a type mismatch in the
+# translated body), the backward walk needs to recognise it so the
+# failure can be attributed to the originating atom rather than
+# triggering the unattributable-failure fallback.
+_DEF_RESULT_RE = re.compile(r"\bdef\s+([A-Za-z_][A-Za-z0-9_]*)Result\b")
+
+
+def _camel_to_snake(name: str) -> str:
+    """Convert ``absSaturatingAuto`` back to ``abs_saturating_auto``.
+
+    Mirrors ``ingest_cert._atom_result_name``'s snake_case → camelCase
+    transform so we can attribute errors emitted inside a generated
+    ``def <atom>Result`` block to the originating atom name.
+    """
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
 
 
 def _failed_theorem_attributions(
@@ -79,6 +96,13 @@ def _failed_theorem_attributions(
             m = re.search(r"theorem\s+([A-Za-z_][A-Za-z0-9_]*)", lines[j])
             if m:
                 attribution = m.group(1)
+                break
+            dm = _DEF_RESULT_RE.search(lines[j])
+            if dm:
+                # Errors inside a body-semantics ``def`` block belong
+                # to the atom named by the camelCase prefix of the
+                # ``def``'s identifier (without the ``Result`` suffix).
+                attribution = _camel_to_snake(dm.group(1))
                 break
         if not attribution:
             continue
@@ -141,6 +165,9 @@ def _has_unattributable_failures(build_output: str) -> bool:
         attributed = False
         for j in range(idx, max(-1, idx - 12), -1):
             if re.search(r"theorem\s+([A-Za-z_][A-Za-z0-9_]*)", lines[j]):
+                attributed = True
+                break
+            if _DEF_RESULT_RE.search(lines[j]):
                 attributed = True
                 break
         if not attributed:

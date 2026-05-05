@@ -239,6 +239,16 @@ def test_translate_body_handles_match_expression():
     assert result.is_partial is False
 
 
+def test_translate_body_handles_if_else_match_expression():
+    result = translate_body("if x > 0 then x else match y { 0 => 0, _ => y }")
+    assert (
+        result.lean_expr
+        == "if x > 0 then x else (match y with | 0 => 0 | _ => y)"
+    )
+    assert result.identifiers == ["x", "y"]
+    assert result.is_partial is False
+
+
 def test_new_constructs_compose_without_partial_marker():
     result = translate_contract(
         'old(balance) >= amount && starts_with(url, "https://")'

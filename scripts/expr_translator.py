@@ -269,12 +269,12 @@ def _find_top_level_arrow(tokens: List[tuple]) -> int:
 def _if_else_tail_is_supported(tokens: List[tuple]) -> bool:
     depth = 0
     for kind, text in tokens:
-        if kind == "OP" and text in ("(", "["):
+        if kind == "OP" and text in ("(", "[", "{"):
             depth += 1
-        elif kind == "OP" and text in (")", "]"):
+        elif kind == "OP" and text in (")", "]", "}"):
             depth -= 1
         elif depth == 0 and (
-            kind == "KW"
+            (kind == "KW" and text != "match")
             or (kind == "OP" and text in {"&&", "||", "==", "!=", ">=", "<=", ">", "<"})
         ):
             return False

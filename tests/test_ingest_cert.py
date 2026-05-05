@@ -22,8 +22,10 @@ def _make_atom(
     ensures: str = "",
     z3: str = "unknown",
     status: str = "unknown",
+    body_expr: str = "",
+    body_summary: str = "",
 ) -> dict:
-    return {
+    atom = {
         "name": name,
         "requires": requires,
         "ensures": ensures,
@@ -34,6 +36,11 @@ def _make_atom(
         "dependencies": [],
         "effects": [],
     }
+    if body_expr:
+        atom["body_expr"] = body_expr
+    if body_summary:
+        atom["body_summary"] = body_summary
+    return atom
 
 
 def _make_certificate(file: str, atoms: list) -> dict:
@@ -118,6 +125,49 @@ def test_render_theorem_includes_atom_name_and_mumei_arith_body():
     # both x and result should appear in the params declaration
     assert "x" in rendered
     assert "result" in rendered
+
+
+def test_render_theorem_injects_body_semantics_for_simple_body():
+    cert = _make_certificate(
+        "std/math/abs.mm",
+        [
+            _make_atom(
+                "abs_auto",
+                requires="true",
+                ensures="result >= 0",
+                body_expr="if x >= 0 then x else -x",
+                body_summary="absolute value",
+            )
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    assert atom.body_expr == "if x >= 0 then x else -x"
+    rendered = render_theorem(atom)
+    assert "def absAutoResult (x : Int) : Int :=" in rendered
+    assert "if x ≥ 0 then x else - x" in rendered
+    assert "(h_body : result = absAutoResult x)" in rendered
+    assert "rw [h_body]" in rendered
+    assert "unfold absAutoResult" in rendered
+    assert "mumei_arith_deep <;> sorry" in rendered
+
+
+def test_render_theorem_falls_back_for_complex_body():
+    cert = _make_certificate(
+        "m.mm",
+        [
+            _make_atom(
+                "custom",
+                requires="true",
+                ensures="result >= 0",
+                body_expr="custom_fn(x)",
+            )
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "def customResult" not in rendered
+    assert "body semantics unsupported" in rendered
+    assert "mumei_arith <;> sorry" in rendered
 
 
 def test_render_theorem_does_not_add_result_param_for_substring_matches():

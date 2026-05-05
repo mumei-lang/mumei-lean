@@ -34,8 +34,10 @@ graph TD
 ```
 
 Full diagram and field-by-field schema in
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). End-to-end usage and the
-mumei-side opt-in story live in [`docs/INTEGRATION.md`](docs/INTEGRATION.md).
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), with the body-semantics
+pipeline diagram in [`docs/BRIDGE_PIPELINE.md`](docs/BRIDGE_PIPELINE.md).
+End-to-end usage and the mumei-side opt-in story live in
+[`docs/INTEGRATION.md`](docs/INTEGRATION.md).
 
 ## Repository layout
 
@@ -133,9 +135,16 @@ lake build                # Lean library
    modules are deliberate stubs for the day we want a native path.
 3. **Scope is intentionally small.** The expression translator handles
    arithmetic comparisons, boolean connectives, integer literals,
-   bounded `forall(..)`, `arr[i]`, and known calls (`len`, `abs`, `min`,
-   `max`). Anything else is preserved verbatim and tagged
-   `-- TODO: unproven` so generated files remain easy to triage.
+   conditionals, compact `match x { ... }` expressions, bounded
+   `forall(..)`, `arr[i]`, and known calls (`len`, `abs`, `min`, `max`).
+   If a certificate carries a simple `body_expr`, the bridge emits a
+   Lean `def <atom>Result` plus an `h_body` equality so the theorem can
+   prove postconditions from body semantics instead of only
+   `requires → ensures`. Anything else is preserved verbatim and tagged
+   `-- TODO: unproven` or falls back to the contract-only proof path.
+   Current limitations: quantified/list/string body terms and unknown
+   function calls are still treated as complex bodies and require a
+   hand-written witness.
 4. **Targeted at Z3-`unknown`.** `mumei-lean` is *not* a replacement for
    Z3. Use it for the atoms Z3 cannot close (cryptographic correctness,
    abstract-algebraic invariants, etc.).

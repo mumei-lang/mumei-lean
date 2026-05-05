@@ -39,6 +39,30 @@ which means `mumei_arith` itself never fails — it just leaves unsolved
 subgoals for the caller to dispatch (e.g. via `<;> sorry`).
 -/
 macro "mumei_arith" : tactic =>
-  `(tactic| (intros; first | omega | linarith | norm_num | decide | simp))
+  `(tactic|
+    (intros
+     first
+     | omega
+     | linarith
+     | norm_num
+     | decide
+     | split
+     | (cases ‹_›)
+     | (rcases ‹_› with ⟨_, _⟩)
+     | simp))
+
+/-- Deeper arithmetic automation for generated theorems that unfold body semantics. -/
+macro "mumei_arith_deep" : tactic =>
+  `(tactic|
+    (intros
+     first
+     | omega
+     | linarith
+     | norm_num
+     | decide
+     | (simp; omega)
+     | (split <;> omega)
+     | (cases ‹_›; omega)
+     | (rcases ‹_› with ⟨_, _⟩; omega)))
 
 end MumeiLean

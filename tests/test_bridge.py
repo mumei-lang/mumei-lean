@@ -282,7 +282,11 @@ def test_main_scan_unknown_writes_empty_summary_when_dir_empty(tmp_path: Path):
     )
     assert rc == 0
     payload = json.loads(summary.read_text())
-    assert payload == {"total_unknown": 0, "modules": []}
+    assert payload == {
+        "total_unknown": 0,
+        "modules": [],
+        "ci_mode_fallback": False,
+    }
 
 
 def _patch_lake(monkeypatch, rc: int, log: str) -> None:
@@ -352,6 +356,59 @@ def test_main_does_not_falsely_mark_when_lake_missing(
     upgraded = json.loads(out_cert.read_text())
     inc = next(a for a in upgraded["atoms"] if a["name"] == "inc")
     assert inc["z3_check_result"] == "unknown"
+
+
+def test_main_lake_missing_no_export_returns_zero(
+    tmp_path: Path, monkeypatch
+):
+    cert_path = tmp_path / "cert.json"
+    cert_path.write_text(
+        json.dumps(_cert("std/math.mm", [_atom("inc", z3="unknown")]))
+    )
+    out_dir = tmp_path / "generated"
+    _patch_lake(monkeypatch, rc=127, log="")
+
+    rc = main(
+        [
+            "--cert", str(cert_path),
+            "--out-dir", str(out_dir),
+            "--module-prefix", "Generated",
+            "--no-export",
+        ]
+    )
+
+    assert rc == 0
+    assert (out_dir / "Generated" / "Std" / "Math.lean").exists()
+
+
+def test_main_ci_mode_falls_back_on_lake_failure(
+    tmp_path: Path, monkeypatch
+):
+    cert_path = tmp_path / "cert.json"
+    cert_path.write_text(
+        json.dumps(_cert("std/math.mm", [_atom("inc", z3="unknown")]))
+    )
+    summary = tmp_path / "summary.json"
+    out_dir = tmp_path / "generated"
+    _patch_lake(monkeypatch, rc=1, log="error: cannot resolve dependency 'mathlib'\n")
+
+    rc = main(
+        [
+            "--cert", str(cert_path),
+            "--out-dir", str(out_dir),
+            "--module-prefix", "Generated",
+            "--lean-cert-out", str(tmp_path / "out.lean-cert.json"),
+            "--summary-json", str(summary),
+            "--ci-mode",
+        ]
+    )
+
+    assert rc == 0
+    assert (out_dir / "Generated" / "Std" / "Math.lean").exists()
+    assert not (tmp_path / "out.lean-cert.json").exists()
+    payload = json.loads(summary.read_text())
+    assert payload["ci_mode_fallback"] is True
+    assert payload["total_unknown"] == 1
 
 
 def test_main_attributes_failures_per_payload_in_multi_cert_mode(

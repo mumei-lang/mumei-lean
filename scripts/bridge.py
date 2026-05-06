@@ -168,6 +168,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Skip the `lake build` step (useful for dry runs).",
     )
     parser.add_argument(
+        "--ci-mode",
+        action="store_true",
+        help="CI mode: on lake build failure, fall back to --no-build and "
+        "preserve generated .lean files as artifacts.",
+    )
+    parser.add_argument(
         "--no-export",
         action="store_true",
         help="Skip writing the final .lean-cert.json (implies dry run).",
@@ -200,7 +206,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                 args.summary_json.parent.mkdir(parents=True, exist_ok=True)
                 args.summary_json.write_text(
                     json.dumps(
-                        {"total_unknown": 0, "modules": []},
+                        {
+                            "total_unknown": 0,
+                            "modules": [],
+                            "ci_mode_fallback": False,
+                        },
                         indent=2,
                         ensure_ascii=False,
                     )
@@ -233,27 +243,28 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
     write_modules(all_atoms, args.out_dir, args.module_prefix)
 
-    if args.summary_json is not None:
-        # Aggregate per-module unknown atom counts so CI / humans can
-        # see which mumei modules still rely on Lean to close their
-        # obligations. The summary is grouped by ``module_key`` rather
-        # than by source certificate so that bundle inputs collapse
-        # naturally into per-namespace stats.
-        modules_summary: dict[str, List[str]] = {}
-        for atom in all_atoms:
-            modules_summary.setdefault(atom.module_key, []).append(atom.name)
-        modules_list = [
-            {
-                "module": key,
-                "unknown_count": len(names),
-                "atoms": sorted(names),
-            }
-            for key, names in sorted(modules_summary.items())
-        ]
-        summary_payload = {
-            "total_unknown": len(all_atoms),
-            "modules": modules_list,
+    # Aggregate per-module unknown atom counts so CI / humans can
+    # see which mumei modules still rely on Lean to close their
+    # obligations. The summary is grouped by ``module_key`` rather
+    # than by source certificate so that bundle inputs collapse
+    # naturally into per-namespace stats.
+    modules_summary: dict[str, List[str]] = {}
+    for atom in all_atoms:
+        modules_summary.setdefault(atom.module_key, []).append(atom.name)
+    modules_list = [
+        {
+            "module": key,
+            "unknown_count": len(names),
+            "atoms": sorted(names),
         }
+        for key, names in sorted(modules_summary.items())
+    ]
+    summary_payload = {
+        "total_unknown": len(all_atoms),
+        "modules": modules_list,
+        "ci_mode_fallback": False,
+    }
+    if args.summary_json is not None:
         args.summary_json.parent.mkdir(parents=True, exist_ok=True)
         args.summary_json.write_text(
             json.dumps(summary_payload, indent=2, ensure_ascii=False) + "\n"
@@ -281,10 +292,21 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         if args.no_export:
             return 0
-        build_log = ""
-    else:
-        build_log = log_path.read_text()
-        print(f"`lake build` exited with status {rc}; log: {log_path}")
+    if args.ci_mode and rc != 0:
+        print(
+            "warning: `lake build` failed in --ci-mode; preserving generated "
+            "Lean files and skipping export.",
+            file=sys.stderr,
+        )
+        if args.summary_json is not None:
+            summary_payload["ci_mode_fallback"] = True
+            args.summary_json.write_text(
+                json.dumps(summary_payload, indent=2, ensure_ascii=False) + "\n"
+            )
+        return 0
+
+    build_log = log_path.read_text()
+    print(f"`lake build` exited with status {rc}; log: {log_path}")
 
     if args.no_export:
         return rc

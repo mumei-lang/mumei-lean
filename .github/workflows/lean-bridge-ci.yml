@@ -26,8 +26,7 @@ jobs:
             --scan-unknown mumei \
             --ci-mode \
             --summary-json bridge-summary.json \
-            --lean-cert-out lean-certs/ \
-            --no-build
+            --lean-cert-out lean-certs/
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

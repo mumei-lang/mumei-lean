@@ -1,9 +1,9 @@
 ---
 name: bridge
-description: Translate Mumei .proof.json or proof-bundle certificates into Lean 4 theorem files and export .lean-cert.json certificates.
+description: Translate Mumei .proof-cert.json or proof-bundle certificates into Lean 4 theorem files and export .lean-cert.json certificates.
 ---
 
-Given a Mumei proof certificate, run the mumei-lean bridge from `.proof.json`/`.proof-cert.json` to generated Lean theorem modules and `.lean-cert.json` output.
+Given a Mumei proof certificate, run the mumei-lean bridge from `.proof-cert.json` to generated Lean theorem modules and `.lean-cert.json` output.
 
 # Step 1: Prepare proof certificate input
 

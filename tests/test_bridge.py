@@ -358,6 +358,29 @@ def test_main_does_not_falsely_mark_when_lake_missing(
     assert inc["z3_check_result"] == "unknown"
 
 
+def test_main_lake_missing_no_export_returns_zero(
+    tmp_path: Path, monkeypatch
+):
+    cert_path = tmp_path / "cert.json"
+    cert_path.write_text(
+        json.dumps(_cert("std/math.mm", [_atom("inc", z3="unknown")]))
+    )
+    out_dir = tmp_path / "generated"
+    _patch_lake(monkeypatch, rc=127, log="")
+
+    rc = main(
+        [
+            "--cert", str(cert_path),
+            "--out-dir", str(out_dir),
+            "--module-prefix", "Generated",
+            "--no-export",
+        ]
+    )
+
+    assert rc == 0
+    assert (out_dir / "Generated" / "Std" / "Math.lean").exists()
+
+
 def test_main_ci_mode_falls_back_on_lake_failure(
     tmp_path: Path, monkeypatch
 ):

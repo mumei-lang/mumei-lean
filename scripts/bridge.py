@@ -290,6 +290,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             "Install Lean 4 / Lake to enable end-to-end verification.",
             file=sys.stderr,
         )
+        if args.no_export:
+            return 0
     if args.ci_mode and rc != 0:
         print(
             "warning: `lake build` failed in --ci-mode; preserving generated "

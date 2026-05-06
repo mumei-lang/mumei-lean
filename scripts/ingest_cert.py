@@ -56,6 +56,11 @@ except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py
     )
 
 
+def _translate_expr(source: str) -> TranslationResult:
+    """Translate a mumei expression into a Lean proposition fragment."""
+    return translate_contract(source)
+
+
 @dataclass
 class IngestedAtom:
     module_key: str
@@ -142,8 +147,8 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
                 IngestedAtom(
                     module_key=module_key,
                     name=str(atom.get("name", "atom")),
-                    requires_translation=translate_contract(requires),
-                    ensures_translation=translate_contract(ensures),
+                    requires_translation=_translate_expr(requires),
+                    ensures_translation=_translate_expr(ensures),
                     raw_requires=requires,
                     raw_ensures=ensures,
                     body_summary=str(body_summary),

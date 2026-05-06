@@ -9,6 +9,7 @@ import pytest
 from ingest_cert import (
     _classify_input,
     _module_to_lean_namespace,
+    _translate_expr,
     collect_unknown_atoms,
     render_module,
     render_theorem,
@@ -84,6 +85,17 @@ def test_collect_unknown_atoms_filters_by_z3_check_result():
     )
     atoms = collect_unknown_atoms(cert)
     assert [a.name for a in atoms] == ["a", "c"]
+
+
+def test_translate_expr_forall_pattern():
+    result = _translate_expr("forall(i, 0, n, arr[i] >= 0)")
+
+    assert "∀ i : Int" in result.lean_expr
+    assert "0 ≤ i" in result.lean_expr
+    assert "i < n" in result.lean_expr
+    assert "arr.get! i.toNat ≥ 0" in result.lean_expr
+    assert "i" not in result.identifiers
+    assert result.is_partial is False
 
 
 def test_collect_unknown_atoms_handles_bundle():

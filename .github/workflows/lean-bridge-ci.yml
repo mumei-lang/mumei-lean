@@ -1,0 +1,37 @@
+name: Lean Bridge CI
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'
+
+jobs:
+  bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Checkout mumei repo
+        uses: actions/checkout@v4
+        with:
+          repository: mumei-lang/mumei
+          path: mumei
+          ref: develop
+      - name: Run bridge scan
+        run: |
+          python scripts/bridge.py \
+            --scan-unknown mumei \
+            --ci-mode \
+            --summary-json bridge-summary.json \
+            --lean-cert-out lean-certs/ \
+            --no-build
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lean-bridge-scan
+          path: |
+            bridge-summary.json
+            generated/

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import List, Set, Tuple
+from typing import Optional, List, Set, Tuple
 
 # Tokens we recognise. Order matters: longer prefixes must come first
 # so e.g. ``>=`` is not split into ``>`` + ``=``.
@@ -800,6 +800,81 @@ def translate_contract(source: str) -> TranslationResult:
     )
 
 
+_IDENT_PATTERN = r"[A-Za-z_][A-Za-z0-9_]*"
+
+
+def _fragment_translation(source: str) -> tuple[str, list[str], bool]:
+    tokens = _tokenize(source.strip())
+    lean_expr, is_partial = _emit_tokens(tokens)
+    return lean_expr, _extract_identifiers(tokens), is_partial
+
+
+def _merge_identifiers(groups: list[list[str]]) -> list[str]:
+    merged: list[str] = []
+    for group in groups:
+        for ident in group:
+            if ident not in merged:
+                merged.append(ident)
+    return merged
+
+
+def _known_body_pattern(source: str) -> Optional[TranslationResult]:
+    conditional_abs = re.fullmatch(
+        rf"if\s+({_IDENT_PATTERN})\s*>=\s*0\s+then\s+\1\s+else\s+(?:-\s*\1|0\s*-\s*\1)",
+        source,
+    )
+    if conditional_abs:
+        var_name = conditional_abs.group(1)
+        return TranslationResult(
+            lean_expr=f"if {var_name} ≥ 0 then {var_name} else - {var_name}",
+            identifiers=[var_name],
+            is_trivial=False,
+            is_partial=False,
+            array_identifiers=[],
+            string_identifiers=[],
+        )
+
+    saturating_abs = re.fullmatch(
+        rf"if\s+({_IDENT_PATTERN})\s*==\s*(.+?)\s+then\s+(.+?)\s+else\s+if\s+\1\s*>=\s*0\s+then\s+\1\s+else\s+(?:-\s*\1|0\s*-\s*\1)",
+        source,
+    )
+    if saturating_abs:
+        var_name, min_src, max_src = saturating_abs.groups()
+        min_lean, min_ids, min_partial = _fragment_translation(min_src)
+        max_lean, max_ids, max_partial = _fragment_translation(max_src)
+        return TranslationResult(
+            lean_expr=(
+                f"if {var_name} = {min_lean} then {max_lean} "
+                f"else if {var_name} ≥ 0 then {var_name} else 0 - {var_name}"
+            ),
+            identifiers=_merge_identifiers([[var_name], min_ids, max_ids]),
+            is_trivial=False,
+            is_partial=min_partial or max_partial,
+            array_identifiers=[],
+            string_identifiers=[],
+        )
+
+    saturating_lower_bound = re.fullmatch(
+        rf"if\s+({_IDENT_PATTERN})\s*<\s*(.+?)\s+then\s+(.+?)\s+else\s+\1",
+        source,
+    )
+    if saturating_lower_bound:
+        var_name, min_src, saturated_src = saturating_lower_bound.groups()
+        if re.sub(r"\s+", "", min_src) != re.sub(r"\s+", "", saturated_src):
+            return None
+        min_lean, min_ids, min_partial = _fragment_translation(min_src)
+        return TranslationResult(
+            lean_expr=f"if {var_name} < {min_lean} then {min_lean} else {var_name}",
+            identifiers=_merge_identifiers([[var_name], min_ids]),
+            is_trivial=False,
+            is_partial=min_partial,
+            array_identifiers=[],
+            string_identifiers=[],
+        )
+
+    return None
+
+
 def translate_body(body_expr: str) -> TranslationResult:
     """Translate a mumei atom body expression to a Lean term.
 
@@ -819,6 +894,9 @@ def translate_body(body_expr: str) -> TranslationResult:
             array_identifiers=[],
             string_identifiers=[],
         )
+    known = _known_body_pattern(stripped)
+    if known is not None:
+        return known
     result = translate_contract(stripped)
     if "=>" in stripped and "=>" not in result.lean_expr:
         result.is_partial = True

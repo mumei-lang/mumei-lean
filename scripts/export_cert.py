@@ -48,7 +48,7 @@ _SORRY_RE = re.compile(r"declaration uses 'sorry'")
 _ERROR_RE = re.compile(r":\s*error:\s")
 # Lake prefixes every diagnostic line with the originating source
 # file, e.g. ``Generated/Std/Math.lean:12:0: warning: ...``.
-_FILE_PREFIX_RE = re.compile(r"^([^\s:]+\.lean):\d+:\d+:")
+_FILE_PREFIX_RE = re.compile(r"(?:^|\s)([^\s:]+\.lean):(\d+):(\d+):")
 # Body-semantics ``def <atom>Result`` blocks emitted by
 # ``ingest_cert.render_theorem`` precede their owning ``theorem``. When
 # Lean reports an error inside the ``def`` (e.g. a type mismatch in the
@@ -68,8 +68,91 @@ def _camel_to_snake(name: str) -> str:
     return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
 
 
+def _diagnostic_location(line: str) -> Tuple[Optional[str], Optional[int]]:
+    match = _FILE_PREFIX_RE.search(line)
+    if match is None:
+        return None, None
+    return match.group(1), int(match.group(2))
+
+
+def _name_from_attribution(raw_name: str, from_def: bool) -> str:
+    if from_def:
+        return _camel_to_snake(raw_name)
+    if raw_name.endswith("_correct"):
+        return raw_name[: -len("_correct")]
+    return raw_name
+
+
+def _attribution_in_text(lines: List[str], start_idx: int) -> Optional[str]:
+    for j in range(start_idx, max(-1, start_idx - 40), -1):
+        theorem = re.search(r"theorem\s+([A-Za-z_][A-Za-z0-9_]*)", lines[j])
+        if theorem:
+            return _name_from_attribution(theorem.group(1), from_def=False)
+        result_def = _DEF_RESULT_RE.search(lines[j])
+        if result_def:
+            return _name_from_attribution(result_def.group(1), from_def=True)
+    return None
+
+
+def _source_path_candidates(
+    file_path: str,
+    source_root: Optional[Path],
+) -> List[Path]:
+    raw = Path(file_path)
+    candidates: List[Path] = []
+    if source_root is not None and not raw.is_absolute():
+        candidates.append(source_root / raw)
+    candidates.append(raw)
+    normalised = Path(file_path.replace("./", ""))
+    if normalised != raw:
+        if source_root is not None and not normalised.is_absolute():
+            candidates.append(source_root / normalised)
+        candidates.append(normalised)
+    return candidates
+
+
+def _source_attribution(
+    file_path: Optional[str],
+    line_no: Optional[int],
+    source_root: Optional[Path],
+) -> Optional[str]:
+    if file_path is None or line_no is None:
+        return None
+    for candidate in _source_path_candidates(file_path, source_root):
+        if not candidate.exists():
+            continue
+        source_lines = candidate.read_text().splitlines()
+        if not source_lines:
+            return None
+        start_idx = min(max(line_no - 1, 0), len(source_lines) - 1)
+        return _attribution_in_text(source_lines, start_idx)
+    return None
+
+
+def _diagnostic_attribution(
+    lines: List[str],
+    idx: int,
+    source_root: Optional[Path],
+) -> Tuple[Optional[str], Optional[str]]:
+    file_path, line_no = _diagnostic_location(lines[idx])
+    source_name = _source_attribution(file_path, line_no, source_root)
+    if source_name is not None:
+        return file_path, source_name
+
+    log_name = _attribution_in_text(lines, idx)
+    if log_name is not None:
+        for j in range(idx, max(-1, idx - 40), -1):
+            if file_path is None:
+                file_path, _line_no = _diagnostic_location(lines[j])
+            if file_path is not None:
+                break
+        return file_path, log_name
+    return file_path, None
+
+
 def _failed_theorem_attributions(
     build_output: str,
+    source_root: Optional[Path] = None,
 ) -> List[Tuple[Optional[str], str]]:
     """Return ``(file_path, theorem_name)`` for every attributable failure.
 
@@ -85,38 +168,10 @@ def _failed_theorem_attributions(
     for idx, line in enumerate(lines):
         if not (_SORRY_RE.search(line) or _ERROR_RE.search(line)):
             continue
-        file_match = _FILE_PREFIX_RE.match(line)
-        file_path: Optional[str] = file_match.group(1) if file_match else None
-        attribution: Optional[str] = None
-        attribution_from_def = False
-        for j in range(idx, max(-1, idx - 12), -1):
-            if file_path is None:
-                fm = _FILE_PREFIX_RE.match(lines[j])
-                if fm:
-                    file_path = fm.group(1)
-            m = re.search(r"theorem\s+([A-Za-z_][A-Za-z0-9_]*)", lines[j])
-            if m:
-                attribution = m.group(1)
-                break
-            dm = _DEF_RESULT_RE.search(lines[j])
-            if dm:
-                # Errors inside a body-semantics ``def`` block belong
-                # to the atom named by the camelCase prefix of the
-                # ``def``'s identifier (without the ``Result`` suffix).
-                # ``_camel_to_snake`` already returns the originating
-                # atom name verbatim, so we mark this attribution as
-                # "from def" to skip the ``_correct`` suffix stripping
-                # that only applies to ``theorem <atom>_correct`` names.
-                attribution = _camel_to_snake(dm.group(1))
-                attribution_from_def = True
-                break
-        if not attribution:
+        file_path, attribution = _diagnostic_attribution(lines, idx, source_root)
+        if attribution is None:
             continue
-        if not attribution_from_def and attribution.endswith("_correct"):
-            name = attribution[: -len("_correct")]
-        else:
-            name = attribution
-        key = (file_path, name)
+        key = (file_path, attribution)
         if key in seen:
             continue
         seen.add(key)
@@ -152,31 +207,26 @@ def _failed_theorem_names(build_output: str) -> List[str]:
     return failures
 
 
-def _has_unattributable_failures(build_output: str) -> bool:
+def _has_unattributable_failures(
+    build_output: str,
+    source_root: Optional[Path] = None,
+) -> bool:
     """Return True iff ``build_output`` contains an ``error:`` /
     ``sorry`` diagnostic that cannot be attributed to a specific
     theorem.
 
     File-level errors (e.g. a failing ``import MumeiLean`` at the top
     of a generated file) appear before any ``theorem`` declaration, so
-    the backward-walk in :func:`_failed_theorem_names` cannot pin them
-    to an atom. Callers should treat *all* lifted atoms in the affected
-    build as failed when this returns ``True`` to avoid silently
-    marking them ``lean_verified``.
+    the attribution pass cannot pin them to an atom. Callers should
+    treat *all* lifted atoms in the affected build as failed when this
+    returns ``True`` to avoid silently marking them ``lean_verified``.
     """
     lines = build_output.splitlines()
     for idx, line in enumerate(lines):
         if not (_SORRY_RE.search(line) or _ERROR_RE.search(line)):
             continue
-        attributed = False
-        for j in range(idx, max(-1, idx - 12), -1):
-            if re.search(r"theorem\s+([A-Za-z_][A-Za-z0-9_]*)", lines[j]):
-                attributed = True
-                break
-            if _DEF_RESULT_RE.search(lines[j]):
-                attributed = True
-                break
-        if not attributed:
+        _file_path, attribution = _diagnostic_attribution(lines, idx, source_root)
+        if attribution is None:
             return True
     return False
 

@@ -171,10 +171,13 @@ def test_main_dry_run_with_body_semantics_fixture(tmp_path: Path):
     )
     assert rc == 0
     text = (out_dir / "Generated" / "Std" / "Math" / "Abs.lean").read_text()
-    assert "def absSaturatingAutoResult" in text
-    assert "h_body : result = absSaturatingAutoResult x" in text
+    assert "def absSaturatingResult" in text
+    assert "if x = ( 0 - 9223372036854775807 - 1 ) then 9223372036854775807" in text
+    assert "else if x ≥ 0 then x else 0 - x" in text
+    assert "h_body : result = absSaturatingResult x" in text
     assert "rw [h_body]" in text
-    assert "mumei_arith_deep <;> sorry" in text
+    assert "mumei_arith_deep" in text
+    assert "sorry" not in text
 
 
 @pytest.mark.skipif(not _have_lake(),
@@ -184,18 +187,19 @@ def test_main_dry_run_with_body_semantics_fixture(tmp_path: Path):
 def test_body_semantics_bridge_e2e_exports_lean_verified(tmp_path: Path):
     fixture = Path(__file__).resolve().parent / "fixtures" / "std_math_abs.proof-cert.json"
     out_cert = tmp_path / "std_math_abs.lean-cert.json"
-    out_dir = tmp_path / "generated"
+    repo_root = Path(__file__).resolve().parents[1]
     rc = main(
         [
             "--cert", str(fixture),
-            "--out-dir", str(out_dir),
+            "--out-dir", str(repo_root / "generated"),
+            "--repo-dir", str(repo_root),
             "--lean-cert-out", str(out_cert),
             "--module-prefix", "Generated",
         ]
     )
     assert rc == 0
     payload = json.loads(out_cert.read_text())
-    atom = next(a for a in payload["atoms"] if a["name"] == "abs_saturating_auto")
+    atom = next(a for a in payload["atoms"] if a["name"] == "abs_saturating")
     assert atom["z3_check_result"] == "lean_verified"
     assert atom["status"] == "verified"
 
@@ -216,7 +220,7 @@ def test_body_semantics_export_path_marks_verified_with_clean_lake_log(
     )
     assert rc == 0
     payload = json.loads(out_cert.read_text())
-    atom = next(a for a in payload["atoms"] if a["name"] == "abs_saturating_auto")
+    atom = next(a for a in payload["atoms"] if a["name"] == "abs_saturating")
     assert atom["z3_check_result"] == "lean_verified"
 
 

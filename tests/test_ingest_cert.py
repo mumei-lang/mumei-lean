@@ -122,10 +122,8 @@ def test_module_to_lean_namespace_capitalises_and_sanitises():
 
 
 def test_render_theorem_includes_atom_name_and_mumei_arith_body():
-    # PR 4: render_theorem now defaults to ``mumei_arith <;> sorry``
-    # (mathlib4-backed automation with a ``sorry`` fallback) instead
-    # of a bare ``sorry``. The ``sorry`` substring is still present so
-    # ``scripts/export_cert.py``'s warning detection keeps working.
+    # Generated obligations use automation directly; remaining subgoals
+    # are reported as Lean build failures rather than masked by ``sorry``.
     cert = _make_certificate(
         "m.mm",
         [_make_atom("inc", requires="x > 0", ensures="result >= x")],
@@ -133,7 +131,8 @@ def test_render_theorem_includes_atom_name_and_mumei_arith_body():
     [atom] = collect_unknown_atoms(cert)
     rendered = render_theorem(atom)
     assert "theorem inc_correct" in rendered
-    assert "mumei_arith <;> sorry" in rendered
+    assert "mumei_arith" in rendered
+    assert "sorry" not in rendered
     # both x and result should appear in the params declaration
     assert "x" in rendered
     assert "result" in rendered
@@ -160,7 +159,8 @@ def test_render_theorem_injects_body_semantics_for_simple_body():
     assert "(h_body : result = absAutoResult x)" in rendered
     assert "rw [h_body]" in rendered
     assert "unfold absAutoResult" in rendered
-    assert "mumei_arith_deep <;> sorry" in rendered
+    assert "mumei_arith_deep" in rendered
+    assert "sorry" not in rendered
 
 
 def test_render_theorem_falls_back_for_complex_body():
@@ -179,7 +179,8 @@ def test_render_theorem_falls_back_for_complex_body():
     rendered = render_theorem(atom)
     assert "def customResult" not in rendered
     assert "body semantics unsupported" in rendered
-    assert "mumei_arith <;> sorry" in rendered
+    assert "mumei_arith" in rendered
+    assert "sorry" not in rendered
 
 
 def test_render_theorem_falls_back_when_body_references_result():
@@ -198,7 +199,8 @@ def test_render_theorem_falls_back_when_body_references_result():
     rendered = render_theorem(atom)
     assert "def selfRefResult" not in rendered
     assert "body semantics unsupported" in rendered
-    assert "mumei_arith <;> sorry" in rendered
+    assert "mumei_arith" in rendered
+    assert "sorry" not in rendered
 
 
 def test_render_theorem_does_not_add_result_param_for_substring_matches():
@@ -305,7 +307,8 @@ def test_render_theorem_forall_contract_uses_lean_quantifier_and_list_typing():
     # (List.get! takes ``Nat``; ``i`` is bound at ``Int`` by ``forall``.)
     assert "arr.get! i.toNat" in rendered
     # Default body now uses the mumei_arith automation.
-    assert "mumei_arith <;> sorry" in rendered
+    assert "mumei_arith" in rendered
+    assert "sorry" not in rendered
     # No unproven marker — this contract is fully within the v2 surface.
     assert "TODO: unproven" not in rendered
 

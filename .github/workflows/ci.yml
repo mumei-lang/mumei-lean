@@ -76,7 +76,7 @@ jobs:
           python - <<'PY'
           import json
           payload = json.load(open("out/std_math_abs.lean-cert.json"))
-          atom = next(a for a in payload["atoms"] if a["name"] == "abs_saturating_auto")
+          atom = next(a for a in payload["atoms"] if a["name"] == "abs_saturating")
           assert atom["z3_check_result"] == "lean_verified", atom
           PY
 

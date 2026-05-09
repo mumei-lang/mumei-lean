@@ -315,12 +315,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.lean_cert_out is None:
         parser.error("--lean-cert-out is required unless --no-export is set")
 
-    attributions = _failed_theorem_attributions(build_log)
+    attributions = _failed_theorem_attributions(build_log, source_root=args.repo_dir)
     # If the build log has a failure we couldn't attribute to a
     # specific theorem (e.g. a file-level ``import`` error), we cannot
     # safely tell which atoms succeeded — fall back to the same
     # conservative behaviour as ``lake_missing``.
-    unattributable = (not lake_missing) and _has_unattributable_failures(build_log)
+    unattributable = (not lake_missing) and _has_unattributable_failures(
+        build_log,
+        source_root=args.repo_dir,
+    )
     # ``lake build`` returned non-zero but neither sorry nor compile
     # errors matched (e.g. infrastructure errors like ``error: cannot
     # resolve dependency 'mathlib'`` whose ``error:`` is not preceded

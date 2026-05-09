@@ -292,15 +292,13 @@ def render_theorem(atom: IngestedAtom) -> str:
         h_body_param = f" (h_body : result = {result_name}{result_args})"
 
     # Default tactic body: try ``mumei_arith`` (mathlib4-backed
-    # ``omega`` / ``linarith`` / ``norm_num`` / ``simp`` cascade) on
-    # every subgoal, then ``sorry`` whatever it could not close. When
-    # ``mumei_arith`` discharges the obligation the ``sorry`` is
-    # unreachable and ``lake build`` emits no warning, so
-    # ``scripts/export_cert.py`` records the atom as ``lean_verified``.
+    # ``omega`` / ``linarith`` / ``norm_num`` / ``simp`` cascade). Any
+    # obligation this cannot close is left as a Lean build failure so
+    # ``scripts/export_cert.py`` can attribute it to the owning atom.
     if use_body_semantics:
-        body = f"  rw [h_body]\n  unfold {result_name}\n  mumei_arith_deep <;> sorry"
+        body = f"  rw [h_body]\n  unfold {result_name}\n  mumei_arith_deep"
     else:
-        body = "  mumei_arith <;> sorry"
+        body = "  mumei_arith"
     notes: List[str] = []
     if req.is_partial or ens.is_partial:
         notes.append(
@@ -339,8 +337,8 @@ def render_module(module_key: str, prefix: str, atoms: List[IngestedAtom]) -> st
         "Do **not** edit this file by hand: it is regenerated on every\n"
         "`bridge.py` invocation. Atoms whose `z3_check_result` is\n"
         "`unknown` in the source `.proof-cert.json` are emitted here as\n"
-        "Lean theorem statements with `sorry` placeholders for the proof\n"
-        "body.\n"
+        "Lean theorem statements that must be discharged by automation;\n"
+        "unclosed goals are reported as build failures.\n"
         "-/\n\n"
         f"namespace {namespace}\n\n"
         "open MumeiLean\n\n"

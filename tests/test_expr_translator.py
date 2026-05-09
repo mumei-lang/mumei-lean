@@ -259,6 +259,26 @@ def test_translate_body_handles_conditionals_and_arithmetic():
     assert result.is_partial is False
 
 
+def test_translate_body_handles_saturating_abs_pattern():
+    result = translate_body(
+        "if x == (0 - 9223372036854775807 - 1) then 9223372036854775807 "
+        "else if x >= 0 then x else 0 - x"
+    )
+    assert result.lean_expr == (
+        "if x = ( 0 - 9223372036854775807 - 1 ) then 9223372036854775807 "
+        "else if x ≥ 0 then x else 0 - x"
+    )
+    assert result.identifiers == ["x"]
+    assert result.is_partial is False
+
+
+def test_translate_body_handles_saturating_lower_bound_pattern():
+    result = translate_body("if x < MIN then MIN else x")
+    assert result.lean_expr == "if x < MIN then MIN else x"
+    assert result.identifiers == ["x", "MIN"]
+    assert result.is_partial is False
+
+
 def test_translate_body_handles_match_expression():
     result = translate_body("match x { 0 => 0, 1 => 1, _ => x + 1 }")
     assert result.lean_expr == "(match x with | 0 => 0 | 1 => 1 | _ => x + 1)"

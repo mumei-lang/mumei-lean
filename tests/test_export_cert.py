@@ -233,3 +233,21 @@ def test_failed_theorem_attributions_emits_none_when_no_file_prefix():
     )
     attributions = _failed_theorem_attributions(log)
     assert attributions == [(None, "orphan")]
+
+
+def test_failed_theorem_attributions_reads_source_for_declaration_sorry(tmp_path: Path):
+    source = tmp_path / "generated" / "Generated" / "Std" / "Math" / "Abs.lean"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "import MumeiLean\n\n"
+        "theorem abs_saturating_correct (x result : Int) :\n"
+        "    (True) → (result ≥ 0) := by\n"
+        "  mumei_arith <;> sorry\n"
+    )
+    log = (
+        "warning: ./generated/Generated/Std/Math/Abs.lean:3:8: "
+        "declaration uses 'sorry'\n"
+    )
+    attributions = _failed_theorem_attributions(log, source_root=tmp_path)
+    assert attributions == [("./generated/Generated/Std/Math/Abs.lean", "abs_saturating")]
+    assert _has_unattributable_failures(log, source_root=tmp_path) is False

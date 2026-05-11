@@ -28,12 +28,18 @@ def test_patterns_lean_declares_expected_library():
     for declaration in (
         "theorem add_bounded",
         "theorem repeated_add_bounded",
+        "theorem bounded_mul_with_overflow_check",
+        "theorem clamp_preserves_order",
+        "theorem round_trip_conversion",
+        "theorem sum_invariant",
+        "theorem count_invariant",
         "theorem transfer_preserves_sum",
         "theorem list_transfer_preserves_sum",
         "theorem monotone_comp",
         "theorem counter_monotone",
     ):
         assert declaration in src
+    assert "def clamp" in src
     assert "List.set" in src or ".set" in src
     assert ".sum" in src
     assert "by sorry" not in src

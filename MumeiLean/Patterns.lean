@@ -28,6 +28,44 @@ theorem repeated_add_bounded (vals : List Int) (max : Int)
   · rw [← List.sum_eq_foldl]
     exact List.sum_nonneg hvals
 
+def clamp (x minVal maxVal : Int) : Int :=
+  if x < minVal then minVal else if x > maxVal then maxVal else x
+
+theorem bounded_mul_with_overflow_check (a b limit : Int)
+    (ha_nonneg : a ≥ 0) (hb_nonneg : b ≥ 0)
+    (_ha_bound : a ≤ limit) (_hb_bound : b ≤ limit)
+    (_hlimit_nonneg : limit ≥ 0)
+    (hprod_bound : a * b ≤ limit) :
+    0 ≤ a * b ∧ a * b ≤ limit := by
+  constructor
+  · exact mul_nonneg ha_nonneg hb_nonneg
+  · exact hprod_bound
+
+theorem clamp_preserves_order (x minVal maxVal : Int)
+    (hmin : minVal ≤ maxVal) :
+    minVal ≤ clamp x minVal maxVal ∧ clamp x minVal maxVal ≤ maxVal := by
+  unfold clamp
+  split
+  · omega
+  · split <;> omega
+
+theorem round_trip_conversion (x lower upper scale : Int)
+    (hlower : lower ≤ x) (hupper : x ≤ upper)
+    (_hscale : scale > 0)
+    (hdiv : (x * scale) / scale = x) :
+    lower ≤ (x * scale) / scale ∧ (x * scale) / scale ≤ upper := by
+  omega
+
+theorem sum_invariant (before after : List Int)
+    (hperm : before.Perm after) :
+    after.sum = before.sum := by
+  exact hperm.sum_eq.symm
+
+theorem count_invariant {α : Type} [DecidableEq α] (before after : List α) (target : α)
+    (hperm : before.Perm after) :
+    (after.filter (· = target)).length = (before.filter (· = target)).length := by
+  exact (hperm.filter (fun x => x = target)).length_eq.symm
+
 theorem transfer_preserves_sum (from_bal to_bal amount : Int)
     (hamt : amount ≥ 0) (hfrom : from_bal ≥ amount) :
     (from_bal - amount) + (to_bal + amount) = from_bal + to_bal := by

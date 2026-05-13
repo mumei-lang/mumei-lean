@@ -8,6 +8,7 @@ import MumeiLean.Pilot
 import MumeiLean.Ownership
 import MumeiLean.Patterns
 import MumeiLean.Settlement
+import MumeiLean.SmartContract
 import MumeiLean.StdMathAbs
 
 /-!
@@ -33,6 +34,8 @@ Top-level layout:
   conservation, monotonicity)
 * `MumeiLean.Settlement` – RTGS settlement temporal safety + balance
   conservation
+* `MumeiLean.SmartContract` – reentrancy guard and withdrawal balance
+  preservation proofs
 * `MumeiLean.StdMathAbs` – hand-written std/math + std/list proof
   witnesses for real standard-library atom contracts
 

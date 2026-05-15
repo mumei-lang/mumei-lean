@@ -163,6 +163,21 @@ def test_unbounded_quantifier_with_logical_connective():
     assert result.is_partial is False
 
 
+def test_stray_colon_marks_partial():
+    result = translate_contract("x : 5")
+    assert result.is_partial is True
+
+
+def test_unbounded_quantifier_requires_immediate_colon():
+    result = translate_contract("forall x exists y: y > x")
+    assert result.is_partial is True
+    assert result.lean_expr != "(∀ x : Int, y > x)"
+
+    malformed = translate_contract("forall x + y: y > 0")
+    assert malformed.is_partial is True
+    assert "y" in malformed.identifiers
+
+
 def test_exists_call_form():
     result = translate_contract("exists(x, x == 0)")
     assert result.lean_expr == "(∃ x : Int, x = 0)"

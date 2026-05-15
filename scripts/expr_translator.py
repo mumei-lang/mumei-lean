@@ -313,9 +313,9 @@ def _parse_unbounded_quantifier(
     var_kind, var_name = tokens[start + 1]
     if var_kind != "ID":
         return None
-    colon_idx = _find_quantifier_colon(tokens, start + 2, len(tokens))
-    if colon_idx == -1:
+    if tokens[start + 2] != ("OP", ":"):
         return None
+    colon_idx = start + 2
     body_start = colon_idx + 1
     if body_start >= len(tokens):
         return None
@@ -598,6 +598,8 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
             continue
 
         if kind == "OP":
+            if text == ":":
+                is_partial = True
             pieces.append(_OP_TRANSLATION.get(text, text))
         elif kind == "BOOL":
             pieces.append("True" if text == "true" else "False")

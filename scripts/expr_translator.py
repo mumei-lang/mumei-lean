@@ -14,7 +14,7 @@ subset:
   ``if .. then .. else ..``, ``match`` expressions,
   ``arr[i]`` access, and known calls:
   ``len``, ``abs``, ``min``, ``max``, ``old``, ``starts_with``, ``ends_with``,
-  ``contains``, ``not_contains``, ``sum``, ``count``
+  ``contains``, ``not_contains``, ``sum``, ``count``, ``mod``, ``pow``, ``phi``
 
 Anything outside this subset is preserved verbatim and emitted as a
 Lean fragment that almost certainly will not type-check; the generated
@@ -61,6 +61,7 @@ _RESERVED_IDENTS: Set[str] = {
     # parameters if they show up as bare ID tokens.
     "forall", "exists", "len", "abs", "min", "max", "old",
     "starts_with", "ends_with", "contains", "not_contains", "sum", "count",
+    "mod", "pow", "phi",
     "if", "then", "else", "match", "_",
     # Lean keywords we never want to over-bind even if the contract uses
     # them as identifier names (it should not, but defensively).
@@ -91,6 +92,9 @@ _KNOWN_FUNCTIONS = {
     "not_contains": "mumei_not_contains",
     "sum": "mumei_sum",
     "count": "mumei_count",
+    "mod": "MumeiLean.CryptoHelpers.mumei_mod",
+    "pow": "MumeiLean.CryptoHelpers.mumei_pow",
+    "phi": "MumeiLean.CryptoHelpers.mumei_phi",
 }
 
 _KNOWN_FUNCTION_ARITY = {
@@ -105,9 +109,17 @@ _KNOWN_FUNCTION_ARITY = {
     "not_contains": 2,
     "sum": 2,
     "count": 2,
+    "mod": 2,
+    "pow": 2,
+    "phi": 1,
 }
 
 _QUANTIFIER_KEYWORDS = {"forall", "exists"}
+_STRING_FUNCTIONS = {"starts_with", "ends_with", "contains", "not_contains"}
+_ARRAY_FIRST_ARG_FUNCTIONS = {"sum", "count"}
+_SCALAR_CALL_FUNCTIONS = (
+    set(_KNOWN_FUNCTIONS) - _STRING_FUNCTIONS - _ARRAY_FIRST_ARG_FUNCTIONS - {"old"}
+)
 
 @dataclass
 class TranslationResult:
@@ -611,7 +623,7 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
         elif kind == "STR":
             pieces.append(text)
         else:
-            # Bare ``len`` / ``abs`` / ``min`` / ``max`` (without a
+            # Bare known helper names (without a
             # following ``(``) cannot be lowered to a Lean helper call
             # and would reference an undeclared name. Flag as partial so
             # the generated theorem carries a ``-- TODO: unproven``
@@ -711,7 +723,7 @@ def translate_contract(source: str) -> TranslationResult:
     for j, (kind, text) in enumerate(tokens):
         if (
             kind == "ID"
-            and text in ("starts_with", "ends_with", "contains", "not_contains")
+            and text in _STRING_FUNCTIONS
             and j + 1 < len(tokens)
             and tokens[j + 1] == ("OP", "(")
         ):
@@ -728,7 +740,7 @@ def translate_contract(source: str) -> TranslationResult:
                         string_idents.append(at)
     scalar_call_idents: List[str] = []
     # Type-conflict guard: an identifier passed to a scalar known call
-    # (e.g. ``len`` / ``abs`` / ``min`` / ``max``) that *also* appears in
+    # (e.g. ``len`` / ``abs`` / ``min`` / ``max`` / ``mod`` / ``pow``) that *also* appears in
     # ``arr[i]`` position
     # or string-predicate position would be typed non-``Int`` by the
     # renderer, producing a Lean type error. Flag such contracts as partial
@@ -737,7 +749,7 @@ def translate_contract(source: str) -> TranslationResult:
     for j, (kind, text) in enumerate(tokens):
         if (
             kind == "ID"
-            and text in ("len", "abs", "min", "max", "sum", "count")
+            and text in _SCALAR_CALL_FUNCTIONS | _ARRAY_FIRST_ARG_FUNCTIONS
             and j + 1 < len(tokens)
             and tokens[j + 1] == ("OP", "(")
         ):
@@ -747,9 +759,13 @@ def translate_contract(source: str) -> TranslationResult:
             arg_parts = _split_top_level(tokens, j + 2, close)
             # ``sum`` / ``count`` take a ``List Int`` first argument, so
             # identifiers there are legitimately non-scalar and must not
-            # trip the scalar-vs-array conflict guard below.
-            if text in ("sum", "count"):
+            # trip the scalar-vs-array conflict guard below. String
+            # predicates take ``String`` arguments, so they also must not
+            # trip the scalar-vs-string guard.
+            if text in _ARRAY_FIRST_ARG_FUNCTIONS:
                 arg_parts_to_scan = arg_parts[1:]
+            elif text in _STRING_FUNCTIONS:
+                arg_parts_to_scan = []
             else:
                 arg_parts_to_scan = arg_parts
             for ap in arg_parts_to_scan:

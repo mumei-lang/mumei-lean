@@ -241,6 +241,20 @@ def test_old_function_call_lowers_to_old_identifier():
     assert result.is_partial is False
 
 
+def test_old_does_not_trigger_scalar_type_conflicts():
+    result = translate_contract("old(arr) >= 0 && arr[0] >= 0")
+    assert "old_arr ≥ 0" in result.lean_expr, result.lean_expr
+    assert "arr.get! 0" in result.lean_expr
+    assert result.array_identifiers == ["arr"]
+    assert result.is_partial is False
+
+    string_result = translate_contract('old(name) >= 0 && starts_with(name, "Mr")')
+    assert "old_name ≥ 0" in string_result.lean_expr, string_result.lean_expr
+    assert '(mumei_starts_with name "Mr")' in string_result.lean_expr
+    assert string_result.string_identifiers == ["name"]
+    assert string_result.is_partial is False
+
+
 def test_starts_with_function_call():
     result = translate_contract('starts_with(url, "https://")')
     assert result.lean_expr == '(mumei_starts_with url "https://")'
@@ -293,6 +307,22 @@ def test_count_function_call():
     assert result.identifiers == ["arr"]
     assert result.array_identifiers == ["arr"]
     assert result.is_partial is False
+
+
+def test_crypto_function_calls():
+    result = translate_contract("mod(pow(signature, public_key), n) == message")
+    assert (
+        "(MumeiLean.CryptoHelpers.mumei_mod "
+        "(MumeiLean.CryptoHelpers.mumei_pow signature public_key) n)"
+        in result.lean_expr
+    )
+    assert "message" in result.identifiers
+    assert result.is_partial is False
+
+    phi_result = translate_contract("phi(n) > 0")
+    assert phi_result.lean_expr == "(MumeiLean.CryptoHelpers.mumei_phi n) > 0"
+    assert phi_result.identifiers == ["n"]
+    assert phi_result.is_partial is False
 
 
 def test_if_then_else_expression():

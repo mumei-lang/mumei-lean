@@ -7,6 +7,8 @@ import MumeiLean.CertWriter
 import MumeiLean.Pilot
 import MumeiLean.Ownership
 import MumeiLean.Patterns
+import MumeiLean.CryptoHelpers
+import MumeiLean.Crypto
 import MumeiLean.Settlement
 import MumeiLean.SmartContract
 import MumeiLean.StdMathAbs
@@ -32,6 +34,10 @@ Top-level layout:
   proof that transfer is unreachable without `accept`
 * `MumeiLean.Patterns`   – reusable SC proof patterns (addition bounds,
   conservation, monotonicity)
+* `MumeiLean.CryptoHelpers` – helper functions for modular arithmetic,
+  powers, and Euler totient expressions emitted by the bridge translator
+* `MumeiLean.Crypto`     – reusable cryptographic proof patterns for
+  RSA-style signature checks and finite-field bounds
 * `MumeiLean.Settlement` – RTGS settlement temporal safety + balance
   conservation
 * `MumeiLean.SmartContract` – reentrancy guard and withdrawal balance

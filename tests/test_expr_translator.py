@@ -295,6 +295,22 @@ def test_count_function_call():
     assert result.is_partial is False
 
 
+def test_crypto_function_calls():
+    result = translate_contract("mod(pow(signature, public_key), n) == message")
+    assert (
+        "(MumeiLean.CryptoHelpers.mumei_mod "
+        "(MumeiLean.CryptoHelpers.mumei_pow signature public_key) n)"
+        in result.lean_expr
+    )
+    assert "message" in result.identifiers
+    assert result.is_partial is False
+
+    phi_result = translate_contract("phi(n) > 0")
+    assert phi_result.lean_expr == "(MumeiLean.CryptoHelpers.mumei_phi n) > 0"
+    assert phi_result.identifiers == ["n"]
+    assert phi_result.is_partial is False
+
+
 def test_if_then_else_expression():
     result = translate_contract("if x > 0 then x else 0")
     assert result.lean_expr == "if x > 0 then x else 0"

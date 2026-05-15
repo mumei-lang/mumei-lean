@@ -10,7 +10,8 @@ subset:
 * arithmetic operators:   ``+``, ``-``, ``*``, ``/``, ``%``
 * integer / boolean / string literals, identifiers (including ``result``)
 * parentheses
-* bounded ``forall(..)``, ``if .. then .. else ..``, ``match`` expressions,
+* bounded ``forall(..)``, unbounded ``forall`` / ``exists`` quantifiers,
+  ``if .. then .. else ..``, ``match`` expressions,
   ``arr[i]`` access, and known calls:
   ``len``, ``abs``, ``min``, ``max``, ``old``, ``starts_with``, ``ends_with``,
   ``contains``, ``not_contains``, ``sum``, ``count``
@@ -40,11 +41,11 @@ _TOKEN_RE = re.compile(
     (?P<STR>"(?:\\.|[^"\\])*") |  # string literal
     (?P<NUM>\d+)                 |  # integer literal
     (?P<BOOL>\btrue\b|\bfalse\b) |  # boolean literal
-    (?P<KW>\bforall\b|\bif\b|\bthen\b|\belse\b|\bmatch\b) |  # keywords
+    (?P<KW>\bforall\b|\bexists\b|\bif\b|\bthen\b|\belse\b|\bmatch\b) |  # keywords
     (?P<ID>[A-Za-z_][A-Za-z0-9_]*) |  # identifier
     (?P<OP>
         ==|!=|>=|<=|&&|\|\||=>|
-        [+\-*/%<>!()\[\]{},]
+        [+\-*/%<>!()\[\]{},:]
     )
     """,
     re.VERBOSE,
@@ -58,7 +59,7 @@ _RESERVED_IDENTS: Set[str] = {
     # Mumei built-ins handled inline by ``_emit_tokens``. Listing them
     # keeps ``_extract_identifiers`` from binding them as theorem
     # parameters if they show up as bare ID tokens.
-    "forall", "len", "abs", "min", "max", "old",
+    "forall", "exists", "len", "abs", "min", "max", "old",
     "starts_with", "ends_with", "contains", "not_contains", "sum", "count",
     "if", "then", "else", "match", "_",
     # Lean keywords we never want to over-bind even if the contract uses
@@ -105,6 +106,8 @@ _KNOWN_FUNCTION_ARITY = {
     "sum": 2,
     "count": 2,
 }
+
+_QUANTIFIER_KEYWORDS = {"forall", "exists"}
 
 @dataclass
 class TranslationResult:
@@ -287,6 +290,38 @@ def _if_else_tail_is_supported(tokens: List[tuple]) -> bool:
     return True
 
 
+def _find_quantifier_colon(tokens: List[tuple], start: int, end: int) -> int:
+    depth = 0
+    for j in range(start, end):
+        kind, text = tokens[j]
+        if kind == "OP" and text in ("(", "[", "{"):
+            depth += 1
+        elif kind == "OP" and text in (")", "]", "}"):
+            depth -= 1
+        elif kind == "OP" and text == ":" and depth == 0:
+            return j
+    return -1
+
+
+def _parse_unbounded_quantifier(
+    tokens: List[tuple], start: int
+) -> Optional[Tuple[str, int, List[tuple]]]:
+    if start + 2 >= len(tokens):
+        return None
+    if tokens[start][0] != "KW" or tokens[start][1] not in _QUANTIFIER_KEYWORDS:
+        return None
+    var_kind, var_name = tokens[start + 1]
+    if var_kind != "ID":
+        return None
+    if tokens[start + 2] != ("OP", ":"):
+        return None
+    colon_idx = start + 2
+    body_start = colon_idx + 1
+    if body_start >= len(tokens):
+        return None
+    return var_name, body_start, tokens[body_start:]
+
+
 def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
     """Token-level emit pass with ``forall(..)``, known calls, ``arr[i]``,
     and unknown function-call rewrites.
@@ -403,10 +438,27 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
             i = n if close == n - 1 else close + 1
             continue
 
-        # forall(var, start, end, body) → (∀ var : Int, start ≤ var → var < end → body)
+        # forall var: body / exists var: body →
+        #   (∀ var : Int, body) / (∃ var : Int, body)
+        if kind == "KW" and text in _QUANTIFIER_KEYWORDS:
+            parsed = _parse_unbounded_quantifier(tokens, i)
+            if parsed is not None:
+                var_name, _body_start, body_tokens = parsed
+                body_src, p = _emit_tokens(body_tokens)
+                symbol = "∀" if text == "forall" else "∃"
+                pieces.append(f"({symbol} {var_name} : Int, {body_src})")
+                is_partial = is_partial or p
+                i = n
+                continue
+
+        # forall(var, start, end, body) →
+        #   (∀ var : Int, start ≤ var → var < end → body)
+        # exists(var, body) → (∃ var : Int, body)
+        # exists(var, start, end, body) →
+        #   (∃ var : Int, start ≤ var ∧ var < end ∧ body)
         if (
             kind == "KW"
-            and text == "forall"
+            and text in _QUANTIFIER_KEYWORDS
             and i + 1 < n
             and tokens[i + 1] == ("OP", "(")
         ):
@@ -417,13 +469,16 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                 i += 1
                 continue
             parts = _split_top_level(tokens, i + 2, close)
-            if len(parts) != 4:
+            is_bounded_forall = text == "forall" and len(parts) == 4
+            is_unbounded_exists = text == "exists" and len(parts) == 2
+            is_bounded_exists = text == "exists" and len(parts) == 4
+            if not (is_bounded_forall or is_unbounded_exists or is_bounded_exists):
                 # Malformed — fall back to verbatim.
                 pieces.append(text)
                 is_partial = True
                 i += 1
                 continue
-            var_tokens, start_tokens, end_tokens, body_tokens = parts
+            var_tokens = parts[0]
             if (
                 len(var_tokens) != 1
                 or var_tokens[0][0] != "ID"
@@ -434,14 +489,26 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                 i += 1
                 continue
             var_name = var_tokens[0][1]
-            start_src, p1 = _emit_tokens(start_tokens)
-            end_src, p2 = _emit_tokens(end_tokens)
-            body_src, p3 = _emit_tokens(body_tokens)
-            pieces.append(
-                f"(∀ {var_name} : Int, {start_src} ≤ {var_name} → "
-                f"{var_name} < {end_src} → {body_src})"
-            )
-            is_partial = is_partial or p1 or p2 or p3
+            if is_unbounded_exists:
+                body_src, p = _emit_tokens(parts[1])
+                pieces.append(f"(∃ {var_name} : Int, {body_src})")
+                is_partial = is_partial or p
+            else:
+                start_tokens, end_tokens, body_tokens = parts[1], parts[2], parts[3]
+                start_src, p1 = _emit_tokens(start_tokens)
+                end_src, p2 = _emit_tokens(end_tokens)
+                body_src, p3 = _emit_tokens(body_tokens)
+                if text == "forall":
+                    pieces.append(
+                        f"(∀ {var_name} : Int, {start_src} ≤ {var_name} → "
+                        f"{var_name} < {end_src} → {body_src})"
+                    )
+                else:
+                    pieces.append(
+                        f"(∃ {var_name} : Int, {start_src} ≤ {var_name} ∧ "
+                        f"{var_name} < {end_src} ∧ {body_src})"
+                    )
+                is_partial = is_partial or p1 or p2 or p3
             i = close + 1
             continue
 
@@ -531,6 +598,8 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
             continue
 
         if kind == "OP":
+            if text == ":":
+                is_partial = True
             pieces.append(_OP_TRANSLATION.get(text, text))
         elif kind == "BOOL":
             pieces.append("True" if text == "true" else "False")
@@ -717,7 +786,7 @@ def translate_contract(source: str) -> TranslationResult:
                 brace_depth -= 1
             elif (
                 (
-                    (kind == "KW" and text == "forall")
+                    (kind == "KW" and text in _QUANTIFIER_KEYWORDS)
                     or (kind == "ID" and text in _KNOWN_FUNCTIONS)
                 )
                 and j + 1 < len(tokens)
@@ -734,36 +803,38 @@ def translate_contract(source: str) -> TranslationResult:
                     is_partial = True
                     break
     # Free identifiers are everything except reserved names AND the
-    # bound variables of any ``forall``. The latter are still reported
+    # bound variables of any quantifier. The latter are still reported
     # as ID tokens by ``_extract_identifiers`` because we don't track
     # binder scope here; Lean will simply shadow them inside the
     # quantifier body, so emitting them as ``variable`` declarations
-    # would be wrong. Filter explicit forall-bound names out.
+    # would be wrong. Filter explicit quantifier-bound names out.
     bound: Set[str] = set()
     i = 0
     while i < len(tokens):
-        if (
-            tokens[i] == ("KW", "forall")
-            and i + 1 < len(tokens)
-            and tokens[i + 1] == ("OP", "(")
-        ):
-            close = _find_matching(tokens, i + 1, "(", ")")
-            if close != -1:
-                parts = _split_top_level(tokens, i + 2, close)
-                if (
-                    len(parts) == 4
-                    and len(parts[0]) == 1
-                    and parts[0][0][0] == "ID"
-                ):
-                    bound.add(parts[0][0][1])
+        kind, text = tokens[i]
+        if kind == "KW" and text in _QUANTIFIER_KEYWORDS:
+            parsed_unbounded = _parse_unbounded_quantifier(tokens, i)
+            if parsed_unbounded is not None:
+                bound.add(parsed_unbounded[0])
+            elif i + 1 < len(tokens) and tokens[i + 1] == ("OP", "("):
+                close = _find_matching(tokens, i + 1, "(", ")")
+                if close != -1:
+                    parts = _split_top_level(tokens, i + 2, close)
+                    valid_arity = len(parts) == 4 or (text == "exists" and len(parts) == 2)
+                    if (
+                        valid_arity
+                        and len(parts[0]) == 1
+                        and parts[0][0][0] == "ID"
+                    ):
+                        bound.add(parts[0][0][1])
         i += 1
     free = [name for name in _extract_identifiers(tokens) if name not in bound]
     for ident in string_idents:
         if ident in array_idents:
             is_partial = True
     # Scope-awareness guard: ``bound`` is a flat set so an ID shared
-    # between a forall's binder and a free occurrence outside that
-    # forall would be silently dropped from ``free``, producing Lean
+    # between a quantifier's binder and a free occurrence outside that
+    # quantifier would be silently dropped from ``free``, producing Lean
     # that references an undeclared name. Detect any such collision
     # and flag the contract as partial rather than emit broken output.
     if bound:
@@ -771,21 +842,23 @@ def translate_contract(source: str) -> TranslationResult:
         for j, (kind, text) in enumerate(tokens):
             while scope_stack and scope_stack[-1][0] <= j:
                 scope_stack.pop()
-            if (
-                kind == "KW"
-                and text == "forall"
-                and j + 1 < len(tokens)
-                and tokens[j + 1] == ("OP", "(")
-            ):
-                close = _find_matching(tokens, j + 1, "(", ")")
-                if close != -1:
-                    parts = _split_top_level(tokens, j + 2, close)
-                    if (
-                        len(parts) == 4
-                        and len(parts[0]) == 1
-                        and parts[0][0][0] == "ID"
-                    ):
-                        scope_stack.append((close, parts[0][0][1]))
+            if kind == "KW" and text in _QUANTIFIER_KEYWORDS:
+                parsed_unbounded = _parse_unbounded_quantifier(tokens, j)
+                if parsed_unbounded is not None:
+                    scope_stack.append((len(tokens), parsed_unbounded[0]))
+                elif j + 1 < len(tokens) and tokens[j + 1] == ("OP", "("):
+                    close = _find_matching(tokens, j + 1, "(", ")")
+                    if close != -1:
+                        parts = _split_top_level(tokens, j + 2, close)
+                        valid_arity = len(parts) == 4 or (
+                            text == "exists" and len(parts) == 2
+                        )
+                        if (
+                            valid_arity
+                            and len(parts[0]) == 1
+                            and parts[0][0][0] == "ID"
+                        ):
+                            scope_stack.append((close, parts[0][0][1]))
             elif kind == "ID" and text in bound:
                 if not any(name == text for _, name in scope_stack):
                     is_partial = True

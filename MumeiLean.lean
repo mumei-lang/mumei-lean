@@ -11,6 +11,7 @@ import MumeiLean.CryptoHelpers
 import MumeiLean.Crypto
 import MumeiLean.Settlement
 import MumeiLean.SmartContract
+import MumeiLean.MedicalDevice
 import MumeiLean.StdMathAbs
 
 /-!
@@ -42,6 +43,8 @@ Top-level layout:
   conservation
 * `MumeiLean.SmartContract` – reentrancy guard and withdrawal balance
   preservation proofs
+* `MumeiLean.MedicalDevice` – insulin-pump dosage bound and cumulative
+  safety proofs
 * `MumeiLean.StdMathAbs` – hand-written std/math + std/list proof
   witnesses for real standard-library atom contracts
 

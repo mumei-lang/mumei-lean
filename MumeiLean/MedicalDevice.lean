@@ -18,7 +18,7 @@ theorem no_overdose_with_hourly_limit
     requested_dose ≤ max_dose_per_hour - current_hour_dosage := by
   omega
 
-theorem cumulative_dosage_monotone
+theorem cumulative_dosage_bounded
     (dosages : List Int)
     (max_dose_per_hour : Int)
     (h_nonneg : ∀ d ∈ dosages, d ≥ 0)

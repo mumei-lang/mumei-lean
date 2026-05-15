@@ -135,6 +135,41 @@ def test_forall_arity_mismatch_marks_partial():
     assert result.is_partial is True
 
 
+def test_unbounded_forall_colon_form():
+    result = translate_contract("forall x: x >= 0")
+    assert result.lean_expr == "(∀ x : Int, x ≥ 0)"
+    assert result.identifiers == []
+    assert result.is_partial is False
+
+
+def test_unbounded_exists_colon_form():
+    result = translate_contract("exists x: x == 0")
+    assert result.lean_expr == "(∃ x : Int, x = 0)"
+    assert result.identifiers == []
+    assert result.is_partial is False
+
+
+def test_nested_unbounded_quantifiers():
+    result = translate_contract("forall i: forall j: i < j")
+    assert result.lean_expr == "(∀ i : Int, (∀ j : Int, i < j))"
+    assert result.identifiers == []
+    assert result.is_partial is False
+
+
+def test_unbounded_quantifier_with_logical_connective():
+    result = translate_contract("forall x: x >= 0 && x < n")
+    assert result.lean_expr == "(∀ x : Int, x ≥ 0 ∧ x < n)"
+    assert result.identifiers == ["n"]
+    assert result.is_partial is False
+
+
+def test_exists_call_form():
+    result = translate_contract("exists(x, x == 0)")
+    assert result.lean_expr == "(∃ x : Int, x = 0)"
+    assert result.identifiers == []
+    assert result.is_partial is False
+
+
 def test_geq_and_leq_become_unicode():
     result_geq = translate_contract("x >= 0")
     assert "≥" in result_geq.lean_expr

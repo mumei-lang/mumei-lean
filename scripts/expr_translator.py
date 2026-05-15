@@ -117,6 +117,9 @@ _KNOWN_FUNCTION_ARITY = {
 _QUANTIFIER_KEYWORDS = {"forall", "exists"}
 _STRING_FUNCTIONS = {"starts_with", "ends_with", "contains", "not_contains"}
 _ARRAY_FIRST_ARG_FUNCTIONS = {"sum", "count"}
+_SCALAR_CALL_FUNCTIONS = (
+    set(_KNOWN_FUNCTIONS) - _STRING_FUNCTIONS - _ARRAY_FIRST_ARG_FUNCTIONS - {"old"}
+)
 
 @dataclass
 class TranslationResult:
@@ -746,7 +749,7 @@ def translate_contract(source: str) -> TranslationResult:
     for j, (kind, text) in enumerate(tokens):
         if (
             kind == "ID"
-            and text in _KNOWN_FUNCTIONS
+            and text in _SCALAR_CALL_FUNCTIONS | _ARRAY_FIRST_ARG_FUNCTIONS
             and j + 1 < len(tokens)
             and tokens[j + 1] == ("OP", "(")
         ):

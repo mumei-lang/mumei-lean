@@ -155,6 +155,37 @@ def test_upgrade_certificate_handles_bundle():
     assert upgraded["lean_version"] == "x"
 
 
+def test_upgrade_certificate_handles_escalation_bundle_metadata():
+    bundle = {
+        "version": "1.0",
+        "file": "std/math.mm",
+        "summary": {},
+        "candidates": [
+            {
+                **_atom("inc"),
+                "escalation_reason": "z3_unknown",
+                "logic_fragment_tags": ["quantifier_alternation"],
+            },
+            {**_atom("manual"), "escalation_reason": "manual_review"},
+        ],
+    }
+    upgraded = upgrade_certificate(
+        cert=bundle,
+        proved_atoms=["inc", "manual"],
+        failed_atoms=["manual"],
+        lean_version="x",
+        atom_metadata={
+            "inc": {"status": LEAN_VERIFIED, "proof_path": "Generated/Math.lean"},
+            "manual": {"status": "manual_required"},
+        },
+    )
+    by_name = {a["name"]: a for a in upgraded["candidates"]}
+    assert by_name["inc"]["z3_check_result"] == LEAN_VERIFIED
+    assert by_name["inc"]["lean_metadata"]["proof_path"] == "Generated/Math.lean"
+    assert by_name["manual"]["z3_check_result"] == "unknown"
+    assert by_name["manual"]["lean_metadata"]["status"] == "manual_required"
+
+
 def test_main_end_to_end(tmp_path: Path):
     cert_path = tmp_path / "cert.json"
     cert_path.write_text(json.dumps(_certificate([_atom("inc"), _atom("dec")])))

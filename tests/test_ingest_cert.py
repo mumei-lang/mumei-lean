@@ -87,6 +87,27 @@ def test_collect_unknown_atoms_filters_by_z3_check_result():
     assert [a.name for a in atoms] == ["a", "c"]
 
 
+def test_collect_unknown_atoms_handles_escalation_bundle():
+    bundle = {
+        "version": "1.0",
+        "file": "std/math.mm",
+        "summary": {},
+        "candidates": [
+            {
+                **_make_atom("nla", z3="timeout"),
+                "escalation_reason": "z3_timeout_or_resource_limit",
+                "logic_fragment_tags": ["nonlinear_arithmetic"],
+            }
+        ],
+    }
+    assert _classify_input(bundle) == "escalation_bundle"
+    [atom] = collect_unknown_atoms(bundle)
+    assert atom.name == "nla"
+    assert atom.module_key == "std/math"
+    assert atom.escalation_reason == "z3_timeout_or_resource_limit"
+    assert atom.logic_fragment_tags == ["nonlinear_arithmetic"]
+
+
 def test_translate_expr_forall_pattern():
     result = _translate_expr("forall(i, 0, n, arr[i] >= 0)")
 

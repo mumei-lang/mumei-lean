@@ -5,12 +5,14 @@ It accepts either:
 
 * a per-module ``ProofCertificate`` JSON
   (``mumei-lang/mumei`` ``mumei-core/src/proof_cert.rs::ProofCertificate``),
-* or a ``ProofBundle`` JSON
+* a ``ProofBundle`` JSON
   (``proof_cert.rs::ProofBundle``, distributed as
-  ``std-proof-bundle.json`` via SI-5 Phase 3-C).
+  ``std-proof-bundle.json`` via SI-5 Phase 3-C),
+* or an ``EscalationBundle`` JSON emitted by ``mumei --emit escalation-bundle``.
 
-For every ``AtomCertificate`` whose ``z3_check_result`` is ``"unknown"``
-it emits a Lean source file under ``--out`` (default ``generated/``)
+For every ``AtomCertificate`` whose ``z3_check_result`` is ``"unknown"`` or
+whose escalation metadata marks it as a Lean candidate, it emits a Lean
+source file under ``--out`` (default ``generated/``)
 containing one ``theorem`` per atom of the form::
 
     theorem <atom_name>_correct
@@ -81,25 +83,40 @@ class IngestedAtom:
 
     z3_check_result: str
     status: str
+    escalation_reason: str
+    logic_fragment_tags: List[str]
+
+    @property
+    def is_partial_translation(self) -> bool:
+        body_partial = (
+            self.body_translation.is_partial if self.body_translation else False
+        )
+        return (
+            self.requires_translation.is_partial
+            or self.ensures_translation.is_partial
+            or body_partial
+        )
 
 
 def _classify_input(payload: Any) -> str:
     """Heuristically detect ``"certificate"`` vs ``"bundle"`` JSON.
 
-    The ``ProofBundle`` envelope always has a ``modules`` field, while
-    a ``ProofCertificate`` always has ``atoms``.
+    The ``ProofBundle`` envelope always has a ``modules`` field, an escalation
+    bundle has ``candidates``, and a ``ProofCertificate`` always has ``atoms``.
     """
     if not isinstance(payload, dict):
         raise ValueError(
-            "input JSON root must be an object (ProofCertificate or ProofBundle)"
+            "input JSON root must be an object (certificate or bundle)"
         )
     if "modules" in payload and isinstance(payload["modules"], dict):
         return "bundle"
+    if "candidates" in payload and isinstance(payload["candidates"], list):
+        return "escalation_bundle"
     if "atoms" in payload and isinstance(payload["atoms"], list):
         return "certificate"
     raise ValueError(
-        "input JSON does not look like a mumei ProofCertificate or ProofBundle: "
-        "missing both 'atoms' and 'modules'"
+        "input JSON does not look like a mumei ProofCertificate, ProofBundle, "
+        "or EscalationBundle: missing 'atoms', 'modules', and 'candidates'"
     )
 
 
@@ -122,27 +139,34 @@ def _iter_certificates(payload: Any) -> Iterable[tuple]:
     if kind == "certificate":
         yield _module_key_from_certificate(payload), payload
         return
+    if kind == "escalation_bundle":
+        yield _module_key_from_certificate(payload), {"atoms": payload["candidates"]}
+        return
     # bundle
     for key, cert in payload["modules"].items():
         yield str(key), cert
 
 
 def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
-    """Walk a ``ProofCertificate`` / ``ProofBundle`` and return all
-    ``AtomCertificate`` entries whose ``z3_check_result`` is
-    ``"unknown"``.
-    """
+    """Walk a certificate / bundle and return Lean escalation candidates."""
     atoms: List[IngestedAtom] = []
     for module_key, cert in _iter_certificates(payload):
         for atom in cert.get("atoms", []):
             if not isinstance(atom, dict):
                 continue
-            if atom.get("z3_check_result") != "unknown":
+            is_candidate = (
+                atom.get("z3_check_result") == "unknown"
+                or atom.get("escalation_reason")
+            )
+            if not is_candidate:
                 continue
             requires = atom.get("requires", "") or ""
             ensures = atom.get("ensures", "") or ""
             body_expr = atom.get("body_expr", "") or ""
             body_summary = atom.get("body_summary", "") or ""
+            tags = atom.get("logic_fragment_tags", [])
+            if not isinstance(tags, list):
+                tags = []
             atoms.append(
                 IngestedAtom(
                     module_key=module_key,
@@ -160,6 +184,8 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
                     ),
                     z3_check_result=str(atom.get("z3_check_result", "unknown")),
                     status=str(atom.get("status", "unknown")),
+                    escalation_reason=str(atom.get("escalation_reason", "")),
+                    logic_fragment_tags=[str(tag) for tag in tags],
                 )
             )
     return atoms
@@ -314,10 +340,15 @@ def render_theorem(atom: IngestedAtom) -> str:
     if note_block:
         note_block += "\n"
 
+    metadata = [f"z3_check_result={atom.z3_check_result}"]
+    if atom.escalation_reason:
+        metadata.append(f"escalation_reason={atom.escalation_reason}")
+    if atom.logic_fragment_tags:
+        metadata.append("logic_fragments=" + ",".join(atom.logic_fragment_tags))
     decl = (
         def_decl +
         f"/-- Auto-generated from mumei atom `{atom.name}` "
-        f"(z3_check_result={atom.z3_check_result}). -/\n"
+        f"({' ; '.join(metadata)}). -/\n"
         f"theorem {atom.name}_correct {params_decl}{h_body_param} :\n"
         f"    ({requires_lean}) → ({ensures_lean}) := by\n"
         f"{note_block}{body}\n"
@@ -378,8 +409,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "input",
         type=Path,
-        help="Path to a mumei ProofCertificate (.proof-cert.json) or "
-        "ProofBundle (std-proof-bundle.json).",
+        help="Path to a mumei ProofCertificate (.proof-cert.json), "
+        "ProofBundle (std-proof-bundle.json), or escalation bundle.",
     )
     parser.add_argument(
         "--bundle",

@@ -304,6 +304,52 @@ def _patch_lake(monkeypatch, rc: int, log: str) -> None:
     monkeypatch.setattr(bridge, "_run_lake_build", fake_run)
 
 
+def test_main_escalation_bundle_exports_metrics_and_metadata(
+    tmp_path: Path, monkeypatch
+):
+    bundle_path = tmp_path / "math.escalation-bundle.json"
+    bundle_path.write_text(
+        json.dumps(
+            {
+                "version": "1.0",
+                "file": "std/math.mm",
+                "summary": {},
+                "candidates": [
+                    {
+                        **_atom("inc", z3="unknown"),
+                        "escalation_reason": "z3_unknown",
+                        "logic_fragment_tags": ["quantifier_alternation"],
+                    }
+                ],
+            }
+        )
+    )
+    out_cert = tmp_path / "out.lean-cert.json"
+    summary = tmp_path / "summary.json"
+    _patch_lake(monkeypatch, rc=0, log="")
+
+    rc = main(
+        [
+            "--escalation-bundle", str(bundle_path),
+            "--out-dir", str(tmp_path / "generated"),
+            "--module-prefix", "Generated",
+            "--lean-cert-out", str(out_cert),
+            "--summary-json", str(summary),
+        ]
+    )
+
+    assert rc == 0
+    upgraded = json.loads(out_cert.read_text())
+    candidate = upgraded["candidates"][0]
+    assert candidate["z3_check_result"] == "lean_verified"
+    assert candidate["lean_metadata"]["status"] == "lean_verified"
+    assert "escalation_reason=z3_unknown" in candidate["lean_metadata"]["diagnostics"]
+    metrics = json.loads(summary.read_text())["metrics"]
+    assert metrics["escalation_attempts"] == 1
+    assert metrics["lean_successes"] == 1
+    assert metrics["by_logic_fragment"]["quantifier_alternation"]["success_rate"] == 1.0
+
+
 def test_main_marks_all_failed_when_lake_returns_nonzero_with_unrecognised_log(
     tmp_path: Path, monkeypatch
 ):

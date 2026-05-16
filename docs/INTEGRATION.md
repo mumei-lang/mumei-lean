@@ -14,7 +14,10 @@
    ```
 
    This drops `.proof-cert.json` next to the source. Atoms Z3 could not
-   close show up with `"z3_check_result": "unknown"`.
+   close show up with `"z3_check_result": "unknown"`. Certificates produced
+   after PR #23 also carry typed translator contract metadata such as
+   `translator_version`, `binder_mapping`, `bridge_lemma_hash`,
+   `manual_lemma_reason`, and `translator_ir`.
 
 2. **Run the bridge** in a checkout of `mumei-lean`:
 
@@ -25,7 +28,8 @@
        --lean-version "$(lake --version | head -n1)"
    ```
 
-   This regenerates `generated/`, runs `lake build`, and emits the
+   This regenerates `generated/`, runs `lake build`, validates the translator
+   contract metadata for the generated Lean theorem, and emits the
    mumei-compatible certificate.
 
 3. **Consume the certificate** in mumei. Two routes exist (both
@@ -56,16 +60,20 @@
 ## What does *not* change in mumei
 
 * No mumei source file is modified.
-* The mumei compiler keeps treating anything other than
-  `z3_check_result == "unsat"` as unproven, so the new
-  `"lean_verified"` value is silently demoted to "unproven" today.
-* When mumei eventually opts in to recognising `"lean_verified"` (a
-  one-line resolver tweak), the same certificates upgrade in place.
+* The mumei compiler keeps treating Lean results as proof-bearing only when
+  the returned `translator_version` and `bridge_lemma_hash` match the current
+  translator contract. Mismatches are reported as `stale_translator` so the
+  obligation can be regenerated instead of silently reusing stale proof text.
+* The `"lean_verified"` value is still forward-compatible for older mumei
+  checkouts: versions that do not recognise it demote the atom to unproven
+  rather than trusting it.
 
 ## Working with bundles
 
 Bundles let downstream projects share a single Lean-augmented
-certificate set across many modules. Typical pipeline:
+certificate set across many modules. Keep translator contract fields in the
+bundle unchanged; downstream resolvers use them for stale-translator detection.
+Typical pipeline:
 
 ```bash
 # 1. Generate per-module mumei certs (existing mumei flow).
@@ -141,7 +149,8 @@ the recommended path is:
 1. Have `mumei-agent` emit the proof certificate as it does today.
 2. Schedule a follow-up `mumei-lean` run (e.g. via
    `python scripts/bridge.py --cert <gen-cert>`) that turns the
-   `unknown` atoms into Lean theorems for human / mathlib4 proofs.
+   `unknown` atoms into Lean theorems for human / mathlib4 proofs while
+   preserving `TranslatorIRMetadata`, binder mappings, and bridge lemma hashes.
 3. Once `lake build` succeeds, the resulting `.lean-cert.json`
    feeds back into the `MUMEI_PROOF_BUNDLE` distributed by
    `homebrew-mumei` (SI-5 Phase 3-C).
@@ -169,4 +178,5 @@ The repo's `.github/workflows/ci.yml` runs the Python test suite and
 | `bridge.py` reports "no certificates with unknown atoms found"           | The mumei project has no `unknown` atoms — nothing for Lean to prove.                                             |
 | `lake` is not on PATH                                                    | Install Lean 4 via `elan` (see `README.md`); `bridge.py` falls back to a conservative cert otherwise.             |
 | `lake build` succeeds but `lean_verified` count is 0                     | The generated theorems still contain `sorry`. Provide manual proofs in `MumeiLean/...` or under `generated/`.     |
+| mumei reports `stale_translator` for a Lean-verified atom                 | The certificate's `translator_version` or `bridge_lemma_hash` no longer matches the current translator. Regenerate the Lean theorem from a fresh `.proof-cert.json`. |
 | `MUMEI_PROOF_BUNDLE` warnings on the mumei side                          | The bundle file is missing or unreadable; double-check the path. Local-tier certs always win regardless.          |

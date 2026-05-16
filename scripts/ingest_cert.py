@@ -43,6 +43,8 @@ from typing import Any, Iterable, List, Optional
 try:
     # When invoked as ``python -m scripts.ingest_cert`` or via pytest.
     from .expr_translator import (
+        BRIDGE_LEMMA_HASH,
+        TRANSLATOR_VERSION,
         TranslationResult,
         contains_identifier,
         translate_body,
@@ -51,6 +53,8 @@ try:
 except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py``
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from expr_translator import (  # type: ignore
+        BRIDGE_LEMMA_HASH,
+        TRANSLATOR_VERSION,
         TranslationResult,
         contains_identifier,
         translate_body,
@@ -85,6 +89,12 @@ class IngestedAtom:
     status: str
     escalation_reason: str
     logic_fragment_tags: List[str]
+    proof_hash: str
+    translator_version: str
+    bridge_lemma_hash: str
+    binder_mapping: dict[str, str]
+    manual_lemma_reason: Optional[str]
+    translator_ir: dict
 
     @property
     def is_partial_translation(self) -> bool:
@@ -95,6 +105,7 @@ class IngestedAtom:
             self.requires_translation.is_partial
             or self.ensures_translation.is_partial
             or body_partial
+            or self.manual_lemma_reason is not None
         )
 
 
@@ -167,28 +178,101 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
             tags = atom.get("logic_fragment_tags", [])
             if not isinstance(tags, list):
                 tags = []
+            requires_translation = _translate_expr(requires)
+            ensures_translation = _translate_expr(ensures)
+            body_translation = (
+                translate_body(str(body_expr)) if str(body_expr).strip() else None
+            )
+            translator_ir = _translator_ir_payload(
+                atom,
+                requires_translation,
+                ensures_translation,
+                body_translation,
+            )
+            manual_reason = atom.get("manual_lemma_reason")
+            if not manual_reason:
+                manual_reason = _first_manual_reason(
+                    requires_translation,
+                    ensures_translation,
+                    body_translation,
+                )
             atoms.append(
                 IngestedAtom(
                     module_key=module_key,
                     name=str(atom.get("name", "atom")),
-                    requires_translation=_translate_expr(requires),
-                    ensures_translation=_translate_expr(ensures),
+                    requires_translation=requires_translation,
+                    ensures_translation=ensures_translation,
                     raw_requires=requires,
                     raw_ensures=ensures,
                     body_summary=str(body_summary),
                     body_expr=str(body_expr),
-                    body_translation=(
-                        translate_body(str(body_expr))
-                        if str(body_expr).strip()
-                        else None
-                    ),
+                    body_translation=body_translation,
                     z3_check_result=str(atom.get("z3_check_result", "unknown")),
                     status=str(atom.get("status", "unknown")),
                     escalation_reason=str(atom.get("escalation_reason", "")),
                     logic_fragment_tags=[str(tag) for tag in tags],
+                    proof_hash=str(atom.get("proof_hash", "")),
+                    translator_version=str(atom.get("translator_version", TRANSLATOR_VERSION)),
+                    bridge_lemma_hash=str(atom.get("bridge_lemma_hash", BRIDGE_LEMMA_HASH)),
+                    binder_mapping=_string_dict(atom.get("binder_mapping", {})),
+                    manual_lemma_reason=(str(manual_reason) if manual_reason else None),
+                    translator_ir=translator_ir,
                 )
             )
     return atoms
+
+
+def _string_dict(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(k): str(v) for k, v in value.items()}
+
+
+def _translator_ir_payload(atom: dict, *fallbacks: Optional[TranslationResult]) -> dict:
+    raw_ir = atom.get("translator_ir")
+    if isinstance(raw_ir, dict):
+        return raw_ir
+    binders: List[dict] = []
+    lowering_rules: List[str] = []
+    manual_reason: Optional[str] = None
+    theorem_goal = ""
+    seen_binders: set[tuple[str, str]] = set()
+    for fallback in fallbacks:
+        if fallback is None or fallback.translator_ir is None:
+            continue
+        payload = fallback.translator_ir.to_dict()
+        theorem_goal = str(payload.get("theorem_goal") or theorem_goal)
+        for binder in payload.get("binders", []):
+            if not isinstance(binder, dict):
+                continue
+            key = (str(binder.get("mumei_name", "")), str(binder.get("lean_name", "")))
+            if key in seen_binders:
+                continue
+            seen_binders.add(key)
+            binders.append(binder)
+        for rule in payload.get("lowering_rules", []):
+            rule_text = str(rule)
+            if rule_text not in lowering_rules:
+                lowering_rules.append(rule_text)
+        if payload.get("manual_lemma_reason"):
+            manual_reason = str(payload.get("manual_lemma_reason"))
+    result = {
+        "sort": "manual_lemma_required" if manual_reason else "contract_obligation",
+        "binders": binders,
+        "theorem_goal": theorem_goal,
+        "provenance_span": {"file": "", "line": 0, "col": 0, "len": 0},
+        "lowering_rules": lowering_rules,
+    }
+    if manual_reason:
+        result["manual_lemma_reason"] = manual_reason
+    return result
+
+
+def _first_manual_reason(*translations: Optional[TranslationResult]) -> Optional[str]:
+    for translation in translations:
+        if translation is not None and translation.manual_lemma_reason:
+            return translation.manual_lemma_reason
+    return None
 
 
 def _module_to_lean_namespace(module_key: str, prefix: str) -> str:
@@ -231,6 +315,45 @@ def _atom_result_name(atom_name: str) -> str:
     if not parts:
         return "atomResult"
     return parts[0] + "".join(part[:1].upper() + part[1:] for part in parts[1:]) + "Result"
+
+
+def _decl_parts_from_translator_ir(translator_ir: dict) -> List[str]:
+    raw_binders = translator_ir.get("binders", []) if isinstance(translator_ir, dict) else []
+    if not isinstance(raw_binders, list):
+        return []
+    grouped: dict[str, List[str]] = {}
+    seen: set[str] = set()
+    for raw in raw_binders:
+        if not isinstance(raw, dict):
+            continue
+        lean_name = str(raw.get("lean_name") or raw.get("mumei_name") or "")
+        lean_type = str(raw.get("lean_type") or "Int")
+        if not lean_name or lean_name in seen:
+            continue
+        seen.add(lean_name)
+        grouped.setdefault(lean_type, []).append(lean_name)
+    return [f"({' '.join(names)} : {lean_type})" for lean_type, names in grouped.items()]
+
+
+def _translator_ir_metadata(atom: IngestedAtom) -> List[str]:
+    metadata = [
+        f"source_atom={atom.name}",
+        f"proof_hash={atom.proof_hash}",
+        f"translator_version={atom.translator_version}",
+        f"bridge_lemma_hash={atom.bridge_lemma_hash}",
+    ]
+    sort = atom.translator_ir.get("sort") if isinstance(atom.translator_ir, dict) else None
+    if sort:
+        metadata.append(f"translator_ir_sort={sort}")
+    span = atom.translator_ir.get("provenance_span") if isinstance(atom.translator_ir, dict) else None
+    if isinstance(span, dict) and span.get("file"):
+        metadata.append(
+            "source_span="
+            f"{span.get('file')}:{span.get('line', 0)}:{span.get('col', 0)}"
+        )
+    if atom.manual_lemma_reason:
+        metadata.append(f"manual_lemma_reason={atom.manual_lemma_reason}")
+    return metadata
 
 
 def render_theorem(atom: IngestedAtom) -> str:
@@ -282,13 +405,15 @@ def render_theorem(atom: IngestedAtom) -> str:
     if has_result and "result" not in scalar_params and "result" not in array_idents:
         scalar_params.append("result")
 
-    decl_parts: List[str] = []
-    if scalar_params:
-        decl_parts.append("(" + " ".join(scalar_params) + " : Int)")
-    for arr in array_idents:
-        decl_parts.append(f"({arr} : List Int)")
-    if string_idents:
-        decl_parts.append("(" + " ".join(string_idents) + " : String)")
+    decl_parts = _decl_parts_from_translator_ir(atom.translator_ir)
+    if not decl_parts:
+        decl_parts = []
+        if scalar_params:
+            decl_parts.append("(" + " ".join(scalar_params) + " : Int)")
+        for arr in array_idents:
+            decl_parts.append(f"({arr} : List Int)")
+        if string_idents:
+            decl_parts.append("(" + " ".join(string_idents) + " : String)")
     params_decl = " ".join(decl_parts)
 
     requires_lean = req.lean_expr
@@ -326,10 +451,10 @@ def render_theorem(atom: IngestedAtom) -> str:
     else:
         body = "  mumei_arith"
     notes: List[str] = []
-    if req.is_partial or ens.is_partial:
+    if req.is_partial or ens.is_partial or atom.manual_lemma_reason:
         notes.append(
-            "  -- TODO: unproven — translator could not fully encode the contract; "
-            "MumeiLean.unproven marks unfinished obligations."
+            "  -- manual_lemma_required: "
+            f"{atom.manual_lemma_reason or req.manual_lemma_reason or ens.manual_lemma_reason}"
         )
     if body_tr is not None and not use_body_semantics:
         notes.append("  -- body semantics unsupported; using contract-only fallback")
@@ -341,6 +466,7 @@ def render_theorem(atom: IngestedAtom) -> str:
         note_block += "\n"
 
     metadata = [f"z3_check_result={atom.z3_check_result}"]
+    metadata.extend(_translator_ir_metadata(atom))
     if atom.escalation_reason:
         metadata.append(f"escalation_reason={atom.escalation_reason}")
     if atom.logic_fragment_tags:

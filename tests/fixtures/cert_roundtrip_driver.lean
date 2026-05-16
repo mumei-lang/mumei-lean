@@ -1,3 +1,7 @@
+import MumeiLean.CertParser
+import MumeiLean.CertWriter
+import MumeiLean.Basic
+
 /-!
 Driver for `tests/test_cert_roundtrip.py`.
 
@@ -8,9 +12,6 @@ every atom as `verified` via `MumeiLean.applyResult` against a
 JSON summary used by the Python test to assert round-trip
 consistency.
 -/
-import MumeiLean.CertParser
-import MumeiLean.CertWriter
-import MumeiLean.Basic
 
 open Lean MumeiLean
 

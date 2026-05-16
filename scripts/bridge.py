@@ -41,7 +41,10 @@ try:
     from .export_cert import (
         _failed_theorem_attributions,
         _has_unattributable_failures,
+        BRIDGE_LEMMA_HASH,
         LEAN_VERIFIED,
+        MANUAL_LEMMA_REQUIRED,
+        TRANSLATOR_VERSION,
         upgrade_certificate,
     )
 except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
@@ -55,7 +58,10 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
     from export_cert import (  # type: ignore
         _failed_theorem_attributions,
         _has_unattributable_failures,
+        BRIDGE_LEMMA_HASH,
         LEAN_VERIFIED,
+        MANUAL_LEMMA_REQUIRED,
+        TRANSLATOR_VERSION,
         upgrade_certificate,
     )
 
@@ -104,20 +110,44 @@ def _candidate_metadata(
         )
     if atom.is_partial_translation:
         diagnostics.append("partial_translation")
+    if atom.manual_lemma_reason:
+        diagnostics.append(f"manual_lemma_reason={atom.manual_lemma_reason}")
     return {
         "status": status,
         "theorem_name": f"{atom.name}_correct",
+        "translator_version": TRANSLATOR_VERSION,
+        "bridge_lemma_hash": BRIDGE_LEMMA_HASH,
         "proof_path": str((out_dir / rel).as_posix()),
         "diagnostics": diagnostics,
+        "translator_ir": atom.translator_ir,
+        "manual_lemma_reason": atom.manual_lemma_reason,
     }
 
 
+def _has_structural_partial_translation(atom: IngestedAtom) -> bool:
+    body_partial = (
+        atom.body_translation is not None and atom.body_translation.is_partial
+    )
+    return (
+        atom.requires_translation.is_partial
+        or atom.ensures_translation.is_partial
+        or body_partial
+    )
+
+
 def _candidate_status(atom: IngestedAtom, proved: List[str], failed: List[str]) -> str:
-    if atom.is_partial_translation:
+    if _has_structural_partial_translation(atom):
         return "partial_translation"
+    if atom.manual_lemma_reason:
+        return MANUAL_LEMMA_REQUIRED
+    if (
+        atom.translator_version != TRANSLATOR_VERSION
+        or atom.bridge_lemma_hash != BRIDGE_LEMMA_HASH
+    ):
+        return "stale_translator"
     if atom.name in proved and atom.name not in failed:
         return LEAN_VERIFIED
-    return "manual_required"
+    return MANUAL_LEMMA_REQUIRED
 
 
 def _metadata_for_atoms(
@@ -143,7 +173,8 @@ def _empty_metric_bucket() -> dict:
         "attempts": 0,
         "lean_successes": 0,
         "partial_translation": 0,
-        "manual_required": 0,
+        MANUAL_LEMMA_REQUIRED: 0,
+        "stale_translator": 0,
         "success_rate": 0.0,
     }
 
@@ -163,7 +194,8 @@ def _aggregate_metrics(
         "escalation_attempts": 0,
         "lean_successes": 0,
         "partial_translation": 0,
-        "manual_required": 0,
+        MANUAL_LEMMA_REQUIRED: 0,
+        "stale_translator": 0,
         "by_atom": {},
         "by_logic_fragment": {},
         "by_failure_reason": {},
@@ -171,18 +203,27 @@ def _aggregate_metrics(
     }
     for metadata, atoms in zip(metadata_by_payload, atoms_per_payload):
         for atom in atoms:
-            status = metadata.get(atom.name, {}).get("status", "manual_required")
+            status = metadata.get(atom.name, {}).get("status", MANUAL_LEMMA_REQUIRED)
+            if status == "manual_required":
+                status = MANUAL_LEMMA_REQUIRED
             metrics["escalation_attempts"] += 1
             if status == LEAN_VERIFIED:
                 metrics["lean_successes"] += 1
             elif status == "partial_translation":
                 metrics["partial_translation"] += 1
+                if atom.manual_lemma_reason:
+                    metrics[MANUAL_LEMMA_REQUIRED] += 1
+            elif status == "stale_translator":
+                metrics["stale_translator"] += 1
             else:
-                metrics["manual_required"] += 1
+                metrics[MANUAL_LEMMA_REQUIRED] += 1
             metrics["by_atom"][atom.name] = {
                 "status": status,
                 "failure_reason": atom.escalation_reason,
                 "logic_fragment_tags": atom.logic_fragment_tags,
+                "translator_version": atom.translator_version,
+                "bridge_lemma_hash": atom.bridge_lemma_hash,
+                "manual_lemma_reason": atom.manual_lemma_reason,
             }
             reason = atom.escalation_reason or "unknown"
             reason_bucket = metrics["by_failure_reason"].setdefault(

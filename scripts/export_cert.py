@@ -35,6 +35,9 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 LEAN_CERT_SCHEMA_VERSION = "1.0-lean"
 LEAN_VERIFIED = "lean_verified"
+TRANSLATOR_VERSION = "mumei-lean-translator-ir-v1"
+BRIDGE_LEMMA_HASH = "d8d270d6429a3e31c608dc109876df4ec99ee1243796430775a5b0ef18b5ac24"
+MANUAL_LEMMA_REQUIRED = "manual_lemma_required"
 
 # Lake's ``sorry`` warning lines look like::
 #   warning: declaration uses 'sorry'
@@ -231,6 +234,15 @@ def _has_unattributable_failures(
     return False
 
 
+def _translator_contract_current(atom: dict) -> bool:
+    translator_version = atom.get("translator_version", TRANSLATOR_VERSION)
+    bridge_lemma_hash = atom.get("bridge_lemma_hash", BRIDGE_LEMMA_HASH)
+    return (
+        translator_version == TRANSLATOR_VERSION
+        and bridge_lemma_hash == BRIDGE_LEMMA_HASH
+    )
+
+
 def _atom_proved(
     atom: dict,
     failed: Iterable[str],
@@ -245,6 +257,10 @@ def _atom_proved(
     name = atom.get("name")
     if name not in proved:
         return False
+    if not _translator_contract_current(atom):
+        return False
+    if atom.get("manual_lemma_reason"):
+        return False
     return name not in failed
 
 
@@ -256,8 +272,12 @@ def _metadata_for_atom(
     name = str(atom.get("name", "atom"))
     metadata = dict((atom_metadata or {}).get(name, {}))
     metadata.setdefault("theorem_name", f"{name}_correct")
+    metadata.setdefault("translator_version", TRANSLATOR_VERSION)
+    metadata.setdefault("bridge_lemma_hash", BRIDGE_LEMMA_HASH)
     metadata.setdefault("proof_path", "")
     metadata.setdefault("diagnostics", [])
+    if atom.get("manual_lemma_reason"):
+        metadata.setdefault("manual_lemma_reason", atom.get("manual_lemma_reason"))
     metadata["status"] = status
     return metadata
 
@@ -278,6 +298,8 @@ def _upgrade_atom_list(
         if proved:
             atom["z3_check_result"] = LEAN_VERIFIED
             atom["status"] = "verified"
+            atom["translator_version"] = TRANSLATOR_VERSION
+            atom["bridge_lemma_hash"] = BRIDGE_LEMMA_HASH
             atom["lean_metadata"] = _metadata_for_atom(
                 atom,
                 LEAN_VERIFIED,
@@ -285,9 +307,12 @@ def _upgrade_atom_list(
             )
             upgraded_any = True
         elif metadata is not None:
+            status = str(metadata.get("status", MANUAL_LEMMA_REQUIRED))
+            if not _translator_contract_current(atom):
+                status = "stale_translator"
             atom["lean_metadata"] = _metadata_for_atom(
                 atom,
-                str(metadata.get("status", "manual_required")),
+                status,
                 atom_metadata,
             )
     return upgraded_any

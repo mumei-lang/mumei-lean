@@ -24,8 +24,8 @@ theorem then carries a ``-- TODO: unproven`` marker which
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
-from typing import Optional, List, Set, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Set, Tuple
 
 # Tokens we recognise. Order matters: longer prefixes must come first
 # so e.g. ``>=`` is not split into ``>`` + ``=``.
@@ -121,6 +121,70 @@ _SCALAR_CALL_FUNCTIONS = (
     set(_KNOWN_FUNCTIONS) - _STRING_FUNCTIONS - _ARRAY_FIRST_ARG_FUNCTIONS - {"old"}
 )
 
+TRANSLATOR_VERSION = "mumei-lean-translator-ir-v1"
+BRIDGE_LEMMA_HASH = "d8d270d6429a3e31c608dc109876df4ec99ee1243796430775a5b0ef18b5ac24"
+
+
+@dataclass
+class TranslatorIRBinder:
+    mumei_name: str
+    lean_name: str
+    mumei_type: str
+    lean_type: str
+    role: str = "free"
+    refinement: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, object]:
+        payload: Dict[str, object] = {
+            "mumei_name": self.mumei_name,
+            "lean_name": self.lean_name,
+            "mumei_type": self.mumei_type,
+            "lean_type": self.lean_type,
+            "role": self.role,
+        }
+        if self.refinement:
+            payload["refinement"] = self.refinement
+        return payload
+
+
+@dataclass
+class TranslatorIRProvenanceSpan:
+    file: str = ""
+    line: int = 0
+    col: int = 0
+    len: int = 0
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "file": self.file,
+            "line": self.line,
+            "col": self.col,
+            "len": self.len,
+        }
+
+
+@dataclass
+class TranslatorIR:
+    sort: str
+    binders: List[TranslatorIRBinder]
+    theorem_goal: str
+    provenance_span: TranslatorIRProvenanceSpan = field(default_factory=TranslatorIRProvenanceSpan)
+    lowering_rules: List[str] = field(default_factory=list)
+    manual_lemma_reason: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, object]:
+        payload: Dict[str, object] = {
+            "sort": self.sort,
+            "binders": [binder.to_dict() for binder in self.binders],
+            "theorem_goal": self.theorem_goal,
+            "provenance_span": self.provenance_span.to_dict(),
+            "lowering_rules": list(self.lowering_rules),
+        }
+        if self.manual_lemma_reason:
+            payload["manual_lemma_reason"] = self.manual_lemma_reason
+        return payload
+
+
 @dataclass
 class TranslationResult:
     """Outcome of translating a single contract string."""
@@ -150,6 +214,128 @@ class TranslationResult:
     """Subset of ``identifiers`` that are passed to string predicates
     such as ``starts_with`` / ``ends_with``. The renderer types these
     identifiers as ``String`` instead of the scalar ``Int`` default."""
+
+    translator_ir: Optional[TranslatorIR] = None
+    """Typed TranslatorIR metadata used by the escalation handshake."""
+
+    unsupported_reasons: List[str] = field(default_factory=list)
+    """Structural reasons for partial translation, if any."""
+
+    manual_lemma_reason: Optional[str] = None
+    """Non-empty when the expression must be finished by a manual lemma."""
+
+
+def _lean_binder_name(name: str) -> str:
+    clean = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in name)
+    if not clean:
+        return "binder"
+    if clean[0].isdigit():
+        clean = "_" + clean
+    if clean in _RESERVED_IDENTS or clean in {"theorem", "def", "namespace", "end"}:
+        return f"{clean}_binder"
+    return clean
+
+
+def _binder_for_identifier(name: str, array_ids: List[str], string_ids: List[str]) -> TranslatorIRBinder:
+    if name in array_ids:
+        return TranslatorIRBinder(name, _lean_binder_name(name), "array<i64>", "List Int")
+    if name in string_ids:
+        return TranslatorIRBinder(name, _lean_binder_name(name), "string", "String")
+    return TranslatorIRBinder(name, _lean_binder_name(name), "i64", "Int")
+
+
+def _unsupported_reasons(source: str, tokens: List[tuple], is_partial: bool) -> List[str]:
+    reasons: List[str] = []
+    if any(kind == "UNK" for kind, _text in tokens):
+        reasons.append("unknown_token")
+    if "regex" in source:
+        reasons.append("regex_semantics_require_manual_lemma")
+    if any(kind == "KW" and text == "match" for kind, text in tokens):
+        reasons.append("match_or_inductive_translation_requires_manual_lemma")
+    for idx, (kind, text) in enumerate(tokens):
+        if kind == "ID" and idx + 1 < len(tokens) and tokens[idx + 1] == ("OP", "("):
+            if text not in _KNOWN_FUNCTIONS:
+                reasons.append(f"unsupported_call:{text}")
+    if is_partial and not reasons:
+        reasons.append("unsupported_syntax")
+    return sorted(set(reasons))
+
+
+def _lowering_rules(tokens: List[tuple], array_ids: List[str], string_ids: List[str]) -> List[str]:
+    rules = ["type_system_mapping", "contract_lowering"]
+    if array_ids:
+        rules.append("array_bounds_bridge")
+    if string_ids:
+        rules.append("string_regex_bridge")
+    if any(kind == "KW" and text in _QUANTIFIER_KEYWORDS for kind, text in tokens):
+        rules.append("refinement_predicate_lowering")
+    if any(kind == "OP" and text in {"*", "/", "%"} for kind, text in tokens):
+        rules.append("integer_overflow_bridge")
+    return rules
+
+
+def _build_translator_ir(
+    source: str,
+    lean_expr: str,
+    identifiers: List[str],
+    array_ids: List[str],
+    string_ids: List[str],
+    tokens: List[tuple],
+    manual_lemma_reason: Optional[str],
+) -> TranslatorIR:
+    binders = [_binder_for_identifier(name, array_ids, string_ids) for name in identifiers]
+    if contains_identifier(source, "result") and "result" not in identifiers:
+        binders.append(TranslatorIRBinder("result", "result", "i64", "Int", role="result"))
+    sort = "manual_lemma_required" if manual_lemma_reason else "contract_obligation"
+    return TranslatorIR(
+        sort=sort,
+        binders=binders,
+        theorem_goal=lean_expr,
+        lowering_rules=_lowering_rules(tokens, array_ids, string_ids),
+        manual_lemma_reason=manual_lemma_reason,
+    )
+
+
+def _make_translation_result(
+    source: str,
+    lean_expr: str,
+    identifiers: List[str],
+    is_trivial: bool,
+    is_partial: bool,
+    array_identifiers: List[str],
+    string_identifiers: List[str],
+    tokens: Optional[List[tuple]] = None,
+) -> TranslationResult:
+    result = TranslationResult(
+        lean_expr=lean_expr,
+        identifiers=identifiers,
+        is_trivial=is_trivial,
+        is_partial=is_partial,
+        array_identifiers=array_identifiers,
+        string_identifiers=string_identifiers,
+    )
+    return _attach_translator_ir(source, result, tokens)
+
+
+def _attach_translator_ir(
+    source: str,
+    result: TranslationResult,
+    tokens: Optional[List[tuple]] = None,
+) -> TranslationResult:
+    real_tokens = tokens if tokens is not None else _tokenize(source or "")
+    reasons = _unsupported_reasons(source or "", real_tokens, result.is_partial)
+    result.unsupported_reasons = reasons
+    result.manual_lemma_reason = ";".join(reasons) if reasons else None
+    result.translator_ir = _build_translator_ir(
+        source or "",
+        result.lean_expr,
+        result.identifiers,
+        result.array_identifiers,
+        result.string_identifiers,
+        real_tokens,
+        result.manual_lemma_reason,
+    )
+    return result
 
 
 def _extract_identifiers(tokens: List[tuple]) -> List[str]:
@@ -646,7 +832,8 @@ def translate_contract(source: str) -> TranslationResult:
     """
     stripped = (source or "").strip()
     if stripped == "" or stripped == "true":
-        return TranslationResult(
+        return _make_translation_result(
+            stripped,
             lean_expr="True",
             identifiers=[],
             is_trivial=True,
@@ -655,7 +842,8 @@ def translate_contract(source: str) -> TranslationResult:
             string_identifiers=[],
         )
     if stripped == "false":
-        return TranslationResult(
+        return _make_translation_result(
+            stripped,
             lean_expr="False",
             identifiers=[],
             is_trivial=False,
@@ -879,13 +1067,15 @@ def translate_contract(source: str) -> TranslationResult:
                 if not any(name == text for _, name in scope_stack):
                     is_partial = True
                     break
-    return TranslationResult(
+    return _make_translation_result(
+        stripped,
         lean_expr=lean_expr,
         identifiers=free,
         is_trivial=False,
         is_partial=is_partial,
         array_identifiers=[a for a in array_idents if a in free],
         string_identifiers=[s for s in string_idents if s in free],
+        tokens=tokens,
     )
 
 
@@ -975,7 +1165,8 @@ def translate_body(body_expr: str) -> TranslationResult:
     """
     stripped = (body_expr or "").strip()
     if not stripped:
-        return TranslationResult(
+        return _make_translation_result(
+            stripped,
             lean_expr="",
             identifiers=[],
             is_trivial=False,
@@ -985,8 +1176,8 @@ def translate_body(body_expr: str) -> TranslationResult:
         )
     known = _known_body_pattern(stripped)
     if known is not None:
-        return known
+        return _attach_translator_ir(stripped, known)
     result = translate_contract(stripped)
     if "=>" in stripped and "=>" not in result.lean_expr:
         result.is_partial = True
-    return result
+    return _attach_translator_ir(stripped, result)

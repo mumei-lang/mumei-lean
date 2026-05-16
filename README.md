@@ -14,7 +14,10 @@ re-states them in Lean 4, lets you (or `mathlib4`) discharge the proof
 obligation, and emits a mumei-compatible `.lean-cert.json` certificate that
 the mumei resolver consumes through its existing
 [Proof Certificate Chain (P5-A)](https://github.com/mumei-lang/mumei/blob/main/docs/PROOF_CERTIFICATE.md)
-and `MUMEI_PROOF_BUNDLE` machinery (SI-5 Phase 3-C).
+and `MUMEI_PROOF_BUNDLE` machinery (SI-5 Phase 3-C). The bridge now preserves
+the typed Lean translator contract: `TranslatorIRMetadata`, binder mappings,
+bridge lemma hashes, and manual lemma reasons move through ingestion, Lean
+checking, and certificate export as auditable metadata.
 
 > mumei's "fully automatic verification" philosophy is preserved. mumei-lean
 > only steps in for the slice of contracts Z3 cannot close on its own, and the
@@ -27,8 +30,8 @@ and `MUMEI_PROOF_BUNDLE` machinery (SI-5 Phase 3-C).
 graph TD
     M["mumei verify --proof-cert"] -->|".proof-cert.json"| ML["mumei-lean"]
     M2["mumei build --emit verified-json"] -->|".verified.json"| ML
-    ML -->|"Lean 4 theorem + tactic"| LP["Lean Proof Check"]
-    LP -->|".lean-cert.json"| MR["mumei resolver\n(verify_import_certificate)"]
+    ML -->|"Lean 4 theorem + tactic\n+ TranslatorIRMetadata"| LP["Lean Proof Check"]
+    LP -->|".lean-cert.json\ntranslator_version + bridge_lemma_hash"| MR["mumei resolver\n(verify_import_certificate)"]
     MR -->|"mark_verified()"| MV["mumei verification pipeline"]
     AG["mumei-agent\n(proliferate / forge)"] -->|"Z3 unknown atoms"| ML
 ```
@@ -108,8 +111,11 @@ The orchestrator:
    (filenames mirror mumei module paths).
 3. Runs `lake build` to discharge those theorems (anything left as
    `sorry` is treated as a failure).
-4. Writes a mumei-compatible `.lean-cert.json` whose successful atoms
-   carry `z3_check_result = "lean_verified"`.
+4. Validates the translator contract metadata attached to each atom,
+   including `translator_version`, `binder_mapping`, and `bridge_lemma_hash`.
+5. Writes a mumei-compatible `.lean-cert.json` whose successful atoms
+   carry `z3_check_result = "lean_verified"` and the same typed translator
+   metadata required by downstream resolver validation.
 
 Drop the resulting `.lean-cert.json` next to the source module (tier 1
 of the mumei resolver), or roll it into a bundle and point
@@ -125,15 +131,19 @@ lake build                # Lean library
 
 ## Design constraints (read me before extending)
 
-1. **No mumei changes required.** mumei-lean is opt-in and ships
+1. **Typed translator contract preservation.** The bridge treats
+   `TranslatorIRMetadata`, `binder_mapping`, `bridge_lemma_hash`,
+   `manual_lemma_reason`, and `translator_version` as part of the proof
+   contract, not as display-only fields.
+2. **No mumei changes required.** mumei-lean is opt-in and ships
    exclusively over the existing certificate chain. The mumei compiler
    keeps treating any `z3_check_result != "unsat"` as unproven, so the
    new `"lean_verified"` value is forward-compatible.
-2. **Python is the bridge today.** Doing the JSON ↔ Lean source
+3. **Python is the bridge today.** Doing the JSON ↔ Lean source
    translation in Python is dramatically simpler than reimplementing
    it in `Lean.Json`; the `MumeiLean.CertParser` / `MumeiLean.CertWriter`
    modules are deliberate stubs for the day we want a native path.
-3. **Scope is intentionally small.** The expression translator handles
+4. **Scope is intentionally small.** The expression translator handles
    arithmetic comparisons, boolean connectives, integer literals,
    conditionals, compact `match x { ... }` expressions, bounded
    `forall(..)`, `arr[i]`, and known calls (`len`, `abs`, `min`, `max`).
@@ -145,7 +155,7 @@ lake build                # Lean library
    Current limitations: quantified/list/string body terms and unknown
    function calls are still treated as complex bodies and require a
    hand-written witness.
-4. **Targeted at Z3-`unknown`.** `mumei-lean` is *not* a replacement for
+5. **Targeted at Z3-`unknown`.** `mumei-lean` is *not* a replacement for
    Z3. Use it for the atoms Z3 cannot close (cryptographic correctness,
    abstract-algebraic invariants, etc.).
 

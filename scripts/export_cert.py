@@ -248,24 +248,67 @@ def _atom_proved(
     return name not in failed
 
 
+def _metadata_for_atom(
+    atom: dict,
+    status: str,
+    atom_metadata: Optional[Dict[str, dict]],
+) -> dict:
+    name = str(atom.get("name", "atom"))
+    metadata = dict((atom_metadata or {}).get(name, {}))
+    metadata.setdefault("theorem_name", f"{name}_correct")
+    metadata.setdefault("proof_path", "")
+    metadata.setdefault("diagnostics", [])
+    metadata["status"] = status
+    return metadata
+
+
+def _upgrade_atom_list(
+    atoms: Iterable[dict],
+    proved_set: set,
+    failed_set: set,
+    atom_metadata: Optional[Dict[str, dict]],
+) -> bool:
+    upgraded_any = False
+    for atom in atoms:
+        if not isinstance(atom, dict):
+            continue
+        name = atom.get("name")
+        proved = _atom_proved(atom, failed_set, proved_set)
+        metadata = (atom_metadata or {}).get(str(name))
+        if proved:
+            atom["z3_check_result"] = LEAN_VERIFIED
+            atom["status"] = "verified"
+            atom["lean_metadata"] = _metadata_for_atom(
+                atom,
+                LEAN_VERIFIED,
+                atom_metadata,
+            )
+            upgraded_any = True
+        elif metadata is not None:
+            atom["lean_metadata"] = _metadata_for_atom(
+                atom,
+                str(metadata.get("status", "manual_required")),
+                atom_metadata,
+            )
+    return upgraded_any
+
+
 def _upgrade_single_certificate(
     cert: dict,
     proved_set: set,
     failed_set: set,
+    atom_metadata: Optional[Dict[str, dict]] = None,
 ) -> bool:
     """Mutate a single per-module certificate in place.
 
     Returns ``True`` iff at least one atom was upgraded.
     """
-    upgraded_any = False
-    for atom in cert.get("atoms", []):
-        if not isinstance(atom, dict):
-            continue
-        if not _atom_proved(atom, failed_set, proved_set):
-            continue
-        atom["z3_check_result"] = LEAN_VERIFIED
-        atom["status"] = "verified"
-        upgraded_any = True
+    upgraded_any = _upgrade_atom_list(
+        cert.get("atoms", []),
+        proved_set,
+        failed_set,
+        atom_metadata,
+    )
 
     if upgraded_any:
         # The mumei certificate_hash is computed over the canonical
@@ -290,6 +333,7 @@ def upgrade_certificate(
     proved_atoms: Iterable[str],
     failed_atoms: Iterable[str],
     lean_version: str,
+    atom_metadata: Optional[Dict[str, dict]] = None,
 ) -> dict:
     """Return a new certificate dict with successful Lean proofs marked.
 
@@ -310,9 +354,22 @@ def upgrade_certificate(
         # ProofBundle: recurse into each per-module certificate.
         for nested in out["modules"].values():
             if isinstance(nested, dict):
-                _upgrade_single_certificate(nested, proved_set, failed_set)
+                _upgrade_single_certificate(
+                    nested,
+                    proved_set,
+                    failed_set,
+                    atom_metadata,
+                )
+    elif isinstance(out.get("candidates"), list):
+        if _upgrade_atom_list(
+            out["candidates"],
+            proved_set,
+            failed_set,
+            atom_metadata,
+        ):
+            out.setdefault("summary", {})["lean_verified"] = len(proved_set - failed_set)
     else:
-        _upgrade_single_certificate(out, proved_set, failed_set)
+        _upgrade_single_certificate(out, proved_set, failed_set, atom_metadata)
 
     out["lean_version"] = lean_version
     out["lean_cert_schema_version"] = LEAN_CERT_SCHEMA_VERSION

@@ -29,7 +29,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 try:
     from .ingest_cert import (
@@ -41,6 +41,7 @@ try:
     from .export_cert import (
         _failed_theorem_attributions,
         _has_unattributable_failures,
+        LEAN_VERIFIED,
         upgrade_certificate,
     )
 except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
@@ -54,6 +55,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
     from export_cert import (  # type: ignore
         _failed_theorem_attributions,
         _has_unattributable_failures,
+        LEAN_VERIFIED,
         upgrade_certificate,
     )
 
@@ -84,6 +86,132 @@ def _scan_unknown_certs(std_certs_dir: Path) -> List[Tuple[Path, dict]]:
         ):
             found.append((path, payload))
     return found
+
+
+def _candidate_metadata(
+    atom: IngestedAtom,
+    out_dir: Path,
+    module_prefix: str,
+    status: str,
+) -> dict:
+    rel = module_to_path(atom.module_key, module_prefix)
+    diagnostics: List[str] = []
+    if atom.escalation_reason:
+        diagnostics.append(f"escalation_reason={atom.escalation_reason}")
+    if atom.logic_fragment_tags:
+        diagnostics.append(
+            "logic_fragments=" + ",".join(sorted(atom.logic_fragment_tags))
+        )
+    if atom.is_partial_translation:
+        diagnostics.append("partial_translation")
+    return {
+        "status": status,
+        "theorem_name": f"{atom.name}_correct",
+        "proof_path": str((out_dir / rel).as_posix()),
+        "diagnostics": diagnostics,
+    }
+
+
+def _candidate_status(atom: IngestedAtom, proved: List[str], failed: List[str]) -> str:
+    if atom.is_partial_translation:
+        return "partial_translation"
+    if atom.name in proved and atom.name not in failed:
+        return LEAN_VERIFIED
+    return "manual_required"
+
+
+def _metadata_for_atoms(
+    atoms: List[IngestedAtom],
+    out_dir: Path,
+    module_prefix: str,
+    proved: List[str],
+    failed: List[str],
+) -> Dict[str, dict]:
+    return {
+        atom.name: _candidate_metadata(
+            atom,
+            out_dir,
+            module_prefix,
+            _candidate_status(atom, proved, failed),
+        )
+        for atom in atoms
+    }
+
+
+def _empty_metric_bucket() -> dict:
+    return {
+        "attempts": 0,
+        "lean_successes": 0,
+        "partial_translation": 0,
+        "manual_required": 0,
+        "success_rate": 0.0,
+    }
+
+
+def _metric_bucket_success_rate(bucket: dict) -> None:
+    attempts = bucket["attempts"]
+    bucket["success_rate"] = (
+        round(bucket["lean_successes"] / attempts, 4) if attempts else 0.0
+    )
+
+
+def _aggregate_metrics(
+    metadata_by_payload: List[Dict[str, dict]],
+    atoms_per_payload: List[List[IngestedAtom]],
+) -> dict:
+    metrics = {
+        "escalation_attempts": 0,
+        "lean_successes": 0,
+        "partial_translation": 0,
+        "manual_required": 0,
+        "by_atom": {},
+        "by_logic_fragment": {},
+        "by_failure_reason": {},
+        "low_success_categories": [],
+    }
+    for metadata, atoms in zip(metadata_by_payload, atoms_per_payload):
+        for atom in atoms:
+            status = metadata.get(atom.name, {}).get("status", "manual_required")
+            metrics["escalation_attempts"] += 1
+            if status == LEAN_VERIFIED:
+                metrics["lean_successes"] += 1
+            elif status == "partial_translation":
+                metrics["partial_translation"] += 1
+            else:
+                metrics["manual_required"] += 1
+            metrics["by_atom"][atom.name] = {
+                "status": status,
+                "failure_reason": atom.escalation_reason,
+                "logic_fragment_tags": atom.logic_fragment_tags,
+            }
+            reason = atom.escalation_reason or "unknown"
+            reason_bucket = metrics["by_failure_reason"].setdefault(
+                reason,
+                _empty_metric_bucket(),
+            )
+            reason_bucket["attempts"] += 1
+            reason_bucket_key = (
+                "lean_successes" if status == LEAN_VERIFIED else status
+            )
+            reason_bucket[reason_bucket_key] += 1
+            for tag in atom.logic_fragment_tags or ["untagged"]:
+                tag_bucket = metrics["by_logic_fragment"].setdefault(
+                    tag,
+                    _empty_metric_bucket(),
+                )
+                tag_bucket["attempts"] += 1
+                tag_bucket_key = (
+                    "lean_successes" if status == LEAN_VERIFIED else status
+                )
+                tag_bucket[tag_bucket_key] += 1
+    for grouping_name in ("by_failure_reason", "by_logic_fragment"):
+        for key, bucket in metrics[grouping_name].items():
+            _metric_bucket_success_rate(bucket)
+            if bucket["attempts"] >= 1 and bucket["success_rate"] < 0.7:
+                metrics["low_success_categories"].append(
+                    {"group": grouping_name, "category": key, **bucket}
+                )
+    return metrics
 
 
 def _run_lake_build(repo_dir: Path, log_path: Path) -> int:
@@ -122,6 +250,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--bundle",
         type=Path,
         help="Path to a mumei std-proof-bundle.json.",
+    )
+    src.add_argument(
+        "--escalation-bundle",
+        type=Path,
+        help="Path to a mumei escalation-bundle.json.",
     )
     src.add_argument(
         "--scan-unknown",
@@ -192,6 +325,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         payloads: List[Tuple[Path, dict]] = [(args.cert, _load_cert(args.cert))]
     elif args.bundle is not None:
         payloads = [(args.bundle, _load_cert(args.bundle))]
+    elif args.escalation_bundle is not None:
+        payloads = [(args.escalation_bundle, _load_cert(args.escalation_bundle))]
     else:
         payloads = _scan_unknown_certs(args.scan_unknown / "std" / "certs")
         if not payloads:
@@ -232,14 +367,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     # would silently overwrite earlier payloads if two payloads
     # produced atoms whose module keys collide after sanitisation
     # (e.g. ``math.mm`` vs ``Math.mm`` → ``Generated.Math``).
+    all_candidate_atoms: List[IngestedAtom] = []
     all_atoms: List[IngestedAtom] = []
     for src_path, payload in payloads:
         atoms = collect_unknown_atoms(payload)
-        all_atoms.extend(atoms)
-        proved_per_payload.append([a.name for a in atoms])
+        proof_atoms = [atom for atom in atoms if not atom.is_partial_translation]
+        all_candidate_atoms.extend(atoms)
+        all_atoms.extend(proof_atoms)
+        proved_per_payload.append([a.name for a in proof_atoms])
         atoms_per_payload.append(atoms)
+        partial_count = len(atoms) - len(proof_atoms)
         print(
-            f"ingested {len(atoms):3d} unknown atom(s) from {src_path}"
+            f"ingested {len(atoms):3d} Lean candidate(s) from {src_path} "
+            f"({partial_count} partial translation)"
         )
     write_modules(all_atoms, args.out_dir, args.module_prefix)
 
@@ -249,18 +389,21 @@ def main(argv: Optional[List[str]] = None) -> int:
     # than by source certificate so that bundle inputs collapse
     # naturally into per-namespace stats.
     modules_summary: dict[str, List[str]] = {}
-    for atom in all_atoms:
+    for atom in all_candidate_atoms:
         modules_summary.setdefault(atom.module_key, []).append(atom.name)
     modules_list = [
         {
             "module": key,
+            "candidate_count": len(names),
             "unknown_count": len(names),
             "atoms": sorted(names),
         }
         for key, names in sorted(modules_summary.items())
     ]
     summary_payload = {
-        "total_unknown": len(all_atoms),
+        "total_candidates": len(all_candidate_atoms),
+        "total_unknown": len(all_candidate_atoms),
+        "total_generated": len(all_atoms),
         "modules": modules_list,
         "ci_mode_fallback": False,
     }
@@ -271,11 +414,29 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         print(
             f"wrote {args.summary_json} "
-            f"({summary_payload['total_unknown']} unknown atom(s) across "
+            f"({summary_payload['total_candidates']} Lean candidate(s) across "
             f"{len(modules_list)} module(s))"
         )
 
     if args.no_build:
+        metadata_per_payload = [
+            _metadata_for_atoms(
+                atoms,
+                args.out_dir,
+                args.module_prefix,
+                proved,
+                proved,
+            )
+            for atoms, proved in zip(atoms_per_payload, proved_per_payload)
+        ]
+        summary_payload["metrics"] = _aggregate_metrics(
+            metadata_per_payload,
+            atoms_per_payload,
+        )
+        if args.summary_json is not None:
+            args.summary_json.write_text(
+                json.dumps(summary_payload, indent=2, ensure_ascii=False) + "\n"
+            )
         print("dry run: skipping `lake build`")
         return 0
 
@@ -308,11 +469,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     build_log = log_path.read_text()
     print(f"`lake build` exited with status {rc}; log: {log_path}")
 
-    if args.no_export:
-        return rc
-
     # 3. Export per-input certificate.
-    if args.lean_cert_out is None:
+    if not args.no_export and args.lean_cert_out is None:
         parser.error("--lean-cert-out is required unless --no-export is set")
 
     attributions = _failed_theorem_attributions(build_log, source_root=args.repo_dir)
@@ -407,12 +565,39 @@ def main(argv: Optional[List[str]] = None) -> int:
                     local.add(name)
             per_payload_failed.append(sorted(local))
 
+    metadata_per_payload = [
+        _metadata_for_atoms(
+            atoms,
+            args.out_dir,
+            args.module_prefix,
+            proved,
+            failed,
+        )
+        for atoms, proved, failed in zip(
+            atoms_per_payload,
+            proved_per_payload,
+            per_payload_failed,
+        )
+    ]
+    summary_payload["metrics"] = _aggregate_metrics(
+        metadata_per_payload,
+        atoms_per_payload,
+    )
+    if args.summary_json is not None:
+        args.summary_json.write_text(
+            json.dumps(summary_payload, indent=2, ensure_ascii=False) + "\n"
+        )
+
+    if args.no_export:
+        return rc
+
     if len(payloads) == 1:
         upgraded = upgrade_certificate(
             cert=payloads[0][1],
             proved_atoms=proved_per_payload[0],
             failed_atoms=per_payload_failed[0],
             lean_version=args.lean_version,
+            atom_metadata=metadata_per_payload[0],
         )
         args.lean_cert_out.parent.mkdir(parents=True, exist_ok=True)
         args.lean_cert_out.write_text(
@@ -425,14 +610,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     # ``args.lean_cert_out`` interpreted as a directory.
     out_dir = args.lean_cert_out
     out_dir.mkdir(parents=True, exist_ok=True)
-    for (src_path, payload), proved, failed in zip(
-        payloads, proved_per_payload, per_payload_failed
+    for (src_path, payload), proved, failed, metadata in zip(
+        payloads,
+        proved_per_payload,
+        per_payload_failed,
+        metadata_per_payload,
     ):
         upgraded = upgrade_certificate(
             cert=payload,
             proved_atoms=proved,
             failed_atoms=failed,
             lean_version=args.lean_version,
+            atom_metadata=metadata,
         )
         target = out_dir / src_path.name
         target.write_text(json.dumps(upgraded, indent=2, ensure_ascii=False) + "\n")

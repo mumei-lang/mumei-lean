@@ -71,7 +71,7 @@ def test_patterns_bridge_generates_lean_sources_and_export_path(tmp_path: Path) 
     assert rc == 0
     generated = out_dir / "Generated" / "Std" / "Math" / "Patterns.lean"
     text = generated.read_text()
-    assert "clamp_preserves_order_correct" in text
+    assert "clamp_preserves_order_correct" not in text
     assert "bounded_mul_with_overflow_check_correct" in text
     assert "TODO: unproven" not in text
     assert not lean_cert.exists()
@@ -107,5 +107,7 @@ def test_patterns_bridge_exports_lean_verified_certificate(
     assert rc == 0
     payload = json.loads(lean_cert.read_text())
     statuses = {atom["name"]: atom["z3_check_result"] for atom in payload["atoms"]}
-    assert statuses["clamp_preserves_order"] == "lean_verified"
+    assert statuses["clamp_preserves_order"] == "unknown"
     assert statuses["bounded_mul_with_overflow_check"] == "lean_verified"
+    clamp = next(a for a in payload["atoms"] if a["name"] == "clamp_preserves_order")
+    assert clamp["lean_metadata"]["status"] == "partial_translation"

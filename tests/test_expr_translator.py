@@ -1,7 +1,16 @@
 """Unit tests for ``scripts.expr_translator``."""
 from __future__ import annotations
 
-from expr_translator import contains_identifier, translate_body, translate_contract
+import warnings
+
+from expr_translator import (
+    TranslatorIR,
+    TranslatorIRBinder,
+    contains_identifier,
+    translate_body,
+    translate_contract,
+    validate_translator_ir_compliance,
+)
 
 
 def test_trivial_contract_is_true():
@@ -478,3 +487,27 @@ def test_contains_identifier_respects_token_boundaries():
     # Empty / missing input.
     assert contains_identifier("", "result") is False
     assert contains_identifier("x > 0", "") is False
+
+
+def test_translator_ir_compliance_accepts_formal_spec_mappings():
+    result = translate_contract("forall(i, 0, n, arr[i] >= 0)")
+    assert result.translator_ir is not None
+    assert validate_translator_ir_compliance(result.translator_ir) == []
+
+
+def test_translator_ir_compliance_warns_on_spec_drift():
+    ir = TranslatorIR(
+        sort="contract_obligation",
+        binders=[TranslatorIRBinder("x", "x", "decimal", "Decimal")],
+        theorem_goal="x > 0",
+        lowering_rules=["undocumented_rule"],
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        issues = validate_translator_ir_compliance(ir)
+
+    assert len(issues) == 2
+    assert any("undocumented_rule" in issue for issue in issues)
+    assert any("decimal -> Decimal" in issue for issue in issues)
+    assert len(caught) == 2

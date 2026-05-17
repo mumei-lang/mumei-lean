@@ -83,44 +83,66 @@ structure MumeiEffectState where
 /-- Regex semantics are explicit manual bridge assumptions. -/
 def mumei_regex_matches (_s _pattern : String) : Prop := True
 
-/-- Base scalar type bridge for `i64 → Int`. -/
+/-!
+Formal spec: `docs/LEAN_TRANSLATOR_SPEC.md` §1, Type system mapping: `i64 → Int`.
+-/
 theorem mumei_i64_base_bridge (x : Int) : x = x := rfl
 
-/-- Base Boolean type bridge for `bool → Bool`. -/
+/-!
+Formal spec: `docs/LEAN_TRANSLATOR_SPEC.md` §1, Type system mapping: `bool → Bool`.
+-/
 theorem mumei_bool_base_bridge (b : Bool) : b = b := rfl
 
-/-- Base string type bridge for `string → String`. -/
+/-!
+Formal spec: `docs/LEAN_TRANSLATOR_SPEC.md` §1, Type system mapping: `string → String`.
+-/
 theorem mumei_string_base_bridge (s : String) : s = s := rfl
 
-/-- Refinement lowering preserves the predicate proof carried by a subtype. -/
+/-!
+Formal spec: `docs/LEAN_TRANSLATOR_SPEC.md` §2, Refinement lowering: predicate preservation.
+-/
 theorem mumei_subtype_predicate_bridge {T : Type u} {P : T → Prop}
     (x : MumeiSubtype T P) : P x.val := x.2
 
-/-- Array bounds are carried as explicit Lean hypotheses. -/
+/-!
+Formal spec: `docs/LEAN_TRANSLATOR_SPEC.md` §3, Array lowering: bounds proof preservation.
+-/
 theorem mumei_array_bounds_bridge {α : Type u} (arr : List α) (i : Nat)
     (h : i < arr.length) : i < arr.length := h
 
-/-- Guarded array access helper used by generated bridge statements. -/
+/-!
+Formal spec: `docs/LEAN_TRANSLATOR_SPEC.md` §3, Guarded array access helper.
+-/
 def mumei_array_get {α : Type u} (arr : List α) (i : Nat) (h : i < arr.length) : α :=
   arr.get ⟨i, h⟩
 
-/-- Array access lowering is guarded by the same bounds proof. -/
+/-!
+Formal spec: `docs/LEAN_TRANSLATOR_SPEC.md` §3, Array access lowering: guarded `List.get` bridge.
+-/
 theorem mumei_array_get_bridge {α : Type u} (arr : List α) (i : Nat)
     (h : i < arr.length) : mumei_array_get arr i h = arr.get ⟨i, h⟩ := rfl
 
-/-- Integer overflow obligations are explicit range assumptions. -/
+/-!
+Formal spec: `docs/LEAN_TRANSLATOR_SPEC.md` §6, `integer_overflow_bridge`.
+-/
 theorem mumei_i64_overflow_bridge (x : Int) (h : mumei_i64_in_range x) :
     mumei_i64_in_range x := h
 
-/-- String contains lowering is bridged through the executable helper. -/
+/-!
+Formal spec: `docs/LEAN_TRANSLATOR_SPEC.md` §3/§6, `string_regex_bridge` for `contains`.
+-/
 theorem mumei_string_contains_bridge (s sub : String) (h : mumei_contains s sub) :
     mumei_contains s sub := h
 
-/-- Regex obligations must be discharged by an explicit bridge assumption. -/
+/-!
+Formal spec: `docs/LEAN_TRANSLATOR_SPEC.md` §3/§6, `string_regex_bridge` for regex assumptions.
+-/
 theorem mumei_regex_bridge (s pattern : String) (h : mumei_regex_matches s pattern) :
     mumei_regex_matches s pattern := h
 
-/-- Effect-state lowering preserves the explicit token identity. -/
+/-!
+Formal spec: `docs/LEAN_TRANSLATOR_SPEC.md` §5, effect-state token binder preservation.
+-/
 theorem mumei_effect_state_bridge (state : MumeiEffectState) :
     state.token = state.token := rfl
 

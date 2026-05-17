@@ -24,7 +24,6 @@ theorem then carries a ``-- TODO: unproven`` marker which
 from __future__ import annotations
 
 import re
-import warnings
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -254,16 +253,13 @@ def _lean_type_from_mumei_type(mumei_type: str) -> Optional[str]:
     return _FORMAL_SPEC_TYPE_MAPPINGS.get(mumei_type)
 
 
-def validate_translator_ir_compliance(translator_ir: Optional[TranslatorIR]) -> List[str]:
+def validate_translator_ir_compliance(translator_ir: TranslatorIR) -> List[str]:
     """Warn if TranslatorIR metadata drifts from the formal Lean spec.
 
     The check is intentionally non-fatal: generated Lean obligations are
     still valuable triage artefacts even when a new lowering rule or binder
     type has not yet been documented.
     """
-    if translator_ir is None:
-        return []
-
     issues: List[str] = []
     for rule in translator_ir.lowering_rules:
         if rule not in _FORMAL_SPEC_LOWERING_RULES:
@@ -285,12 +281,6 @@ def validate_translator_ir_compliance(translator_ir: Optional[TranslatorIR]) -> 
                 f"{expected_lean_type} ({binder.mumei_name})"
             )
 
-    for issue in issues:
-        warnings.warn(
-            f"TranslatorIR compliance warning: {issue}",
-            RuntimeWarning,
-            stacklevel=2,
-        )
     return issues
 
 
@@ -384,7 +374,9 @@ def _make_translation_result(
         string_identifiers=string_identifiers,
     )
     result = _attach_translator_ir(source, result, tokens)
-    validate_translator_ir_compliance(result.translator_ir)
+    if result.translator_ir is not None:
+        for issue in validate_translator_ir_compliance(result.translator_ir):
+            print(f"TranslatorIR compliance warning: {issue}")
     return result
 
 

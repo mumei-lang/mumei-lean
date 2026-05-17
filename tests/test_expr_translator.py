@@ -1,8 +1,6 @@
 """Unit tests for ``scripts.expr_translator``."""
 from __future__ import annotations
 
-import warnings
-
 import expr_translator
 from expr_translator import (
     TranslatorIR,
@@ -504,14 +502,11 @@ def test_translator_ir_compliance_warns_on_spec_drift():
         lowering_rules=["undocumented_rule"],
     )
 
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        issues = validate_translator_ir_compliance(ir)
+    issues = validate_translator_ir_compliance(ir)
 
     assert len(issues) == 2
     assert any("undocumented_rule" in issue for issue in issues)
     assert any("decimal -> Decimal" in issue for issue in issues)
-    assert len(caught) == 2
 
 
 def test_translate_contract_prints_compliance_warnings(monkeypatch, capsys):

@@ -24,7 +24,6 @@ theorem then carries a ``-- TODO: unproven`` marker which
 from __future__ import annotations
 
 import re
-import warnings
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -282,12 +281,6 @@ def validate_translator_ir_compliance(translator_ir: TranslatorIR) -> List[str]:
                 f"{expected_lean_type} ({binder.mumei_name})"
             )
 
-    for issue in issues:
-        warnings.warn(
-            f"TranslatorIR compliance warning: {issue}",
-            RuntimeWarning,
-            stacklevel=2,
-        )
     return issues
 
 

@@ -24,6 +24,7 @@ theorem then carries a ``-- TODO: unproven`` marker which
 from __future__ import annotations
 
 import re
+import warnings
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -225,6 +226,74 @@ class TranslationResult:
     """Non-empty when the expression must be finished by a manual lemma."""
 
 
+_FORMAL_SPEC_LOWERING_RULES: Set[str] = {
+    "type_system_mapping",
+    "contract_lowering",
+    "array_bounds_bridge",
+    "string_regex_bridge",
+    "refinement_predicate_lowering",
+    "integer_overflow_bridge",
+}
+
+_FORMAL_SPEC_TYPE_MAPPINGS: Dict[str, str] = {
+    "i64": "Int",
+    "u64": "Nat",
+    "f64": "Float",
+    "bool": "Bool",
+    "string": "String",
+}
+
+
+def _lean_type_from_mumei_type(mumei_type: str) -> Optional[str]:
+    if mumei_type.startswith("array<") and mumei_type.endswith(">"):
+        inner_mumei_type = mumei_type[len("array<"):-1]
+        inner_lean_type = _lean_type_from_mumei_type(inner_mumei_type)
+        if inner_lean_type is None:
+            return None
+        return f"List {inner_lean_type}"
+    return _FORMAL_SPEC_TYPE_MAPPINGS.get(mumei_type)
+
+
+def validate_translator_ir_compliance(translator_ir: Optional[TranslatorIR]) -> List[str]:
+    """Warn if TranslatorIR metadata drifts from the formal Lean spec.
+
+    The check is intentionally non-fatal: generated Lean obligations are
+    still valuable triage artefacts even when a new lowering rule or binder
+    type has not yet been documented.
+    """
+    if translator_ir is None:
+        return []
+
+    issues: List[str] = []
+    for rule in translator_ir.lowering_rules:
+        if rule not in _FORMAL_SPEC_LOWERING_RULES:
+            issues.append(
+                f"lowering rule is not in docs/LEAN_TRANSLATOR_SPEC.md: {rule}"
+            )
+
+    for binder in translator_ir.binders:
+        expected_lean_type = _lean_type_from_mumei_type(binder.mumei_type)
+        if expected_lean_type is None:
+            issues.append(
+                "binder type mapping is not in docs/LEAN_TRANSLATOR_SPEC.md: "
+                f"{binder.mumei_type} -> {binder.lean_type} ({binder.mumei_name})"
+            )
+        elif binder.lean_type != expected_lean_type:
+            issues.append(
+                "binder type mapping disagrees with docs/LEAN_TRANSLATOR_SPEC.md: "
+                f"{binder.mumei_type} -> {binder.lean_type}, expected "
+                f"{expected_lean_type} ({binder.mumei_name})"
+            )
+
+    for issue in issues:
+        warnings.warn(
+            f"TranslatorIR compliance warning: {issue}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    return issues
+
+
 def _lean_binder_name(name: str) -> str:
     clean = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in name)
     if not clean:
@@ -314,7 +383,9 @@ def _make_translation_result(
         array_identifiers=array_identifiers,
         string_identifiers=string_identifiers,
     )
-    return _attach_translator_ir(source, result, tokens)
+    result = _attach_translator_ir(source, result, tokens)
+    validate_translator_ir_compliance(result.translator_ir)
+    return result
 
 
 def _attach_translator_ir(

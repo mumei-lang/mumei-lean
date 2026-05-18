@@ -18,6 +18,7 @@ Let `⟦T⟧` denote the Lean 4 type assigned to a Mumei type `T`.
 | `type_system_mapping.bool` | `bool` | `Bool` | `mumei_bool_base_bridge` |
 | `type_system_mapping.string` | `string` | `String` | `mumei_string_base_bridge` |
 | `type_system_mapping.array` | `array<T>` | `List ⟦T⟧` | `mumei_array_bounds_bridge`, `mumei_array_get_bridge` |
+| `type_system_mapping.field` | finite-field scalar | `Int` / `ZMod p` helper lemmas | `mathlib4_bridge` |
 | `type_system_mapping.refinement` | `type T where P` | `{v : ⟦T⟧ // P v}` | `mumei_subtype_predicate_bridge` |
 
 Mathematically:
@@ -29,6 +30,7 @@ Mathematically:
 ⟦bool⟧ = Bool
 ⟦string⟧ = String
 ⟦array<T>⟧ = List ⟦T⟧
+⟦field⟧ = Int, with canonical mathlib4 proofs routed through ZMod p
 ⟦type T where P⟧ = {v : ⟦T⟧ // P v}
 ```
 
@@ -40,6 +42,7 @@ Lean examples:
 #check (true : Bool)
 #check ("mumei" : String)
 #check ([1, 2, 3] : List Int)
+#check (ZMod 17)
 #check ({v : Int // v ≥ 0} : Type)
 ```
 
@@ -48,6 +51,7 @@ surface:
 
 ```text
 i64        -> Int
+field      -> Int
 string     -> String
 array<i64> -> List Int
 ```
@@ -127,6 +131,20 @@ Known helper calls lower as follows:
 | `mod(a, b)` | `MumeiLean.CryptoHelpers.mumei_mod ⟦a⟧ ⟦b⟧` |
 | `pow(a, b)` | `MumeiLean.CryptoHelpers.mumei_pow ⟦a⟧ ⟦b⟧` |
 | `phi(n)` | `MumeiLean.CryptoHelpers.mumei_phi ⟦n⟧` |
+| `ff_add(a, b, p)` | `MumeiLean.Algebra.mumei_ff_add ⟦a⟧ ⟦b⟧ ⟦p⟧` |
+| `ff_sub(a, b, p)` | `MumeiLean.Algebra.mumei_ff_sub ⟦a⟧ ⟦b⟧ ⟦p⟧` |
+| `ff_mul(a, b, p)` | `MumeiLean.Algebra.mumei_ff_mul ⟦a⟧ ⟦b⟧ ⟦p⟧` |
+| `ff_neg(a, p)` | `MumeiLean.Algebra.mumei_ff_neg ⟦a⟧ ⟦p⟧` |
+| `ff_pow(a, e, p)` | `MumeiLean.Algebra.mumei_ff_pow ⟦a⟧ ⟦e⟧ ⟦p⟧` |
+| `ff_inv(a, p)` | `MumeiLean.Algebra.mumei_ff_inv ⟦a⟧ ⟦p⟧` |
+| `ff_div(a, b, p)` | `MumeiLean.Algebra.mumei_ff_div ⟦a⟧ ⟦b⟧ ⟦p⟧` |
+| `ff_in_field(a, p)` | `MumeiLean.Algebra.mumei_ff_in_field ⟦a⟧ ⟦p⟧` |
+| `is_prime(p)` | `MumeiLean.Algebra.mumei_is_prime ⟦p⟧` |
+| `mod_eq(a, b, p)` | `MumeiLean.Algebra.mumei_mod_eq ⟦a⟧ ⟦b⟧ ⟦p⟧` |
+| `group_mul(a, b)` | `MumeiLean.Algebra.mumei_group_mul ⟦a⟧ ⟦b⟧` |
+| `group_inv(a)` | `MumeiLean.Algebra.mumei_group_inv ⟦a⟧` |
+| `group_pow(a, n)` | `MumeiLean.Algebra.mumei_group_pow ⟦a⟧ ⟦n⟧` |
+| `group_identity()` | `MumeiLean.Algebra.mumei_group_identity` |
 
 Array access is guarded by the array bridge catalog:
 
@@ -188,24 +206,31 @@ Mumei:
 
 ```text
 forall var: body
+forall var : T: body
+exists var: body
+exists(var: T, body)
 ```
 
 Lean:
 
 ```lean
 (∀ var : Int, body)
+(∀ var : ⟦T⟧, body)
+(∃ var : ⟦T⟧, body)
 ```
 
 Formal rule:
 
 ```text
 ⟦forall var: body⟧ᵖ = (∀ var : Int, ⟦body⟧ᵖ)
+⟦forall var : T: body⟧ᵖ = (∀ var : ⟦T⟧, ⟦body⟧ᵖ)
 ```
 
 The existential counterpart is:
 
 ```text
 exists var: body -> (∃ var : Int, ⟦body⟧ᵖ)
+exists(var: T, body) -> (∃ var : ⟦T⟧, ⟦body⟧ᵖ)
 ```
 
 ### 4.3 Recursion obligations
@@ -282,6 +307,9 @@ emitted in `TranslatorIR.lowering_rules`.
 | `string_regex_bridge` | String predicate or regex bridge obligation appears. | §1, §3 |
 | `refinement_predicate_lowering` | Refinement predicate or quantifier predicate preservation is required. | §2, §4 |
 | `integer_overflow_bridge` | Integer arithmetic needs explicit machine-range assumptions. | §1, §3 |
+| `finite_field_lowering` | Finite-field helper call appears. | §1, §3 |
+| `group_theory_lowering` | Group helper call appears. | §3 |
+| `mathlib4_bridge` | Generated expression relies on mathlib-backed helpers or tactics. | §1, §3 |
 
 A translator implementation is compliant iff:
 

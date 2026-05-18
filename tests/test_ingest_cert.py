@@ -184,6 +184,69 @@ def test_render_theorem_injects_body_semantics_for_simple_body():
     assert "sorry" not in rendered
 
 
+def test_render_theorem_injects_list_body_semantics():
+    cert = _make_certificate(
+        "m.mm",
+        [
+            _make_atom(
+                "list_body",
+                requires="true",
+                ensures="result[0] == x",
+                body_expr="[x, y]",
+            )
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "def listBodyResult (x y : Int) : List Int :=" in rendered
+    assert "[x, y]" in rendered
+    assert "(result : List Int)" in rendered
+    assert "(h_body : result = listBodyResult x y)" in rendered
+    assert "body semantics unsupported" not in rendered
+
+
+def test_render_theorem_injects_string_body_semantics():
+    cert = _make_certificate(
+        "m.mm",
+        [
+            _make_atom(
+                "string_body",
+                requires='starts_with(result, "M")',
+                ensures='starts_with(result, "M")',
+                body_expr='"Mumei"',
+            )
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "def stringBodyResult : String :=" in rendered
+    assert '"Mumei"' in rendered
+    assert "(result : String)" in rendered
+    assert "(h_body : result = stringBodyResult)" in rendered
+    assert "body semantics unsupported" not in rendered
+
+
+def test_render_theorem_injects_quantified_body_semantics():
+    cert = _make_certificate(
+        "m.mm",
+        [
+            _make_atom(
+                "quant_body",
+                requires="true",
+                ensures="result == true",
+                body_expr="forall(i, 0, n, arr[i] >= 0)",
+            )
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "def quantBodyResult (n : Int) (arr : List Int) : Prop :=" in rendered
+    assert "∀ i : Int" in rendered
+    assert "arr.get! i.toNat ≥ 0" in rendered
+    assert "(h_body : result = quantBodyResult n arr)" in rendered
+    assert "body semantics unsupported" not in rendered
+
+
 def test_render_theorem_falls_back_for_complex_body():
     cert = _make_certificate(
         "m.mm",

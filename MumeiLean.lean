@@ -8,6 +8,7 @@ import MumeiLean.Pilot
 import MumeiLean.Ownership
 import MumeiLean.Patterns
 import MumeiLean.CryptoHelpers
+import MumeiLean.Algebra
 import MumeiLean.Crypto
 import MumeiLean.Settlement
 import MumeiLean.SmartContract
@@ -37,6 +38,8 @@ Top-level layout:
   conservation, monotonicity)
 * `MumeiLean.CryptoHelpers` – helper functions for modular arithmetic,
   powers, and Euler totient expressions emitted by the bridge translator
+* `MumeiLean.Algebra`    – mathlib4-backed finite-field and group-theory
+  helpers emitted by the bridge translator
 * `MumeiLean.Crypto`     – reusable cryptographic proof patterns for
   RSA-style signature checks and finite-field bounds
 * `MumeiLean.Settlement` – RTGS settlement temporal safety + balance

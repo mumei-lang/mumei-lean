@@ -31,8 +31,8 @@ namespace MumeiLean
 
 /-- Combined tactic for mumei arithmetic obligations.
 
-Tries `omega`, then `linarith`, then `norm_num`, then `decide`, then
-`simp`. The `decide` stage discharges finite-state machine properties
+Tries `omega`, then `linarith`, then `nlinarith`, then `norm_num`, then
+`ring_nf`, then `decide`, then `simp`. The `decide` stage discharges finite-state machine properties
 when all relevant propositions have `Decidable` instances. The final
 `simp` always succeeds (it may simplify rather than close the goal),
 which means `mumei_arith` itself never fails — it just leaves unsolved
@@ -44,7 +44,9 @@ macro "mumei_arith" : tactic =>
      first
      | omega
      | linarith
+     | nlinarith
      | norm_num
+     | ring_nf
      | decide
      | split
      | (cases ‹_›)
@@ -58,11 +60,24 @@ macro "mumei_arith_deep" : tactic =>
      first
      | omega
      | linarith
+     | nlinarith
      | norm_num
+     | ring_nf
      | decide
      | (simp; omega)
      | (split <;> omega)
      | (cases ‹_›; omega)
      | (rcases ‹_› with ⟨_, _⟩; omega)))
+
+/-- Mathlib-oriented fallback for algebraic generated goals. -/
+macro "mumei_mathlib" : tactic =>
+  `(tactic|
+    (intros
+     first
+     | ring_nf
+     | field_simp
+     | group
+     | aesop
+     | simp))
 
 end MumeiLean

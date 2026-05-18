@@ -157,6 +157,14 @@ def test_unbounded_exists_colon_form():
     assert result.is_partial is False
 
 
+def test_quantifier_accepts_explicit_string_type():
+    result = translate_contract('forall name : String: starts_with(name, "A")')
+    assert result.lean_expr == '(∀ name : String, (mumei_starts_with name "A"))'
+    assert result.identifiers == []
+    assert result.string_identifiers == []
+    assert result.is_partial is False
+
+
 def test_nested_unbounded_quantifiers():
     result = translate_contract("forall i: forall j: i < j")
     assert result.lean_expr == "(∀ i : Int, (∀ j : Int, i < j))"
@@ -190,6 +198,14 @@ def test_exists_call_form():
     result = translate_contract("exists(x, x == 0)")
     assert result.lean_expr == "(∃ x : Int, x = 0)"
     assert result.identifiers == []
+    assert result.is_partial is False
+
+
+def test_exists_call_form_with_type_annotation():
+    result = translate_contract('exists(name: String, starts_with(name, "M"))')
+    assert result.lean_expr == '(∃ name : String, (mumei_starts_with name "M"))'
+    assert result.identifiers == []
+    assert result.string_identifiers == []
     assert result.is_partial is False
 
 
@@ -333,6 +349,19 @@ def test_crypto_function_calls():
     assert phi_result.is_partial is False
 
 
+def test_algebra_function_calls_lower_to_mumei_lean_algebra():
+    result = translate_contract("ff_add(x, y, p) == z && group_identity() == e")
+    assert "(MumeiLean.Algebra.mumei_ff_add x y p) = z" in result.lean_expr
+    assert "(MumeiLean.Algebra.mumei_group_identity) = e" in result.lean_expr
+    assert result.identifiers == ["x", "y", "p", "z", "e"]
+    assert result.is_partial is False
+
+    prime_result = translate_contract("is_prime(p) && mod_eq(x, y, p)")
+    assert "(MumeiLean.Algebra.mumei_is_prime p)" in prime_result.lean_expr
+    assert "(MumeiLean.Algebra.mumei_mod_eq x y p)" in prime_result.lean_expr
+    assert prime_result.is_partial is False
+
+
 def test_if_then_else_expression():
     result = translate_contract("if x > 0 then x else 0")
     assert result.lean_expr == "if x > 0 then x else 0"
@@ -345,6 +374,25 @@ def test_translate_body_handles_conditionals_and_arithmetic():
     assert result.lean_expr == "if x ≥ 0 then x else - x"
     assert result.identifiers == ["x"]
     assert result.is_partial is False
+
+
+def test_translate_body_handles_list_string_and_quantifier_expressions():
+    list_result = translate_body("[x, y, 3]")
+    assert list_result.lean_expr == "[x, y, 3]"
+    assert list_result.identifiers == ["x", "y"]
+    assert list_result.is_partial is False
+
+    string_result = translate_body('"ok"')
+    assert string_result.lean_expr == '"ok"'
+    assert string_result.identifiers == []
+    assert string_result.is_partial is False
+
+    quantifier_result = translate_body("forall(i, 0, n, arr[i] >= 0)")
+    assert "∀ i : Int" in quantifier_result.lean_expr
+    assert "arr.get! i.toNat ≥ 0" in quantifier_result.lean_expr
+    assert quantifier_result.identifiers == ["n", "arr"]
+    assert quantifier_result.array_identifiers == ["arr"]
+    assert quantifier_result.is_partial is False
 
 
 def test_translate_body_handles_saturating_abs_pattern():

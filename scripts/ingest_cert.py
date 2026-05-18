@@ -335,6 +335,47 @@ def _decl_parts_from_translator_ir(translator_ir: dict) -> List[str]:
     return [f"({' '.join(names)} : {lean_type})" for lean_type, names in grouped.items()]
 
 
+def _decl_parts_for_identifiers(
+    identifiers: List[str],
+    array_identifiers: List[str],
+    string_identifiers: List[str],
+) -> List[str]:
+    scalar = [
+        ident for ident in identifiers
+        if ident not in array_identifiers and ident not in string_identifiers
+    ]
+    parts: List[str] = []
+    if scalar:
+        parts.append(f"({' '.join(scalar)} : Int)")
+    for ident in array_identifiers:
+        if ident in identifiers:
+            parts.append(f"({ident} : List Int)")
+    strings = [ident for ident in string_identifiers if ident in identifiers]
+    if strings:
+        parts.append(f"({' '.join(strings)} : String)")
+    return parts
+
+
+def _body_result_type(source: str, translation: TranslationResult) -> str:
+    stripped = (source or "").strip()
+    if not stripped:
+        return "Int"
+    if stripped.startswith('"'):
+        return "String"
+    if stripped.startswith("["):
+        return "List Int"
+    if stripped.startswith("forall") or stripped.startswith("exists"):
+        return "Prop"
+    if stripped in {"true", "false"}:
+        return "Prop"
+    if any(stripped.startswith(f"{name}(") for name in ("starts_with", "ends_with", "contains", "not_contains")):
+        return "Prop"
+    if translation.string_identifiers and not translation.array_identifiers:
+        if stripped in translation.string_identifiers:
+            return "String"
+    return "Int"
+
+
 def _translator_ir_metadata(atom: IngestedAtom) -> List[str]:
     metadata = [
         f"source_atom={atom.name}",
@@ -399,21 +440,41 @@ def render_theorem(atom: IngestedAtom) -> str:
             if ident not in string_idents:
                 string_idents.append(ident)
 
+    result_name = _atom_result_name(atom.name)
+    use_body_semantics = (
+        has_result
+        and body_tr is not None
+        and not body_tr.is_partial
+        and bool(body_tr.lean_expr.strip())
+        and not contains_identifier(atom.body_expr, "result")
+    )
+    result_type_override = _body_result_type(atom.body_expr, body_tr) if use_body_semantics else None
+
     scalar_params: List[str] = [
-        i for i in idents if i not in array_idents and i not in string_idents
+        i for i in idents
+        if i not in array_idents and i not in string_idents and i != "result"
     ]
-    if has_result and "result" not in scalar_params and "result" not in array_idents:
+    if (
+        has_result
+        and result_type_override is None
+        and "result" not in scalar_params
+        and "result" not in array_idents
+    ):
         scalar_params.append("result")
 
-    decl_parts = _decl_parts_from_translator_ir(atom.translator_ir)
+    decl_parts = [] if result_type_override is not None else _decl_parts_from_translator_ir(atom.translator_ir)
     if not decl_parts:
         decl_parts = []
         if scalar_params:
             decl_parts.append("(" + " ".join(scalar_params) + " : Int)")
         for arr in array_idents:
-            decl_parts.append(f"({arr} : List Int)")
-        if string_idents:
-            decl_parts.append("(" + " ".join(string_idents) + " : String)")
+            if arr != "result":
+                decl_parts.append(f"({arr} : List Int)")
+        non_result_strings = [s for s in string_idents if s != "result"]
+        if non_result_strings:
+            decl_parts.append("(" + " ".join(non_result_strings) + " : String)")
+        if result_type_override is not None:
+            decl_parts.append(f"(result : {result_type_override})")
     params_decl = " ".join(decl_parts)
 
     requires_lean = req.lean_expr
@@ -422,21 +483,16 @@ def render_theorem(atom: IngestedAtom) -> str:
     def_params = [i for i in idents if i != "result"]
     def_decl = ""
     h_body_param = ""
-    result_name = _atom_result_name(atom.name)
-    use_body_semantics = (
-        body_tr is not None
-        and not body_tr.is_partial
-        and bool(body_tr.lean_expr.strip())
-        and not contains_identifier(atom.body_expr, "result")
-        and not body_tr.array_identifiers
-        and not body_tr.string_identifiers
-        and not array_idents
-        and not string_idents
-    )
     if use_body_semantics:
-        def_params_decl = f" ({' '.join(def_params)} : Int)" if def_params else ""
+        body_type = result_type_override or "Int"
+        def_param_parts = _decl_parts_for_identifiers(
+            def_params,
+            body_tr.array_identifiers,
+            body_tr.string_identifiers,
+        )
+        def_params_decl = f" {' '.join(def_param_parts)}" if def_param_parts else ""
         def_decl = (
-            f"def {result_name}{def_params_decl} : Int :=\n"
+            f"def {result_name}{def_params_decl} : {body_type} :=\n"
             f"  {body_tr.lean_expr}\n\n"
         )
         result_args = f" {' '.join(def_params)}" if def_params else ""

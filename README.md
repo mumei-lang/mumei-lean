@@ -58,6 +58,7 @@ mumei-lean/
 │   ├── Pilot.lean         # Hand-proven pilot theorems (PR 3)
 │   ├── Ownership.lean     # Ownership Transfer Protocol state proof
 │   ├── Patterns.lean      # Reusable SC proof patterns
+│   ├── Algebra.lean       # mathlib-backed finite-field/group helpers
 │   └── Settlement.lean    # RTGS settlement and balance proofs
 ├── scripts/
 │   ├── expr_translator.py # mumei contract expr → Lean Prop translator
@@ -145,16 +146,17 @@ lake build                # Lean library
    modules are deliberate stubs for the day we want a native path.
 4. **Scope is intentionally small.** The expression translator handles
    arithmetic comparisons, boolean connectives, integer literals,
-   conditionals, compact `match x { ... }` expressions, bounded
-   `forall(..)`, `arr[i]`, and known calls (`len`, `abs`, `min`, `max`).
-   If a certificate carries a simple `body_expr`, the bridge emits a
-   Lean `def <atom>Result` plus an `h_body` equality so the theorem can
-   prove postconditions from body semantics instead of only
+   conditionals, compact `match x { ... }` expressions, typed bounded and
+   unbounded quantifiers, `arr[i]`, list/string literals, and known calls
+   (`len`, `abs`, `min`, `max`, crypto helpers, finite-field helpers, and
+   group helpers). If a certificate carries a supported `body_expr`, the
+   bridge emits a Lean `def <atom>Result` plus an `h_body` equality so the
+   theorem can prove postconditions from body semantics instead of only
    `requires → ensures`. Anything else is preserved verbatim and tagged
    `-- TODO: unproven` or falls back to the contract-only proof path.
-   Current limitations: quantified/list/string body terms and unknown
-   function calls are still treated as complex bodies and require a
-   hand-written witness.
+   Current limitations: unknown function calls and domain-specific
+   invariants that need bespoke lemmas still require a hand-written
+   witness.
 5. **Targeted at Z3-`unknown`.** `mumei-lean` is *not* a replacement for
    Z3. Use it for the atoms Z3 cannot close (cryptographic correctness,
    abstract-algebraic invariants, etc.).

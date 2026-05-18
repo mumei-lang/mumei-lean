@@ -62,7 +62,11 @@ _RESERVED_IDENTS: Set[str] = {
     "forall", "exists", "len", "abs", "min", "max", "old",
     "starts_with", "ends_with", "contains", "not_contains", "sum", "count",
     "mod", "pow", "phi",
+    "ff_add", "ff_sub", "ff_mul", "ff_neg", "ff_pow", "ff_inv", "ff_div",
+    "ff_in_field", "is_prime", "mod_eq", "group_mul", "group_inv",
+    "group_pow", "group_identity",
     "if", "then", "else", "match", "_",
+    "i64", "u64", "f64", "bool", "string", "str", "int", "nat", "field",
     # Lean keywords we never want to over-bind even if the contract uses
     # them as identifier names (it should not, but defensively).
     "Type", "Prop", "fun", "let", "do", "match", "with", "by",
@@ -95,6 +99,20 @@ _KNOWN_FUNCTIONS = {
     "mod": "MumeiLean.CryptoHelpers.mumei_mod",
     "pow": "MumeiLean.CryptoHelpers.mumei_pow",
     "phi": "MumeiLean.CryptoHelpers.mumei_phi",
+    "ff_add": "MumeiLean.Algebra.mumei_ff_add",
+    "ff_sub": "MumeiLean.Algebra.mumei_ff_sub",
+    "ff_mul": "MumeiLean.Algebra.mumei_ff_mul",
+    "ff_neg": "MumeiLean.Algebra.mumei_ff_neg",
+    "ff_pow": "MumeiLean.Algebra.mumei_ff_pow",
+    "ff_inv": "MumeiLean.Algebra.mumei_ff_inv",
+    "ff_div": "MumeiLean.Algebra.mumei_ff_div",
+    "ff_in_field": "MumeiLean.Algebra.mumei_ff_in_field",
+    "is_prime": "MumeiLean.Algebra.mumei_is_prime",
+    "mod_eq": "MumeiLean.Algebra.mumei_mod_eq",
+    "group_mul": "MumeiLean.Algebra.mumei_group_mul",
+    "group_inv": "MumeiLean.Algebra.mumei_group_inv",
+    "group_pow": "MumeiLean.Algebra.mumei_group_pow",
+    "group_identity": "MumeiLean.Algebra.mumei_group_identity",
 }
 
 _KNOWN_FUNCTION_ARITY = {
@@ -112,11 +130,30 @@ _KNOWN_FUNCTION_ARITY = {
     "mod": 2,
     "pow": 2,
     "phi": 1,
+    "ff_add": 3,
+    "ff_sub": 3,
+    "ff_mul": 3,
+    "ff_neg": 2,
+    "ff_pow": 3,
+    "ff_inv": 2,
+    "ff_div": 3,
+    "ff_in_field": 2,
+    "is_prime": 1,
+    "mod_eq": 3,
+    "group_mul": 2,
+    "group_inv": 1,
+    "group_pow": 2,
+    "group_identity": 0,
 }
 
 _QUANTIFIER_KEYWORDS = {"forall", "exists"}
 _STRING_FUNCTIONS = {"starts_with", "ends_with", "contains", "not_contains"}
 _ARRAY_FIRST_ARG_FUNCTIONS = {"sum", "count"}
+_FINITE_FIELD_FUNCTIONS = {
+    "ff_add", "ff_sub", "ff_mul", "ff_neg", "ff_pow", "ff_inv", "ff_div",
+    "ff_in_field", "is_prime", "mod_eq",
+}
+_GROUP_FUNCTIONS = {"group_mul", "group_inv", "group_pow", "group_identity"}
 _SCALAR_CALL_FUNCTIONS = (
     set(_KNOWN_FUNCTIONS) - _STRING_FUNCTIONS - _ARRAY_FIRST_ARG_FUNCTIONS - {"old"}
 )
@@ -232,6 +269,9 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "string_regex_bridge",
     "refinement_predicate_lowering",
     "integer_overflow_bridge",
+    "finite_field_lowering",
+    "group_theory_lowering",
+    "mathlib4_bridge",
 }
 
 _FORMAL_SPEC_TYPE_MAPPINGS: Dict[str, str] = {
@@ -240,6 +280,21 @@ _FORMAL_SPEC_TYPE_MAPPINGS: Dict[str, str] = {
     "f64": "Float",
     "bool": "Bool",
     "string": "String",
+    "str": "String",
+    "int": "Int",
+    "nat": "Nat",
+    "field": "Int",
+}
+
+_QUANTIFIER_TYPE_ALIASES: Dict[str, Tuple[str, str]] = {
+    "i64": ("i64", "Int"),
+    "int": ("i64", "Int"),
+    "u64": ("u64", "Nat"),
+    "nat": ("u64", "Nat"),
+    "bool": ("bool", "Bool"),
+    "string": ("string", "String"),
+    "str": ("string", "String"),
+    "field": ("field", "Int"),
 }
 
 
@@ -330,7 +385,35 @@ def _lowering_rules(tokens: List[tuple], array_ids: List[str], string_ids: List[
         rules.append("refinement_predicate_lowering")
     if any(kind == "OP" and text in {"*", "/", "%"} for kind, text in tokens):
         rules.append("integer_overflow_bridge")
-    return rules
+    if any(kind == "ID" and text in _FINITE_FIELD_FUNCTIONS for kind, text in tokens):
+        rules.extend(["finite_field_lowering", "mathlib4_bridge"])
+    if any(kind == "ID" and text in _GROUP_FUNCTIONS for kind, text in tokens):
+        rules.extend(["group_theory_lowering", "mathlib4_bridge"])
+    deduped: List[str] = []
+    for rule in rules:
+        if rule not in deduped:
+            deduped.append(rule)
+    return deduped
+
+
+def _result_binder_for_source(source: str, tokens: List[tuple]) -> TranslatorIRBinder:
+    mumei_type = "i64"
+    lean_type = "Int"
+    for idx, (kind, text) in enumerate(tokens):
+        if kind == "ID" and text == "result" and idx + 1 < len(tokens) and tokens[idx + 1] == ("OP", "["):
+            mumei_type = "array<i64>"
+            lean_type = "List Int"
+        if kind == "STR" and any(tok == ("ID", "result") for tok in tokens):
+            mumei_type = "string"
+            lean_type = "String"
+        if kind == "ID" and text in _STRING_FUNCTIONS and idx + 1 < len(tokens) and tokens[idx + 1] == ("OP", "("):
+            close = _find_matching(tokens, idx + 1, "(", ")")
+            if close != -1:
+                for arg in _split_top_level(tokens, idx + 2, close):
+                    if any(tok == ("ID", "result") for tok in arg):
+                        mumei_type = "string"
+                        lean_type = "String"
+    return TranslatorIRBinder("result", "result", mumei_type, lean_type, role="result")
 
 
 def _build_translator_ir(
@@ -344,7 +427,7 @@ def _build_translator_ir(
 ) -> TranslatorIR:
     binders = [_binder_for_identifier(name, array_ids, string_ids) for name in identifiers]
     if contains_identifier(source, "result") and "result" not in identifiers:
-        binders.append(TranslatorIRBinder("result", "result", "i64", "Int", role="result"))
+        binders.append(_result_binder_for_source(source, tokens))
     sort = "manual_lemma_required" if manual_lemma_reason else "contract_obligation"
     return TranslatorIR(
         sort=sort,
@@ -564,9 +647,26 @@ def _find_quantifier_colon(tokens: List[tuple], start: int, end: int) -> int:
     return -1
 
 
+def _parse_quantifier_binder(tokens: List[tuple]) -> Optional[Tuple[str, str, str]]:
+    if len(tokens) == 1 and tokens[0][0] == "ID":
+        return tokens[0][1], "i64", "Int"
+    if (
+        len(tokens) == 3
+        and tokens[0][0] == "ID"
+        and tokens[1] == ("OP", ":")
+        and tokens[2][0] == "ID"
+    ):
+        type_key = tokens[2][1].lower()
+        type_pair = _QUANTIFIER_TYPE_ALIASES.get(type_key)
+        if type_pair is not None:
+            mumei_type, lean_type = type_pair
+            return tokens[0][1], mumei_type, lean_type
+    return None
+
+
 def _parse_unbounded_quantifier(
     tokens: List[tuple], start: int
-) -> Optional[Tuple[str, int, List[tuple]]]:
+) -> Optional[Tuple[str, str, int, List[tuple]]]:
     if start + 2 >= len(tokens):
         return None
     if tokens[start][0] != "KW" or tokens[start][1] not in _QUANTIFIER_KEYWORDS:
@@ -576,11 +676,18 @@ def _parse_unbounded_quantifier(
         return None
     if tokens[start + 2] != ("OP", ":"):
         return None
+    lean_type = "Int"
     colon_idx = start + 2
+    if start + 4 < len(tokens) and tokens[start + 3][0] == "ID" and tokens[start + 4] == ("OP", ":"):
+        type_pair = _QUANTIFIER_TYPE_ALIASES.get(tokens[start + 3][1].lower())
+        if type_pair is None:
+            return None
+        lean_type = type_pair[1]
+        colon_idx = start + 4
     body_start = colon_idx + 1
     if body_start >= len(tokens):
         return None
-    return var_name, body_start, tokens[body_start:]
+    return var_name, lean_type, body_start, tokens[body_start:]
 
 
 def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
@@ -704,10 +811,10 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
         if kind == "KW" and text in _QUANTIFIER_KEYWORDS:
             parsed = _parse_unbounded_quantifier(tokens, i)
             if parsed is not None:
-                var_name, _body_start, body_tokens = parsed
+                var_name, lean_type, _body_start, body_tokens = parsed
                 body_src, p = _emit_tokens(body_tokens)
                 symbol = "∀" if text == "forall" else "∃"
-                pieces.append(f"({symbol} {var_name} : Int, {body_src})")
+                pieces.append(f"({symbol} {var_name} : {lean_type}, {body_src})")
                 is_partial = is_partial or p
                 i = n
                 continue
@@ -730,29 +837,26 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                 i += 1
                 continue
             parts = _split_top_level(tokens, i + 2, close)
-            is_bounded_forall = text == "forall" and len(parts) == 4
-            is_unbounded_exists = text == "exists" and len(parts) == 2
-            is_bounded_exists = text == "exists" and len(parts) == 4
-            if not (is_bounded_forall or is_unbounded_exists or is_bounded_exists):
+            is_unbounded_quantifier = text == "exists" and len(parts) == 2
+            is_bounded_quantifier = len(parts) == 4
+            if not (is_unbounded_quantifier or is_bounded_quantifier):
                 # Malformed — fall back to verbatim.
                 pieces.append(text)
                 is_partial = True
                 i += 1
                 continue
-            var_tokens = parts[0]
-            if (
-                len(var_tokens) != 1
-                or var_tokens[0][0] != "ID"
-            ):
-                # Bound variable must be a single identifier.
+            parsed_binder = _parse_quantifier_binder(parts[0])
+            if parsed_binder is None:
+                # Bound variable must be an identifier, optionally with a supported type.
                 pieces.append(text)
                 is_partial = True
                 i += 1
                 continue
-            var_name = var_tokens[0][1]
-            if is_unbounded_exists:
+            var_name, _mumei_type, lean_type = parsed_binder
+            if is_unbounded_quantifier:
                 body_src, p = _emit_tokens(parts[1])
-                pieces.append(f"(∃ {var_name} : Int, {body_src})")
+                symbol = "∀" if text == "forall" else "∃"
+                pieces.append(f"({symbol} {var_name} : {lean_type}, {body_src})")
                 is_partial = is_partial or p
             else:
                 start_tokens, end_tokens, body_tokens = parts[1], parts[2], parts[3]
@@ -761,15 +865,35 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                 body_src, p3 = _emit_tokens(body_tokens)
                 if text == "forall":
                     pieces.append(
-                        f"(∀ {var_name} : Int, {start_src} ≤ {var_name} → "
+                        f"(∀ {var_name} : {lean_type}, {start_src} ≤ {var_name} → "
                         f"{var_name} < {end_src} → {body_src})"
                     )
                 else:
                     pieces.append(
-                        f"(∃ {var_name} : Int, {start_src} ≤ {var_name} ∧ "
+                        f"(∃ {var_name} : {lean_type}, {start_src} ≤ {var_name} ∧ "
                         f"{var_name} < {end_src} ∧ {body_src})"
                     )
                 is_partial = is_partial or p1 or p2 or p3
+            i = close + 1
+            continue
+
+        # [a, b, c] → Lean list literal [a, b, c]
+        if kind == "OP" and text == "[":
+            close = _find_matching(tokens, i, "[", "]")
+            if close == -1:
+                pieces.append(text)
+                is_partial = True
+                i += 1
+                continue
+            elem_parts = _split_top_level(tokens, i + 1, close)
+            elem_srcs: List[str] = []
+            for elem in elem_parts:
+                if not elem:
+                    continue
+                src, p = _emit_tokens(elem)
+                elem_srcs.append(src)
+                is_partial = is_partial or p
+            pieces.append(f"[{', '.join(elem_srcs)}]")
             i = close + 1
             continue
 
@@ -833,6 +957,9 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                 i += 1
                 continue
             arg_parts = _split_top_level(tokens, i + 2, close)
+            if text in _KNOWN_FUNCTIONS and _KNOWN_FUNCTION_ARITY[text] == 0:
+                if len(arg_parts) == 1 and not arg_parts[0]:
+                    arg_parts = []
             arg_srcs: List[str] = []
             for ap in arg_parts:
                 src, p = _emit_tokens(ap)
@@ -851,7 +978,8 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                         pieces.append(f"old_ ({arg_srcs[0]})")
                         is_partial = True
                 else:
-                    pieces.append(f"({_KNOWN_FUNCTIONS[text]} {' '.join(arg_srcs)})")
+                    call_args = f" {' '.join(arg_srcs)}" if arg_srcs else ""
+                    pieces.append(f"({_KNOWN_FUNCTIONS[text]}{call_args})")
             else:
                 pieces.append(f"{text} ({', '.join(arg_srcs)})")
                 is_partial = True
@@ -1076,6 +1204,7 @@ def translate_contract(source: str) -> TranslationResult:
     # quantifier body, so emitting them as ``variable`` declarations
     # would be wrong. Filter explicit quantifier-bound names out.
     bound: Set[str] = set()
+    quantifier_type_names: Set[str] = set()
     i = 0
     while i < len(tokens):
         kind, text = tokens[i]
@@ -1083,19 +1212,23 @@ def translate_contract(source: str) -> TranslationResult:
             parsed_unbounded = _parse_unbounded_quantifier(tokens, i)
             if parsed_unbounded is not None:
                 bound.add(parsed_unbounded[0])
+                if i + 4 < len(tokens) and tokens[i + 3][0] == "ID" and tokens[i + 4] == ("OP", ":"):
+                    quantifier_type_names.add(tokens[i + 3][1])
             elif i + 1 < len(tokens) and tokens[i + 1] == ("OP", "("):
                 close = _find_matching(tokens, i + 1, "(", ")")
                 if close != -1:
                     parts = _split_top_level(tokens, i + 2, close)
                     valid_arity = len(parts) == 4 or (text == "exists" and len(parts) == 2)
-                    if (
-                        valid_arity
-                        and len(parts[0]) == 1
-                        and parts[0][0][0] == "ID"
-                    ):
-                        bound.add(parts[0][0][1])
+                    parsed_binder = _parse_quantifier_binder(parts[0]) if valid_arity else None
+                    if parsed_binder is not None:
+                        bound.add(parsed_binder[0])
+                        if len(parts[0]) == 3:
+                            quantifier_type_names.add(parts[0][2][1])
         i += 1
-    free = [name for name in _extract_identifiers(tokens) if name not in bound]
+    free = [
+        name for name in _extract_identifiers(tokens)
+        if name not in bound and name not in quantifier_type_names
+    ]
     for ident in string_idents:
         if ident in array_idents:
             is_partial = True
@@ -1117,15 +1250,10 @@ def translate_contract(source: str) -> TranslationResult:
                     close = _find_matching(tokens, j + 1, "(", ")")
                     if close != -1:
                         parts = _split_top_level(tokens, j + 2, close)
-                        valid_arity = len(parts) == 4 or (
-                            text == "exists" and len(parts) == 2
-                        )
-                        if (
-                            valid_arity
-                            and len(parts[0]) == 1
-                            and parts[0][0][0] == "ID"
-                        ):
-                            scope_stack.append((close, parts[0][0][1]))
+                        valid_arity = len(parts) == 4 or (text == "exists" and len(parts) == 2)
+                        parsed_binder = _parse_quantifier_binder(parts[0]) if valid_arity else None
+                        if parsed_binder is not None:
+                            scope_stack.append((close, parsed_binder[0]))
             elif kind == "ID" and text in bound:
                 if not any(name == text for _, name in scope_stack):
                     is_partial = True

@@ -359,6 +359,7 @@ def upgrade_certificate(
     failed_atoms: Iterable[str],
     lean_version: str,
     atom_metadata: Optional[Dict[str, dict]] = None,
+    harness_contract: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """Return a new certificate dict with successful Lean proofs marked.
 
@@ -398,6 +399,8 @@ def upgrade_certificate(
 
     out["lean_version"] = lean_version
     out["lean_cert_schema_version"] = LEAN_CERT_SCHEMA_VERSION
+    if harness_contract is not None:
+        out["harness_contract"] = harness_contract
     return out
 
 

@@ -47,6 +47,11 @@ try:
         TRANSLATOR_VERSION,
         upgrade_certificate,
     )
+    from .bridge_harness import (
+        bridge_failure_taxonomy,
+        bridge_harness_contract,
+        bridge_stage_metadata,
+    )
 except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from ingest_cert import (  # type: ignore
@@ -63,6 +68,11 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
         MANUAL_LEMMA_REQUIRED,
         TRANSLATOR_VERSION,
         upgrade_certificate,
+    )
+    from bridge_harness import (  # type: ignore
+        bridge_failure_taxonomy,
+        bridge_harness_contract,
+        bridge_stage_metadata,
     )
 
 
@@ -99,6 +109,7 @@ def _candidate_metadata(
     out_dir: Path,
     module_prefix: str,
     status: str,
+    harness_stage: Optional[dict] = None,
 ) -> dict:
     rel = module_to_path(atom.module_key, module_prefix)
     diagnostics: List[str] = []
@@ -112,7 +123,7 @@ def _candidate_metadata(
         diagnostics.append("partial_translation")
     if atom.manual_lemma_reason:
         diagnostics.append(f"manual_lemma_reason={atom.manual_lemma_reason}")
-    return {
+    metadata = {
         "status": status,
         "theorem_name": f"{atom.name}_correct",
         "translator_version": TRANSLATOR_VERSION,
@@ -122,6 +133,12 @@ def _candidate_metadata(
         "translator_ir": atom.translator_ir,
         "manual_lemma_reason": atom.manual_lemma_reason,
     }
+    if harness_stage is not None:
+        metadata["harness"] = {
+            **harness_stage,
+            "failure_taxonomy": bridge_failure_taxonomy(status, diagnostics),
+        }
+    return metadata
 
 
 def _has_structural_partial_translation(atom: IngestedAtom) -> bool:
@@ -156,6 +173,7 @@ def _metadata_for_atoms(
     module_prefix: str,
     proved: List[str],
     failed: List[str],
+    harness_stage: Optional[dict] = None,
 ) -> Dict[str, dict]:
     return {
         atom.name: _candidate_metadata(
@@ -163,6 +181,7 @@ def _metadata_for_atoms(
             out_dir,
             module_prefix,
             _candidate_status(atom, proved, failed),
+            harness_stage,
         )
         for atom in atoms
     }
@@ -361,6 +380,44 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    if args.cert is not None:
+        input_kind = "cert"
+    elif args.bundle is not None:
+        input_kind = "bundle"
+    elif args.escalation_bundle is not None:
+        input_kind = "escalation_bundle"
+    else:
+        input_kind = "scan_unknown"
+    build_mode = (
+        "no_build"
+        if args.no_build
+        else "ci_mode"
+        if args.ci_mode
+        else "lake_build"
+    )
+    harness_contract = bridge_harness_contract(
+        input_kind=input_kind,
+        build_mode=build_mode,
+        module_prefix=args.module_prefix,
+        out_dir=str(args.out_dir),
+        lean_cert_out=(
+            str(args.lean_cert_out)
+            if args.lean_cert_out is not None
+            else None
+        ),
+    )
+    harness_stage = bridge_stage_metadata(
+        input_kind=input_kind,
+        build_mode=build_mode,
+        module_prefix=args.module_prefix,
+        out_dir=str(args.out_dir),
+        lean_cert_out=(
+            str(args.lean_cert_out)
+            if args.lean_cert_out is not None
+            else None
+        ),
+    )
+
     # 1. Build the input payload + remember the originating cert(s).
     if args.cert is not None:
         payloads: List[Tuple[Path, dict]] = [(args.cert, _load_cert(args.cert))]
@@ -386,6 +443,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                             "total_unknown": 0,
                             "modules": [],
                             "ci_mode_fallback": False,
+                            "harness_contract": harness_contract,
                         },
                         indent=2,
                         ensure_ascii=False,
@@ -447,6 +505,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "total_generated": len(all_atoms),
         "modules": modules_list,
         "ci_mode_fallback": False,
+        "harness_contract": harness_contract,
     }
     if args.summary_json is not None:
         args.summary_json.parent.mkdir(parents=True, exist_ok=True)
@@ -467,6 +526,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 args.module_prefix,
                 proved,
                 proved,
+                harness_stage,
             )
             for atoms, proved in zip(atoms_per_payload, proved_per_payload)
         ]
@@ -613,6 +673,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             args.module_prefix,
             proved,
             failed,
+            harness_stage,
         )
         for atoms, proved, failed in zip(
             atoms_per_payload,
@@ -639,6 +700,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             failed_atoms=per_payload_failed[0],
             lean_version=args.lean_version,
             atom_metadata=metadata_per_payload[0],
+            harness_contract=harness_contract,
         )
         args.lean_cert_out.parent.mkdir(parents=True, exist_ok=True)
         args.lean_cert_out.write_text(
@@ -663,6 +725,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             failed_atoms=failed,
             lean_version=args.lean_version,
             atom_metadata=metadata,
+            harness_contract=harness_contract,
         )
         target = out_dir / src_path.name
         target.write_text(json.dumps(upgraded, indent=2, ensure_ascii=False) + "\n")

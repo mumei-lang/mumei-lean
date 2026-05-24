@@ -5,6 +5,10 @@ harness contract. The bridge remains deterministic Python + Lean 4 execution;
 the contract below describes which artifacts are accepted, how state flows
 between steps, and when an atom may be marked `lean_verified`.
 
+For the artifact-level contract covering `.proof-cert.json`, generated Lean,
+`lake build`, `.lean-cert.json`, and summary JSON, see
+[`LEAN_HARNESS_CONTRACT.md`](LEAN_HARNESS_CONTRACT.md).
+
 ## Scope
 
 Covered entrypoints:

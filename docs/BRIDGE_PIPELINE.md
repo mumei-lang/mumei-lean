@@ -1,5 +1,10 @@
 # Bridge pipeline architecture
 
+See [`BRIDGE_HARNESS_SPEC.md`](BRIDGE_HARNESS_SPEC.md) for the end-to-end
+harness flow and [`LEAN_HARNESS_CONTRACT.md`](LEAN_HARNESS_CONTRACT.md) for
+the artifact contract covering `.proof-cert.json`, generated Lean, `lake build`,
+`.lean-cert.json`, and summary JSON.
+
 ```mermaid
 flowchart TD
     M["mumei .proof-cert.json"] --> I["scripts/ingest_cert.py"]

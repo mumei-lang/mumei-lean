@@ -140,10 +140,14 @@ def test_main_returns_nonzero_when_certificate_is_missing(tmp_path: Path, capsys
     assert "Lean certificate not found" in capsys.readouterr().err
 
 
-@pytest.mark.skipif(not _have_lake(),
-                    reason="lake not on PATH; skipping live Lean executable build")
-@pytest.mark.skipif(os.environ.get("MUMEI_LEAN_SKIP_LIVE") == "1",
-                    reason="MUMEI_LEAN_SKIP_LIVE=1 set")
+@pytest.mark.skipif(
+    not _have_lake(),
+    reason="lake not on PATH; skipping live Lean executable build",
+)
+@pytest.mark.skipif(
+    os.environ.get("MUMEI_LEAN_SKIP_LIVE") == "1",
+    reason="MUMEI_LEAN_SKIP_LIVE=1 set",
+)
 def test_example_cli_builds_and_runs(tmp_path: Path):
     rc = main(
         [

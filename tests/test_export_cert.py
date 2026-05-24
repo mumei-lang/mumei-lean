@@ -108,6 +108,19 @@ def test_all_verified_flips_when_every_atom_is_proved():
     assert upgraded["all_verified"] is True
 
 
+def test_upgrade_certificate_can_attach_harness_contract():
+    cert = _certificate([_atom("inc")])
+    harness_contract = {"policy": "mumei-lean-bridge-harness/v1"}
+    upgraded = upgrade_certificate(
+        cert=cert,
+        proved_atoms=["inc"],
+        failed_atoms=[],
+        lean_version="x",
+        harness_contract=harness_contract,
+    )
+    assert upgraded["harness_contract"] == harness_contract
+
+
 def test_failed_theorem_names_picks_up_compile_errors():
     log = """\
 Generated/Std/Math.lean:12:0: theorem broken_correct

@@ -42,7 +42,10 @@ pipeline diagram in [`docs/BRIDGE_PIPELINE.md`](docs/BRIDGE_PIPELINE.md).
 End-to-end usage and the mumei-side opt-in story live in
 [`docs/INTEGRATION.md`](docs/INTEGRATION.md). The NLAH-style escalation
 contract is documented in
-[`docs/BRIDGE_HARNESS_SPEC.md`](docs/BRIDGE_HARNESS_SPEC.md).
+[`docs/BRIDGE_HARNESS_SPEC.md`](docs/BRIDGE_HARNESS_SPEC.md), and the
+artifact-level Lean verifier contract for `.proof-cert.json`, generated Lean,
+`lake build`, `.lean-cert.json`, and summary JSON is documented in
+[`docs/LEAN_HARNESS_CONTRACT.md`](docs/LEAN_HARNESS_CONTRACT.md).
 
 ## Repository layout
 

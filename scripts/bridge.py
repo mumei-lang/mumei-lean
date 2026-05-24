@@ -400,14 +400,22 @@ def main(argv: Optional[List[str]] = None) -> int:
         build_mode=build_mode,
         module_prefix=args.module_prefix,
         out_dir=str(args.out_dir),
-        lean_cert_out=str(args.lean_cert_out) if args.lean_cert_out is not None else None,
+        lean_cert_out=(
+            str(args.lean_cert_out)
+            if args.lean_cert_out is not None
+            else None
+        ),
     )
     harness_stage = bridge_stage_metadata(
         input_kind=input_kind,
         build_mode=build_mode,
         module_prefix=args.module_prefix,
         out_dir=str(args.out_dir),
-        lean_cert_out=str(args.lean_cert_out) if args.lean_cert_out is not None else None,
+        lean_cert_out=(
+            str(args.lean_cert_out)
+            if args.lean_cert_out is not None
+            else None
+        ),
     )
 
     # 1. Build the input payload + remember the originating cert(s).

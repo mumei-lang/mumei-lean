@@ -270,6 +270,8 @@ def test_main_scan_unknown_writes_summary_json(tmp_path: Path):
     assert by_module["std/list"]["atoms"] == ["a"]
     assert by_module["std/math"]["unknown_count"] == 1
     assert by_module["std/math"]["atoms"] == ["c"]
+    assert payload["harness_contract"]["policy"] == "mumei-lean-bridge-harness/v1"
+    assert payload["harness_contract"]["input_kind"] == "scan_unknown"
 
 
 def test_main_scan_unknown_writes_empty_summary_when_dir_empty(tmp_path: Path):
@@ -286,11 +288,10 @@ def test_main_scan_unknown_writes_empty_summary_when_dir_empty(tmp_path: Path):
     )
     assert rc == 0
     payload = json.loads(summary.read_text())
-    assert payload == {
-        "total_unknown": 0,
-        "modules": [],
-        "ci_mode_fallback": False,
-    }
+    assert payload["total_unknown"] == 0
+    assert payload["modules"] == []
+    assert payload["ci_mode_fallback"] is False
+    assert payload["harness_contract"]["policy"] == "mumei-lean-bridge-harness/v1"
 
 
 def _patch_lake(monkeypatch, rc: int, log: str) -> None:
@@ -344,6 +345,8 @@ def test_main_escalation_bundle_exports_metrics_and_metadata(
     assert candidate["z3_check_result"] == "lean_verified"
     assert candidate["lean_metadata"]["status"] == "lean_verified"
     assert "escalation_reason=z3_unknown" in candidate["lean_metadata"]["diagnostics"]
+    assert upgraded["harness_contract"]["policy"] == "mumei-lean-bridge-harness/v1"
+    assert candidate["lean_metadata"]["harness"]["failure_taxonomy"] == "proved"
     metrics = json.loads(summary.read_text())["metrics"]
     assert metrics["escalation_attempts"] == 1
     assert metrics["lean_successes"] == 1

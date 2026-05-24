@@ -26,6 +26,13 @@ already understands. The 3-tier search inside
 artefacts that fit tier 1 (local `.proof-cert.json`) or tier 3
 (`MUMEI_PROOF_BUNDLE`).
 
+The escalation policy is now explicit in
+[`BRIDGE_HARNESS_SPEC.md`](BRIDGE_HARNESS_SPEC.md). `scripts/bridge.py`
+attaches a `mumei-lean-bridge-harness/v1` contract to summary JSON and exported
+certificates so downstream demos and agents can inspect the acceptance path,
+artifact obligations, verifier gates, and failure taxonomy without reverse
+engineering bridge internals.
+
 ### Internal pipeline (mumei-lean side)
 
 ```mermaid
@@ -64,6 +71,7 @@ schema with two additions:
 |-------------------------------|----------|-------------------------------------------------------------------------|
 | `lean_version`                | `String` | Lean toolchain string used for the build (e.g. `leanprover/lean4:v4.15.0`). |
 | `lean_cert_schema_version`    | `String` | Schema version for this Lean-augmented certificate (currently `1.0-lean`). |
+| `harness_contract`            | `Object` | Versioned bridge harness metadata describing acceptance path, artifact contracts, and verifier gates. |
 
 Atom-level changes are conservative:
 

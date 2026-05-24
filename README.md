@@ -40,7 +40,9 @@ Full diagram and field-by-field schema in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), with the body-semantics
 pipeline diagram in [`docs/BRIDGE_PIPELINE.md`](docs/BRIDGE_PIPELINE.md).
 End-to-end usage and the mumei-side opt-in story live in
-[`docs/INTEGRATION.md`](docs/INTEGRATION.md).
+[`docs/INTEGRATION.md`](docs/INTEGRATION.md). The NLAH-style escalation
+contract is documented in
+[`docs/BRIDGE_HARNESS_SPEC.md`](docs/BRIDGE_HARNESS_SPEC.md).
 
 ## Repository layout
 

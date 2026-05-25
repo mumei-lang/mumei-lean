@@ -123,6 +123,13 @@ def _candidate_metadata(
         diagnostics.append("partial_translation")
     if atom.manual_lemma_reason:
         diagnostics.append(f"manual_lemma_reason={atom.manual_lemma_reason}")
+    heatmap_data = _load_solver_heatmap(atom, out_dir)
+    if heatmap_data is not None:
+        diagnostics.append("solver_heatmap_available=true")
+        diagnostics.append(
+            "top_constraints="
+            + _format_top_constraints(heatmap_data.get("constraints", []), 3)
+        )
     metadata = {
         "status": status,
         "theorem_name": f"{atom.name}_correct",
@@ -133,12 +140,42 @@ def _candidate_metadata(
         "translator_ir": atom.translator_ir,
         "manual_lemma_reason": atom.manual_lemma_reason,
     }
+    if heatmap_data is not None:
+        metadata["solver_heatmap"] = heatmap_data
     if harness_stage is not None:
         metadata["harness"] = {
             **harness_stage,
             "failure_taxonomy": bridge_failure_taxonomy(status, diagnostics),
         }
     return metadata
+
+
+def _load_solver_heatmap(atom: IngestedAtom, out_dir: Path) -> Optional[dict]:
+    for path in (
+        out_dir / f"{atom.name}_heatmap.json",
+        out_dir.parent / f"{atom.name}_heatmap.json",
+    ):
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _format_top_constraints(constraints: List[dict], top_n: int) -> str:
+    sorted_constraints = sorted(
+        constraints,
+        key=lambda constraint: constraint.get("rlimit_consumed", 0),
+        reverse=True,
+    )
+    return ",".join(
+        f"{constraint.get('constraint_id', 'unknown')}({constraint.get('rlimit_consumed', 0)})"
+        for constraint in sorted_constraints[:top_n]
+    )
 
 
 def _has_structural_partial_translation(atom: IngestedAtom) -> bool:

@@ -353,6 +353,59 @@ def test_main_escalation_bundle_exports_metrics_and_metadata(
     assert metrics["by_logic_fragment"]["quantifier_alternation"]["success_rate"] == 1.0
 
 
+def test_main_escalation_bundle_includes_solver_heatmap_metadata(
+    tmp_path: Path, monkeypatch
+):
+    bundle_path = tmp_path / "math.escalation-bundle.json"
+    bundle_path.write_text(
+        json.dumps(
+            {
+                "version": "1.0",
+                "file": "std/math.mm",
+                "summary": {},
+                "candidates": [
+                    {
+                        **_atom("mul_loop", z3="unknown"),
+                        "escalation_reason": "z3_unknown",
+                    }
+                ],
+            }
+        )
+    )
+    out_dir = tmp_path / "generated"
+    (tmp_path / "mul_loop_heatmap.json").write_text(
+        json.dumps(
+            {
+                "atom_name": "mul_loop",
+                "total_time_ms": 50,
+                "total_rlimit": 100,
+                "timeout_reason": "z3_unknown",
+                "constraints": [
+                    {"constraint_id": "cheap", "rlimit_consumed": 5, "time_ms": 1},
+                    {"constraint_id": "expensive", "rlimit_consumed": 95, "time_ms": 49},
+                ],
+            }
+        )
+    )
+    out_cert = tmp_path / "out.lean-cert.json"
+    _patch_lake(monkeypatch, rc=0, log="")
+
+    rc = main(
+        [
+            "--escalation-bundle", str(bundle_path),
+            "--out-dir", str(out_dir),
+            "--module-prefix", "Generated",
+            "--lean-cert-out", str(out_cert),
+        ]
+    )
+
+    assert rc == 0
+    metadata = json.loads(out_cert.read_text())["candidates"][0]["lean_metadata"]
+    assert metadata["solver_heatmap"]["total_rlimit"] == 100
+    assert "solver_heatmap_available=true" in metadata["diagnostics"]
+    assert "top_constraints=expensive(95),cheap(5)" in metadata["diagnostics"]
+
+
 def test_main_marks_all_failed_when_lake_returns_nonzero_with_unrecognised_log(
     tmp_path: Path, monkeypatch
 ):

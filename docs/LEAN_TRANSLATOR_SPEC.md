@@ -1,4 +1,4 @@
-# Lean translator formal specification
+# Lean Translator Formal Specification
 
 This document fixes the formal Mumei-to-Lean 4 lowering contract used by
 `scripts/expr_translator.py`, the generated theorem surface, and downstream proof
@@ -6,9 +6,19 @@ certificate validation. The rules are intentionally small and auditable: every
 `TranslatorIR.lowering_rules` entry emitted by the translator must appear in the
 catalog below.
 
-## 1. Type system mapping
+## 1. Type System Mapping
 
 Let `⟦T⟧` denote the Lean 4 type assigned to a Mumei type `T`.
+
+| Mumei Type | Z3 Sort | Lean 4 Type | Semantic Invariant |
+|---|---|---|---|
+| `i64` | `(_ BitVec 64)` | `Int` | Two's-complement representation; arithmetic wraps on overflow. |
+| `u64` | `(_ BitVec 64)` | `Nat` | Non-negative integer; arithmetic wraps on overflow. |
+| `f64` | `Float` | `Float` | IEEE 754 floating point. |
+| `bool` | `Bool` | `Bool` | Truth value. |
+| `string` | `String` | `String` | UTF-8 string. |
+| `array<T>` | `(Array T)` | `List T` | Variable-length array/list, with explicit access evidence in Lean. |
+| `field` | `Int` / modular arithmetic | `Int` / mathlib4 field carrier | Finite-field element represented by integer residue data. |
 
 | Rule | Mumei type | Lean 4 type | Bridge lemma |
 |---|---|---|---|
@@ -59,7 +69,30 @@ array<i64> -> List Int
 Any new `TranslatorIRBinder.mumei_type` must be added to this specification and
 to the compliance catalog before it is emitted.
 
-## 2. Refinement type lowering
+## 2. Operator Semantics
+
+The following operator table is the bidirectional audit surface for Mumei → Z3
+→ Lean 4 escalation. The Python translator's `_FORMAL_SPEC_LOWERING_RULES`
+catalog and Rust certificate metadata must only emit rule IDs documented here.
+
+| Mumei Operator | Z3 Operator | Lean 4 Operator | Semantic Note |
+|---|---|---|---|
+| `+` | `bvadd` | `HAdd.hAdd` | Integer addition; overflow handled by the integer bridge. |
+| `-` | `bvsub` | `HSub.hSub` | Integer subtraction; overflow handled by the integer bridge. |
+| `*` | `bvmul` | `HMul.hMul` | Integer multiplication; overflow handled by the integer bridge. |
+| `/` | `bvsdiv` | `HDiv.hDiv` | Integer division; division by zero is undefined in the Mumei contract layer. |
+| `%` | `bvsmod` | `HMod.hMod` | Integer remainder; division by zero is undefined in the Mumei contract layer. |
+| `&&` | `and` | `And` | Logical conjunction. |
+| `\|\|` | `or` | `Or` | Logical disjunction. |
+| `!` | `not` | `Not` | Logical negation. |
+| `==` | `=` | `Eq` | Equality. |
+| `!=` | `distinct` | `Ne` | Disequality. |
+| `<` | `bvslt` | `LT.lt` | Signed less-than for integer-like scalar lowering. |
+| `<=` | `bvsle` | `LE.le` | Signed less-than-or-equal for integer-like scalar lowering. |
+| `>` | `bvsgt` | `GT.gt` | Signed greater-than for integer-like scalar lowering. |
+| `>=` | `bvsge` | `GE.ge` | Signed greater-than-or-equal for integer-like scalar lowering. |
+
+## 3. Refinement type lowering
 
 Mumei refinement syntax:
 
@@ -95,7 +128,7 @@ Formal rule:
 This rule is predicate-preserving only; it does not synthesize a new proof of
 `P`. The proof must already be carried by the subtype value.
 
-## 3. Contract and expression lowering
+## 4. Contract and expression lowering
 
 A Mumei contract expression `φ` lowers to a Lean proposition `⟦φ⟧ᵖ`.
 
@@ -161,13 +194,71 @@ mumei_array_get arr i h
 where `h : i < arr.length`; `mumei_array_get_bridge` records that this is the
 same as Lean's dependent `List.get`.
 
-## 4. Loop invariant and recursion encoding
+## 5. Semantic Gap Bridge Rules
+
+### 5.1 Integer Overflow Bridge
+
+- **Mumei**: `i64` uses two's-complement wrap semantics.
+- **Z3**: `(_ BitVec 64)` has explicit wrap semantics.
+- **Lean 4**: `Int` is unbounded, so range evidence must be carried explicitly.
+- **Bridge Lemma**: `mumei_i64_overflow_bridge`,
+  `mumei_i64_add_overflow_bridge`.
+- **Lowering Rule**: `integer_overflow_bridge`.
+
+### 5.2 Array Bounds Bridge
+
+- **Mumei**: `arr[i]` requires bounds checking.
+- **Z3**: array access is modeled through side constraints.
+- **Lean 4**: guarded access uses evidence `i < arr.length`; legacy generated
+  expressions may use `List.get!` with `Nat` indices.
+- **Bridge Lemma**: `mumei_array_bounds_bridge`, `mumei_array_get_bridge`.
+- **Lowering Rule**: `array_bounds_bridge`.
+
+### 5.3 String/Regex Bridge
+
+- **Mumei**: regex/string predicates may be evaluated at runtime.
+- **Z3**: string theory support is intentionally restricted by fragment routing.
+- **Lean 4**: regex obligations are explicit assumptions or handwritten lemmas.
+- **Bridge Lemma**: `mumei_regex_bridge`, `mumei_string_concat_bridge`.
+- **Lowering Rule**: `string_regex_bridge`.
+
+### 5.4 Effect State Bridge
+
+- **Mumei**: effects are represented as state transitions.
+- **Z3**: effect state is modeled with additional state variables.
+- **Lean 4**: `MumeiEffectState` token values represent state snapshots.
+- **Bridge Lemma**: `mumei_effect_state_bridge`,
+  `mumei_effect_transition_bridge`.
+
+### 5.5 Refinement Predicate Lowering
+
+- **Mumei**: `{v: T | P(v)}` and named refinement types carry predicates.
+- **Z3**: refinements lower to additional predicate constraints.
+- **Lean 4**: refinements lower to subtypes or predicate arguments.
+- **Bridge Lemma**: `mumei_subtype_predicate_bridge`.
+- **Lowering Rule**: `refinement_predicate_lowering`.
+
+### 5.6 Finite Field Lowering
+
+- **Mumei**: `ff_add`, `ff_mul`, and related finite-field helpers.
+- **Z3**: modular arithmetic constraints.
+- **Lean 4**: mathlib4 finite-field support through helper lemmas.
+- **Lowering Rule**: `finite_field_lowering`, `mathlib4_bridge`.
+
+### 5.7 Group Theory Lowering
+
+- **Mumei**: `group_mul`, `group_inv`, and related group helpers.
+- **Z3**: abstract group axioms.
+- **Lean 4**: mathlib4 group support through helper lemmas.
+- **Lowering Rule**: `group_theory_lowering`, `mathlib4_bridge`.
+
+## 6. Loop invariant and recursion encoding
 
 Mumei loop invariants are encoded as Lean propositions over explicit integer
 indices. The translator uses quantifier lowering instead of an operational loop
 semantics.
 
-### 4.1 Bounded quantifier
+### 6.1 Bounded quantifier
 
 Mumei:
 
@@ -200,7 +291,7 @@ which lowers to:
 (∀ i : Int, 0 ≤ i → i < n → arr.get! i.toNat ≥ 0)
 ```
 
-### 4.2 Unbounded quantifier
+### 6.2 Unbounded quantifier
 
 Mumei:
 
@@ -233,7 +324,7 @@ exists var: body -> (∃ var : Int, ⟦body⟧ᵖ)
 exists(var: T, body) -> (∃ var : ⟦T⟧, ⟦body⟧ᵖ)
 ```
 
-### 4.3 Recursion obligations
+### 6.3 Recursion obligations
 
 Recursive functions and loops are represented as ordinary Lean theorem
 obligations plus explicit hypotheses:
@@ -246,7 +337,7 @@ The translator does not synthesize termination proofs. It preserves the logical
 shape needed by handwritten Lean witnesses, and any unsupported recursion-specific
 syntax must be emitted as `manual_lemma_required` metadata.
 
-## 5. Typed intermediate translator IR
+## 7. Typed intermediate translator IR
 
 `TranslatorIR` is the typed audit record emitted beside each translated theorem.
 
@@ -259,9 +350,17 @@ class TranslatorIR:
     provenance_span: TranslatorIRProvenanceSpan
     lowering_rules: List[str]
     manual_lemma_reason: Optional[str]
+    semantic_gap_notes: List[str]
+    proof_trace_hints: List[str]
+    requires_bridge_lemmas: List[str]
 ```
 
-### 5.1 `TranslatorIRBinder`
+`semantic_gap_notes` describe Mumei/Z3/Lean semantic mismatches detected during
+translation, `proof_trace_hints` preserve proof-construction hints for Lean-side
+automation, and `requires_bridge_lemmas` names the bridge lemmas that downstream
+certificate validation should expect.
+
+### 7.1 `TranslatorIRBinder`
 
 A binder records how one Mumei identifier is represented in Lean.
 
@@ -294,7 +393,7 @@ binder.lean_type = ⟦binder.mumei_type⟧
 
 except where a future spec revision explicitly defines a contextual lowering.
 
-## 6. `lowering_rules` catalog
+## 8. `lowering_rules` catalog
 
 The following rule IDs are currently part of the formal specification and may be
 emitted in `TranslatorIR.lowering_rules`.
@@ -302,14 +401,14 @@ emitted in `TranslatorIR.lowering_rules`.
 | Rule ID | Required when | Specification section |
 |---|---|---|
 | `type_system_mapping` | Any typed binder is emitted. | §1 |
-| `contract_lowering` | Any `requires` / `ensures` expression is translated. | §3 |
-| `array_bounds_bridge` | Array/list access or array-typed binder appears. | §1, §3 |
-| `string_regex_bridge` | String predicate or regex bridge obligation appears. | §1, §3 |
-| `refinement_predicate_lowering` | Refinement predicate or quantifier predicate preservation is required. | §2, §4 |
-| `integer_overflow_bridge` | Integer arithmetic needs explicit machine-range assumptions. | §1, §3 |
-| `finite_field_lowering` | Finite-field helper call appears. | §1, §3 |
-| `group_theory_lowering` | Group helper call appears. | §3 |
-| `mathlib4_bridge` | Generated expression relies on mathlib-backed helpers or tactics. | §1, §3 |
+| `contract_lowering` | Any `requires` / `ensures` expression is translated. | §4 |
+| `array_bounds_bridge` | Array/list access or array-typed binder appears. | §1, §4, §5.2 |
+| `string_regex_bridge` | String predicate or regex bridge obligation appears. | §1, §4, §5.3 |
+| `refinement_predicate_lowering` | Refinement predicate or quantifier predicate preservation is required. | §3, §5.5, §6 |
+| `integer_overflow_bridge` | Integer arithmetic needs explicit machine-range assumptions. | §1, §2, §5.1 |
+| `finite_field_lowering` | Finite-field helper call appears. | §1, §4, §5.6 |
+| `group_theory_lowering` | Group helper call appears. | §4, §5.7 |
+| `mathlib4_bridge` | Generated expression relies on mathlib-backed helpers or tactics. | §1, §4, §5.6, §5.7 |
 
 A translator implementation is compliant iff:
 

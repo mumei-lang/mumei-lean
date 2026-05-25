@@ -540,6 +540,45 @@ def test_translator_ir_compliance_accepts_formal_spec_mappings():
     result = translate_contract("forall(i, 0, n, arr[i] >= 0)")
     assert result.translator_ir is not None
     assert validate_translator_ir_compliance(result.translator_ir) == []
+    assert "array_bounds_bridge" in result.translator_ir.lowering_rules
+    assert "refinement_predicate_lowering" in result.translator_ir.lowering_rules
+    assert "mumei_array_bounds_bridge" in result.translator_ir.requires_bridge_lemmas
+    assert any(
+        note.startswith("array_bounds_bridge:")
+        for note in result.translator_ir.semantic_gap_notes
+    )
+    assert any(
+        hint.startswith("preserve i < arr.length")
+        for hint in result.translator_ir.proof_trace_hints
+    )
+
+
+def test_translator_ir_semantic_gap_metadata_serializes_when_present():
+    result = translate_contract("result == x * y && contains(s, \"needle\")")
+    assert result.translator_ir is not None
+
+    payload = result.translator_ir.to_dict()
+
+    assert "integer_overflow_bridge" in payload["lowering_rules"]
+    assert "string_regex_bridge" in payload["lowering_rules"]
+    assert "semantic_gap_notes" in payload
+    assert "proof_trace_hints" in payload
+    assert payload["requires_bridge_lemmas"] == [
+        "mumei_i64_overflow_bridge",
+        "mumei_regex_bridge",
+    ]
+
+
+def test_translator_ir_regex_manual_lemma_requires_string_bridge():
+    result = translate_contract("regex(s, \"needle\")")
+    assert result.translator_ir is not None
+    assert result.is_partial is True
+    assert "string_regex_bridge" in result.translator_ir.lowering_rules
+    assert "mumei_regex_bridge" in result.translator_ir.requires_bridge_lemmas
+    assert any(
+        note.startswith("string_regex_bridge:")
+        for note in result.translator_ir.semantic_gap_notes
+    )
 
 
 def test_translator_ir_compliance_warns_on_spec_drift():

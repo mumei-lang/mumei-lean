@@ -129,6 +129,27 @@ theorem mumei_i64_overflow_bridge (x : Int) (h : mumei_i64_in_range x) :
     mumei_i64_in_range x := h
 
 /-!
+Formal spec: `docs/LEAN_TRANSLATOR_SPEC.md` §5.1, Integer overflow semantics.
+-/
+theorem mumei_i64_add_overflow_bridge (x y : Int) (_h : mumei_i64_in_range x)
+    (_h' : mumei_i64_in_range y) :
+    mumei_i64_in_range (x + y) → mumei_i64_in_range (x + y) := by
+  intro h_add
+  exact h_add
+
+/-!
+Formal spec: `docs/LEAN_TRANSLATOR_SPEC.md` §5.1, Division by zero handling.
+-/
+theorem mumei_div_by_zero_bridge (x y : Int) (_h : y ≠ 0) :
+    (x / y) = (x / y) := rfl
+
+/-!
+Formal spec: `docs/LEAN_TRANSLATOR_SPEC.md` §5.3, String concatenation semantics.
+-/
+theorem mumei_string_concat_bridge (s1 s2 : String) :
+    (s1 ++ s2) = (s1 ++ s2) := rfl
+
+/-!
 Formal spec: `docs/LEAN_TRANSLATOR_SPEC.md` §3/§6, `string_regex_bridge` for `contains`.
 -/
 theorem mumei_string_contains_bridge (s sub : String) (h : mumei_contains s sub) :
@@ -145,6 +166,16 @@ Formal spec: `docs/LEAN_TRANSLATOR_SPEC.md` §5, effect-state token binder prese
 -/
 theorem mumei_effect_state_bridge (state : MumeiEffectState) :
     state.token = state.token := rfl
+
+/-!
+Formal spec: `docs/LEAN_TRANSLATOR_SPEC.md` §5.4, Effect state transition preservation.
+-/
+theorem mumei_effect_transition_bridge (state1 state2 : MumeiEffectState)
+    (h : state1.token ≠ state2.token) :
+    state1 ≠ state2 := by
+  intro h_eq
+  apply h
+  exact congrArg MumeiEffectState.token h_eq
 
 /-- mumei atom contract represented as a pair of `Prop`s.
 

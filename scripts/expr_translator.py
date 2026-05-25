@@ -208,6 +208,9 @@ class TranslatorIR:
     provenance_span: TranslatorIRProvenanceSpan = field(default_factory=TranslatorIRProvenanceSpan)
     lowering_rules: List[str] = field(default_factory=list)
     manual_lemma_reason: Optional[str] = None
+    semantic_gap_notes: List[str] = field(default_factory=list)
+    proof_trace_hints: List[str] = field(default_factory=list)
+    requires_bridge_lemmas: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, object]:
         payload: Dict[str, object] = {
@@ -219,6 +222,12 @@ class TranslatorIR:
         }
         if self.manual_lemma_reason:
             payload["manual_lemma_reason"] = self.manual_lemma_reason
+        if self.semantic_gap_notes:
+            payload["semantic_gap_notes"] = list(self.semantic_gap_notes)
+        if self.proof_trace_hints:
+            payload["proof_trace_hints"] = list(self.proof_trace_hints)
+        if self.requires_bridge_lemmas:
+            payload["requires_bridge_lemmas"] = list(self.requires_bridge_lemmas)
         return payload
 
 
@@ -396,6 +405,61 @@ def _lowering_rules(tokens: List[tuple], array_ids: List[str], string_ids: List[
     return deduped
 
 
+def _build_semantic_gap_notes(
+    tokens: List[tuple],
+    array_ids: List[str],
+    string_ids: List[str],
+) -> List[str]:
+    notes: List[str] = []
+    if any(kind == "OP" and text in {"*", "/", "%"} for kind, text in tokens):
+        notes.append(
+            "integer_overflow_bridge: Mumei uses 2's complement wrap semantics, "
+            "Lean 4 Int is unbounded. Bridge lemma required for overflow behavior."
+        )
+    if array_ids:
+        notes.append(
+            "array_bounds_bridge: Mumei requires explicit bounds checking, "
+            "Lean 4 List.get! requires Nat index. Bridge lemma required."
+        )
+    if string_ids or any("regex" in str(text) for _kind, text in tokens):
+        notes.append(
+            "string_regex_bridge: String operations and regex semantics differ "
+            "between Z3 and Lean 4. Manual lemma may be required."
+        )
+    if any(kind == "KW" and text in _QUANTIFIER_KEYWORDS for kind, text in tokens):
+        notes.append(
+            "refinement_predicate_lowering: Quantifiers are lowered to Lean "
+            "dependent types. Bridge lemma may be required for complex predicates."
+        )
+    return notes
+
+
+def _bridge_lemmas_for_rules(lowering_rules: List[str]) -> List[str]:
+    bridge_lemmas: List[str] = []
+    if "integer_overflow_bridge" in lowering_rules:
+        bridge_lemmas.append("mumei_i64_overflow_bridge")
+    if "array_bounds_bridge" in lowering_rules:
+        bridge_lemmas.append("mumei_array_bounds_bridge")
+    if "string_regex_bridge" in lowering_rules:
+        bridge_lemmas.append("mumei_regex_bridge")
+    if "refinement_predicate_lowering" in lowering_rules:
+        bridge_lemmas.append("mumei_subtype_predicate_bridge")
+    return bridge_lemmas
+
+
+def _proof_trace_hints_for_rules(lowering_rules: List[str]) -> List[str]:
+    hints: List[str] = []
+    if "integer_overflow_bridge" in lowering_rules:
+        hints.append("assert mumei_i64_in_range hypotheses before applying arithmetic lemmas")
+    if "array_bounds_bridge" in lowering_rules:
+        hints.append("preserve i < arr.length evidence before guarded List access")
+    if "string_regex_bridge" in lowering_rules:
+        hints.append("route regex/string obligations through explicit bridge assumptions")
+    if "refinement_predicate_lowering" in lowering_rules:
+        hints.append("carry subtype predicate witnesses through quantifier lowering")
+    return hints
+
+
 def _result_binder_for_source(source: str, tokens: List[tuple]) -> TranslatorIRBinder:
     mumei_type = "i64"
     lean_type = "Int"
@@ -429,12 +493,16 @@ def _build_translator_ir(
     if contains_identifier(source, "result") and "result" not in identifiers:
         binders.append(_result_binder_for_source(source, tokens))
     sort = "manual_lemma_required" if manual_lemma_reason else "contract_obligation"
+    lowering_rules = _lowering_rules(tokens, array_ids, string_ids)
     return TranslatorIR(
         sort=sort,
         binders=binders,
         theorem_goal=lean_expr,
-        lowering_rules=_lowering_rules(tokens, array_ids, string_ids),
+        lowering_rules=lowering_rules,
         manual_lemma_reason=manual_lemma_reason,
+        semantic_gap_notes=_build_semantic_gap_notes(tokens, array_ids, string_ids),
+        proof_trace_hints=_proof_trace_hints_for_rules(lowering_rules),
+        requires_bridge_lemmas=_bridge_lemmas_for_rules(lowering_rules),
     )
 
 

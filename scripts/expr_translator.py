@@ -388,7 +388,7 @@ def _lowering_rules(tokens: List[tuple], array_ids: List[str], string_ids: List[
     rules = ["type_system_mapping", "contract_lowering"]
     if array_ids:
         rules.append("array_bounds_bridge")
-    if string_ids:
+    if string_ids or any("regex" in str(text) for _kind, text in tokens):
         rules.append("string_regex_bridge")
     if any(kind == "KW" and text in _QUANTIFIER_KEYWORDS for kind, text in tokens):
         rules.append("refinement_predicate_lowering")

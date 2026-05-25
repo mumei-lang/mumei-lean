@@ -569,6 +569,18 @@ def test_translator_ir_semantic_gap_metadata_serializes_when_present():
     ]
 
 
+def test_translator_ir_regex_manual_lemma_requires_string_bridge():
+    result = translate_contract("regex(s, \"needle\")")
+    assert result.translator_ir is not None
+    assert result.is_partial is True
+    assert "string_regex_bridge" in result.translator_ir.lowering_rules
+    assert "mumei_regex_bridge" in result.translator_ir.requires_bridge_lemmas
+    assert any(
+        note.startswith("string_regex_bridge:")
+        for note in result.translator_ir.semantic_gap_notes
+    )
+
+
 def test_translator_ir_compliance_warns_on_spec_drift():
     ir = TranslatorIR(
         sort="contract_obligation",

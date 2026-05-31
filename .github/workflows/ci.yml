@@ -168,6 +168,72 @@ jobs:
           echo "lake build done (informational); see logs above for status"
           exit 0
 
+  lean-executable:
+    name: Lean executable example
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        continue-on-error: true
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install elan + Lean toolchain
+        continue-on-error: true
+        run: |
+          set +e
+          curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          ~/.elan/bin/elan toolchain install "$(cat lean-toolchain)"
+          exit 0
+
+      - name: Cache Lake build artefacts
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: |
+            .lake
+            ~/.elan
+            examples/lean_cli/.lake
+          key: lean-executable-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'examples/lean_cli/lakefile.lean') }}
+          restore-keys: |
+            lean-executable-${{ runner.os }}-
+
+      - name: Build and smoke-test executable artifact
+        run: |
+          set +e
+          python scripts/lean_to_executable.py --help
+          if ! command -v lake >/dev/null 2>&1; then
+            echo "lake not available; skipping Lean executable example"
+            exit 0
+          fi
+          mkdir -p generated/Generated
+          lake exe cache get
+          lake build MumeiLean.MerkleTree MumeiLean.DeFi MumeiLean.ArkLibAudit
+          python scripts/lean_to_executable.py \
+            --project-dir examples/lean_cli \
+            --module SimpleCli \
+            --out-dir out/lean_cli \
+            --run-args merkle 7 3 4 7 1
+          out/lean_cli/simple-cli defi-transfer 20 30 5
+          out/lean_cli/simple-cli audit-commitment 10 20 30 60
+          echo "Lean executable example done (informational); see logs above for status"
+          exit 0
+
   scan-unknown:
     name: scan std for unknown atoms
     runs-on: ubuntu-latest

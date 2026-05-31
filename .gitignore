@@ -1,5 +1,6 @@
 # Lake / Lean build artefacts
 /.lake/
+/examples/lean_cli/.lake/
 /build/
 *.olean
 *.ilean

@@ -6,6 +6,8 @@ package «mumei-lean-cli-example» where
     ⟨`autoImplicit, false⟩
   ]
 
+require «mumei-lean» from "../.."
+
 @[default_target]
 lean_exe «simple-cli» where
   root := `SimpleCli

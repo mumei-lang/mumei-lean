@@ -36,4 +36,14 @@ simple-cli --help
 simple-cli greet Mumei
 simple-cli add 2 40
 simple-cli echo verified specs become production code
+simple-cli merkle 7 3 4 7 1
+simple-cli defi-transfer 20 30 5
+simple-cli audit-commitment 10 20 30 60
 ```
+
+The `merkle`, `defi-transfer`, and `audit-commitment` commands import the
+committed Phase 4-6 witness modules from the repository root:
+
+- `MumeiLean.MerkleTree`
+- `MumeiLean.DeFi`
+- `MumeiLean.ArkLibAudit`

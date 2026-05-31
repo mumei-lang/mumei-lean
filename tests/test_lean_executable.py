@@ -41,6 +41,7 @@ def test_build_executable_copies_binary_and_certificate(tmp_path: Path, monkeypa
     bin_dir = project_dir / ".lake" / "build" / "bin"
     bin_dir.mkdir(parents=True)
     (project_dir / "lakefile.lean").write_text("import Lake\n")
+    (project_dir / "lake-manifest.json").write_text("{}\n")
     binary = bin_dir / "simple-cli"
     binary.write_text("#!/bin/sh\n")
     cert = project_dir / ".lean-cert.json"
@@ -67,6 +68,101 @@ def test_build_executable_copies_binary_and_certificate(tmp_path: Path, monkeypa
     assert copied_cert.read_text() == '{"status":"verified"}\n'
 
 
+def test_missing_lake_manifest_runs_lake_update(tmp_path: Path, monkeypatch):
+    project_dir = tmp_path / "project"
+    bin_dir = project_dir / ".lake" / "build" / "bin"
+    bin_dir.mkdir(parents=True)
+    (project_dir / "lakefile.lean").write_text("import Lake\n")
+    (project_dir / ".lean-cert.json").write_text("{}\n")
+    (bin_dir / "simple-cli").write_text("#!/bin/sh\n")
+    calls = []
+
+    def fake_run(args, **_kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr("lean_to_executable.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "lean_to_executable.shutil.which",
+        lambda *_args, **_kwargs: "lake",
+    )
+
+    build_executable(
+        project_dir=project_dir,
+        module="SimpleCli",
+        out_dir=tmp_path / "out",
+    )
+
+    assert calls[:2] == [["lake", "update"], ["lake", "build", "simple-cli"]]
+
+
+def test_build_executable_can_smoke_test_copied_binary(tmp_path: Path, monkeypatch):
+    project_dir = tmp_path / "project"
+    bin_dir = project_dir / ".lake" / "build" / "bin"
+    bin_dir.mkdir(parents=True)
+    (project_dir / "lakefile.lean").write_text("import Lake\n")
+    binary = bin_dir / "simple-cli"
+    binary.write_text("#!/bin/sh\n")
+    cert = project_dir / ".lean-cert.json"
+    cert.write_text('{"status":"verified"}\n')
+    calls = []
+
+    def fake_run(args, **_kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "ok\n", "")
+
+    monkeypatch.setattr("lean_to_executable.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "lean_to_executable.shutil.which",
+        lambda *_args, **_kwargs: "lake",
+    )
+
+    copied_binary, _copied_cert = build_executable(
+        project_dir=project_dir,
+        module="SimpleCli",
+        out_dir=tmp_path / "out",
+        run_args=["add", "2", "40"],
+    )
+
+    assert calls[0] == ["lake", "update"]
+    assert calls[1][:3] == ["lake", "build", "simple-cli"]
+    assert calls[2] == [str(copied_binary), "add", "2", "40"]
+
+
+def test_build_executable_reports_smoke_test_timeout(tmp_path: Path, monkeypatch):
+    project_dir = tmp_path / "project"
+    bin_dir = project_dir / ".lake" / "build" / "bin"
+    bin_dir.mkdir(parents=True)
+    (project_dir / "lakefile.lean").write_text("import Lake\n")
+    binary = bin_dir / "simple-cli"
+    binary.write_text("#!/bin/sh\n")
+    (project_dir / ".lean-cert.json").write_text('{"status":"verified"}\n')
+    calls = []
+
+    def fake_run(args, **_kwargs):
+        calls.append(args)
+        if len(calls) == 3:
+            raise subprocess.TimeoutExpired(args, timeout=1)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr("lean_to_executable.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "lean_to_executable.shutil.which",
+        lambda *_args, **_kwargs: "lake",
+    )
+
+    with pytest.raises(LeanExecutableError) as exc:
+        build_executable(
+            project_dir=project_dir,
+            module="SimpleCli",
+            out_dir=tmp_path / "out",
+            run_args=["sleep"],
+            run_timeout=1,
+        )
+
+    assert "timed out after 1 seconds" in str(exc.value)
+
+
 def test_lake_failure_reports_build_output(tmp_path: Path, monkeypatch):
     project_dir = tmp_path / "project"
     project_dir.mkdir()
@@ -90,7 +186,7 @@ def test_lake_failure_reports_build_output(tmp_path: Path, monkeypatch):
         )
 
     message = str(exc.value)
-    assert "`lake build simple-cli` failed with exit code 1" in message
+    assert "`lake update` failed with exit code 1" in message
     assert "stdout" in message
     assert "stderr" in message
 
@@ -173,3 +269,17 @@ def test_example_cli_builds_and_runs(tmp_path: Path):
     )
     assert proc.returncode == 0
     assert proc.stdout.strip() == "42"
+
+    for args, expected in (
+        (["merkle", "7", "3", "4", "7", "1"], "merkle accepted root=7"),
+        (["defi-transfer", "20", "30", "5"], "defi transfer accepted to_balance=35"),
+        (["audit-commitment", "10", "20", "30", "60"], "audit commitment accepted commitment=60"),
+    ):
+        proc = subprocess.run(
+            [str(binary), *args],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert proc.returncode == 0
+        assert proc.stdout.strip() == expected

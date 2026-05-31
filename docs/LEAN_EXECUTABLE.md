@@ -29,7 +29,8 @@ it.
 python scripts/lean_to_executable.py \
   --project-dir examples/lean_cli \
   --module SimpleCli \
-  --out-dir out/lean_cli
+  --out-dir out/lean_cli \
+  --run-args add 2 40
 ```
 
 Options:
@@ -42,9 +43,14 @@ Options:
   copied.
 - `--binary-name`: optional filename for the copied executable.
 - `--lake`: Lake command name, defaulting to `lake`.
+- `--run-args`: optional smoke-test arguments passed to the copied executable
+  after the binary and certificate are exported.
+- `--run-timeout`: timeout in seconds for the `--run-args` smoke test.
 
 If `lake build <target>` fails, the script exits non-zero and prints the Lake
 output so CI can show the Lean elaboration or build error directly.
+If `--run-args` is provided, the script also exits non-zero when the exported
+binary cannot execute successfully.
 
 ## Lean CLI best practices
 
@@ -60,9 +66,49 @@ output so CI can show the Lean elaboration or build error directly.
 
 See [`examples/lean_cli`](../examples/lean_cli/README.md). It defines:
 
-- `SimpleCli.lean`: a small CLI with `greet`, `add`, and `echo` commands.
+- `SimpleCli.lean`: a small CLI with `greet`, `add`, `echo`, and Phase 4-6
+  demo commands.
 - `lakefile.lean`: a minimal Lake project with a `simple-cli` executable target.
 - `.lean-cert.json`: example proof metadata copied beside the binary.
+
+## Phase 4-6 demo pipeline
+
+The Phase 4-6 demo proofs are committed as Lean witness modules:
+
+| Demo | Lean module | CLI command |
+|---|---|---|
+| Merkle Tree Verification | `MumeiLean.MerkleTree` | `simple-cli merkle <root> <leaf> <sibling_hash> <expected_root> <hash_secure_flag>` |
+| DeFi Invariant | `MumeiLean.DeFi` | `simple-cli defi-transfer <from_balance> <to_balance> <amount>` |
+| ArkLib-Style Audit | `MumeiLean.ArkLibAudit` | `simple-cli audit-commitment <pre_hash> <post_hash> <invariant_hash> <expected_commitment>` |
+
+Validate the Lean proof modules and export the executable:
+
+```bash
+PATH="$HOME/.elan/bin:$PATH" lake build \
+  MumeiLean.MerkleTree \
+  MumeiLean.DeFi \
+  MumeiLean.ArkLibAudit
+
+python scripts/lean_to_executable.py \
+  --project-dir examples/lean_cli \
+  --module SimpleCli \
+  --out-dir out/phase46 \
+  --run-args merkle 7 3 4 7 1
+
+out/phase46/simple-cli defi-transfer 20 30 5
+out/phase46/simple-cli audit-commitment 10 20 30 60
+```
+
+The resulting directory contains:
+
+```text
+out/phase46/simple-cli
+out/phase46/.lean-cert.json
+```
+
+This is the executable artifact pair for downstream demo packaging: the binary
+implements the same Merkle, DeFi, and ArkLib-style contracts that the Lean
+modules witness.
 
 ## Vision
 

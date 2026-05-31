@@ -12,6 +12,9 @@ import MumeiLean.Algebra
 import MumeiLean.Crypto
 import MumeiLean.Settlement
 import MumeiLean.SmartContract
+import MumeiLean.MerkleTree
+import MumeiLean.DeFi
+import MumeiLean.ArkLibAudit
 import MumeiLean.MedicalDevice
 import MumeiLean.StdMathAbs
 
@@ -46,6 +49,9 @@ Top-level layout:
   conservation
 * `MumeiLean.SmartContract` – reentrancy guard and withdrawal balance
   preservation proofs
+* `MumeiLean.MerkleTree` – Phase 4 Merkle proof root binding witness
+* `MumeiLean.DeFi` – Phase 5 ERC-20/Uint256 transfer bound witness
+* `MumeiLean.ArkLibAudit` – Phase 6 reviewed top-level theorem witness
 * `MumeiLean.MedicalDevice` – insulin-pump dosage bound and cumulative
   safety proofs
 * `MumeiLean.StdMathAbs` – hand-written std/math + std/list proof

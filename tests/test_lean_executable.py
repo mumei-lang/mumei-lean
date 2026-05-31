@@ -129,6 +129,40 @@ def test_build_executable_can_smoke_test_copied_binary(tmp_path: Path, monkeypat
     assert calls[2] == [str(copied_binary), "add", "2", "40"]
 
 
+def test_build_executable_reports_smoke_test_timeout(tmp_path: Path, monkeypatch):
+    project_dir = tmp_path / "project"
+    bin_dir = project_dir / ".lake" / "build" / "bin"
+    bin_dir.mkdir(parents=True)
+    (project_dir / "lakefile.lean").write_text("import Lake\n")
+    binary = bin_dir / "simple-cli"
+    binary.write_text("#!/bin/sh\n")
+    (project_dir / ".lean-cert.json").write_text('{"status":"verified"}\n')
+    calls = []
+
+    def fake_run(args, **_kwargs):
+        calls.append(args)
+        if len(calls) == 3:
+            raise subprocess.TimeoutExpired(args, timeout=1)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr("lean_to_executable.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "lean_to_executable.shutil.which",
+        lambda *_args, **_kwargs: "lake",
+    )
+
+    with pytest.raises(LeanExecutableError) as exc:
+        build_executable(
+            project_dir=project_dir,
+            module="SimpleCli",
+            out_dir=tmp_path / "out",
+            run_args=["sleep"],
+            run_timeout=1,
+        )
+
+    assert "timed out after 1 seconds" in str(exc.value)
+
+
 def test_lake_failure_reports_build_output(tmp_path: Path, monkeypatch):
     project_dir = tmp_path / "project"
     project_dir.mkdir()

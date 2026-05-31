@@ -87,12 +87,17 @@ def _built_binary_path(project_dir: Path, target: str) -> Path:
 
 
 def _run_binary_smoke_test(binary: Path, args: list[str], timeout: int) -> subprocess.CompletedProcess[str]:
-    proc = subprocess.run(  # noqa: S603 - binary path is produced by Lake in this script.
-        [str(binary), *args],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+    try:
+        proc = subprocess.run(  # noqa: S603 - binary path is produced by Lake in this script.
+            [str(binary), *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise LeanExecutableError(
+            f"`{binary} {' '.join(args)}` timed out after {timeout} seconds"
+        ) from exc
     if proc.returncode != 0:
         output = (proc.stdout + proc.stderr).strip()
         detail = f"\n{output}" if output else ""

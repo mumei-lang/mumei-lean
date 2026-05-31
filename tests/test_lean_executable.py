@@ -1,6 +1,7 @@
 """Tests for Lean executable artifact export."""
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -260,6 +261,13 @@ def test_example_cli_builds_and_runs(tmp_path: Path):
     cert = tmp_path / ".lean-cert.json"
     assert binary.exists()
     assert cert.exists()
+    payload = json.loads(cert.read_text())
+    assert payload["status"] == "verified"
+    assert payload["proof_stamp"]["binary_target"] == "simple-cli"
+    assert (
+        "evalMiniMumei_add_matches_contract"
+        in payload["proof_stamp"]["witness_theorems"]
+    )
 
     proc = subprocess.run(
         [str(binary), "add", "2", "40"],
@@ -271,6 +279,9 @@ def test_example_cli_builds_and_runs(tmp_path: Path):
     assert proc.stdout.strip() == "42"
 
     for args, expected in (
+        (["mumei-dsl", "add", "2", "40"], "mumei-dsl result=42"),
+        (["mumei-dsl", "len", "verified", "specs"], "mumei-dsl result=14"),
+        (["mumei-dsl", "concat", "proof", "stamp"], "mumei-dsl result=proofstamp"),
         (["merkle", "7", "3", "4", "7", "1"], "merkle accepted root=7"),
         (["defi-transfer", "20", "30", "5"], "defi transfer accepted to_balance=35"),
         (["audit-commitment", "10", "20", "30", "60"], "audit commitment accepted commitment=60"),

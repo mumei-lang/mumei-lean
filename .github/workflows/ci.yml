@@ -228,7 +228,8 @@ jobs:
             --project-dir examples/lean_cli \
             --module SimpleCli \
             --out-dir out/lean_cli \
-            --run-args merkle 7 3 4 7 1
+            --run-args mumei-dsl add 2 40
+          out/lean_cli/simple-cli merkle 7 3 4 7 1
           out/lean_cli/simple-cli defi-transfer 20 30 5
           out/lean_cli/simple-cli audit-commitment 10 20 30 60
           echo "Lean executable example done (informational); see logs above for status"

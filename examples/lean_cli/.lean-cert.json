@@ -1,7 +1,20 @@
 {
-  "schema_version": "1.0-lean-executable-example",
+  "lean_cert_schema_version": "1.0-lean-executable-example",
   "module": "SimpleCli",
   "target": "simple-cli",
-  "status": "example_certificate",
-  "description": "Demonstrates colocating a Lean proof certificate with a production executable."
+  "status": "verified",
+  "proof_stamp": {
+    "kind": "lean_executable_artifact",
+    "dsl_surface": "mumei-dsl add | len | concat",
+    "witness_theorems": [
+      "evalMiniMumei_add_matches_contract",
+      "evalMiniMumei_len_matches_contract",
+      "evalMiniMumei_concat_matches_contract",
+      "MumeiLean.MerkleTree.verify_merkle_root_matches_expected",
+      "MumeiLean.DeFi.safe_transfer_preserves_uint256",
+      "MumeiLean.ArkLibAudit.review_top_level_theorem_matches_commitment"
+    ],
+    "binary_target": "simple-cli"
+  },
+  "description": "Demonstrates colocating a Lean proof stamp with a production executable."
 }

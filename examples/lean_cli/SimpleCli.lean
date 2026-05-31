@@ -3,7 +3,7 @@ import MumeiLean.DeFi
 import MumeiLean.ArkLibAudit
 
 def usage : String :=
-  "simple-cli commands:\n  greet <name>\n  add <n> <m>\n  echo <args...>\n  merkle <root> <leaf> <sibling_hash> <expected_root> <hash_secure_flag>\n  defi-transfer <from_balance> <to_balance> <amount>\n  audit-commitment <pre_hash> <post_hash> <invariant_hash> <expected_commitment>"
+  "simple-cli commands:\n  greet <name>\n  add <n> <m>\n  echo <args...>\n  mumei-dsl add <n> <m>\n  mumei-dsl len <text...>\n  mumei-dsl concat <left> <right>\n  merkle <root> <leaf> <sibling_hash> <expected_root> <hash_secure_flag>\n  defi-transfer <from_balance> <to_balance> <amount>\n  audit-commitment <pre_hash> <post_hash> <invariant_hash> <expected_commitment>"
 
 def joinWithSpace : List String → String
   | [] => ""
@@ -20,6 +20,44 @@ def parseNatAsInt (value : String) : Except String Int := do
 
 def requireCheck (condition : Bool) (message : String) : Except String Unit :=
   if condition then .ok () else .error message
+
+inductive MiniMumeiExpr where
+  | add (left right : Nat)
+  | len (text : String)
+  | concat (left right : String)
+
+def evalMiniMumei : MiniMumeiExpr → String
+  | .add left right => toString (left + right)
+  | .len text => toString text.length
+  | .concat left right => left ++ right
+
+theorem evalMiniMumei_add_matches_contract (left right : Nat) :
+    evalMiniMumei (.add left right) = toString (left + right) := by
+  rfl
+
+theorem evalMiniMumei_len_matches_contract (text : String) :
+    evalMiniMumei (.len text) = toString text.length := by
+  rfl
+
+theorem evalMiniMumei_concat_matches_contract (left right : String) :
+    evalMiniMumei (.concat left right) = left ++ right := by
+  rfl
+
+def parseMiniMumei : List String → Except String MiniMumeiExpr
+  | ["add", left, right] => do
+      let some l := left.toNat? | throw s!"not a natural number: {left}"
+      let some r := right.toNat? | throw s!"not a natural number: {right}"
+      pure (.add l r)
+  | "len" :: rest =>
+      pure (.len (joinWithSpace rest))
+  | ["concat", left, right] =>
+      pure (.concat left right)
+  | _ =>
+      throw "mumei-dsl commands: add <n> <m> | len <text...> | concat <left> <right>"
+
+def runMiniMumei (args : List String) : Except String String := do
+  let expr <- parseMiniMumei args
+  pure s!"mumei-dsl result={evalMiniMumei expr}"
 
 def runMerkle (rootStr leafStr siblingStr expectedStr secureStr : String) : Except String String := do
   let root <- parseNatAsInt rootStr
@@ -95,6 +133,8 @@ def main (args : List String) : IO UInt32 := do
   | "echo" :: rest =>
       IO.println (joinWithSpace rest)
       pure 0
+  | "mumei-dsl" :: rest =>
+      printResult (runMiniMumei rest)
   | ["merkle", root, leaf, siblingHash, expectedRoot, hashFunctionSecure] =>
       printResult (runMerkle root leaf siblingHash expectedRoot hashFunctionSecure)
   | ["defi-transfer", fromBalance, toBalance, amount] =>

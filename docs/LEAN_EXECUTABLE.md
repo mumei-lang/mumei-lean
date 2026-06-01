@@ -175,6 +175,14 @@ out/phase46/simple-cli defi-transfer 20 30 5
 out/phase46/simple-cli audit-commitment 10 20 30 60
 ```
 
+Expected CLI output:
+
+```text
+merkle accepted root=7
+defi transfer accepted to_balance=35
+audit commitment accepted commitment=60
+```
+
 The resulting directory contains:
 
 ```text

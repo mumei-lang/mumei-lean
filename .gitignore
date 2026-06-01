@@ -2,6 +2,7 @@
 /.lake/
 /examples/lean_cli/.lake/
 /build/
+/out/
 *.olean
 *.ilean
 *.hash

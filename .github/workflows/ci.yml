@@ -29,6 +29,7 @@ jobs:
     name: bridge body-semantics E2E
     runs-on: ubuntu-latest
     continue-on-error: true
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -61,6 +62,18 @@ jobs:
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
           ~/.elan/bin/elan toolchain install "$(cat lean-toolchain)"
           exit 0
+
+      - name: Cache Lake build artefacts
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: |
+            .lake
+            ~/.elan
+          key: bridge-e2e-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lakefile.lean') }}
+          restore-keys: |
+            bridge-e2e-${{ runner.os }}-
+            lake-${{ runner.os }}-
 
       - name: Run bridge E2E if lake is available
         run: |

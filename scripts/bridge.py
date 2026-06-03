@@ -318,11 +318,19 @@ def _run_lake_build(repo_dir: Path, log_path: Path) -> int:
     on ``$PATH`` so callers can distinguish "Lean toolchain missing"
     from "build failed".
     """
-    if shutil.which("lake") is None:
+    lake = shutil.which("lake")
+    elan = shutil.which("elan")
+    toolchain_path = repo_dir / "lean-toolchain"
+    cmd = ["lake", "build"]
+    if elan is not None and toolchain_path.exists():
+        toolchain = toolchain_path.read_text().strip()
+        if toolchain:
+            cmd = [elan, "run", toolchain, "lake", "build"]
+    elif lake is None:
         log_path.write_text("error: `lake` not found on PATH\n")
         return 127
     proc = subprocess.run(  # noqa: S603 - explicit lake invocation
-        ["lake", "build"],
+        cmd,
         cwd=repo_dir,
         capture_output=True,
         text=True,

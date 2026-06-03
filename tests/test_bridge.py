@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -303,6 +304,52 @@ def _patch_lake(monkeypatch, rc: int, log: str) -> None:
         return rc
 
     monkeypatch.setattr(bridge, "_run_lake_build", fake_run)
+
+
+def test_run_lake_build_uses_pinned_toolchain_when_elan_available(
+    tmp_path: Path, monkeypatch
+):
+    (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.15.0\n")
+    log_path = tmp_path / "lake_build.log"
+    calls: list[list[str]] = []
+
+    def fake_which(name: str) -> str | None:
+        return f"/mock/bin/{name}" if name in {"elan", "lake"} else None
+
+    def fake_run(cmd, cwd, capture_output, text):  # noqa: ANN001
+        calls.append(cmd)
+        assert cwd == tmp_path
+        assert capture_output is True
+        assert text is True
+        return subprocess.CompletedProcess(cmd, 0, stdout="ok\n", stderr="")
+
+    monkeypatch.setattr(bridge.shutil, "which", fake_which)
+    monkeypatch.setattr(bridge.subprocess, "run", fake_run)
+
+    assert bridge._run_lake_build(tmp_path, log_path) == 0
+    assert calls == [["/mock/bin/elan", "run", "leanprover/lean4:v4.15.0", "lake", "build"]]
+    assert log_path.read_text() == "ok\n"
+
+
+def test_run_lake_build_falls_back_to_lake_without_toolchain(
+    tmp_path: Path, monkeypatch
+):
+    log_path = tmp_path / "lake_build.log"
+    calls: list[list[str]] = []
+
+    def fake_which(name: str) -> str | None:
+        return "/mock/bin/lake" if name == "lake" else None
+
+    def fake_run(cmd, cwd, capture_output, text):  # noqa: ANN001
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="done\n")
+
+    monkeypatch.setattr(bridge.shutil, "which", fake_which)
+    monkeypatch.setattr(bridge.subprocess, "run", fake_run)
+
+    assert bridge._run_lake_build(tmp_path, log_path) == 0
+    assert calls == [["lake", "build"]]
+    assert log_path.read_text() == "done\n"
 
 
 def test_main_escalation_bundle_exports_metrics_and_metadata(

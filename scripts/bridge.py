@@ -139,6 +139,9 @@ def _candidate_metadata(
         "bridge_lemma_hash": BRIDGE_LEMMA_HASH,
         "proof_path": str((out_dir / rel).as_posix()),
         "diagnostics": diagnostics,
+        "escalation_reason": atom.escalation_reason,
+        "logic_fragment_tags": atom.logic_fragment_tags,
+        "z3_result_class": atom.z3_result_class,
         "translator_ir": atom.translator_ir,
         "manual_lemma_reason": atom.manual_lemma_reason,
         "proof_strategy": proof_strategy,
@@ -364,6 +367,7 @@ def _aggregate_metrics(
         "by_atom": {},
         "by_logic_fragment": {},
         "by_failure_reason": {},
+        "by_z3_result_class": {},
         "low_success_categories": [],
     }
     for metadata, atoms in zip(metadata_by_payload, atoms_per_payload):
@@ -386,6 +390,7 @@ def _aggregate_metrics(
                 "status": status,
                 "failure_reason": atom.escalation_reason,
                 "logic_fragment_tags": atom.logic_fragment_tags,
+                "z3_result_class": atom.z3_result_class,
                 "translator_version": atom.translator_version,
                 "bridge_lemma_hash": atom.bridge_lemma_hash,
                 "manual_lemma_reason": atom.manual_lemma_reason,
@@ -410,7 +415,20 @@ def _aggregate_metrics(
                     "lean_successes" if status == LEAN_VERIFIED else status
                 )
                 tag_bucket[tag_bucket_key] += 1
-    for grouping_name in ("by_failure_reason", "by_logic_fragment"):
+            class_bucket = metrics["by_z3_result_class"].setdefault(
+                atom.z3_result_class or atom.z3_check_result,
+                _empty_metric_bucket(),
+            )
+            class_bucket["attempts"] += 1
+            class_bucket_key = (
+                "lean_successes" if status == LEAN_VERIFIED else status
+            )
+            class_bucket[class_bucket_key] += 1
+    for grouping_name in (
+        "by_failure_reason",
+        "by_logic_fragment",
+        "by_z3_result_class",
+    ):
         for key, bucket in metrics[grouping_name].items():
             _metric_bucket_success_rate(bucket)
             if bucket["attempts"] >= 1 and bucket["success_rate"] < 0.7:
@@ -467,6 +485,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     src.add_argument(
         "--escalation-bundle",
+        "--ingest-bundle",
+        dest="escalation_bundle",
         type=Path,
         help="Path to a mumei escalation-bundle.json.",
     )

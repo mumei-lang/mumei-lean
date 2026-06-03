@@ -69,7 +69,9 @@ mumei-lean/
 │   ├── expr_translator.py # mumei contract expr → Lean Prop translator
 │   ├── ingest_cert.py     # .proof-cert.json → generated/*.lean
 │   ├── export_cert.py     # lake build log + cert → .lean-cert.json
-│   └── bridge.py          # End-to-end orchestrator (humans run this)
+│   ├── bridge.py          # End-to-end orchestrator (humans run this)
+│   ├── build.sh           # Optimized full Lake build
+│   └── build-target.sh    # Optimized targeted Lake build
 ├── tests/                 # pytest suite for the Python bridge
 ├── docs/
 │   ├── ARCHITECTURE.md
@@ -134,6 +136,57 @@ of the mumei resolver), or roll it into a bundle and point
 python -m pytest -v       # Python bridge
 lake build                # Lean library
 ```
+
+## Building
+
+### Quick Build (Recommended)
+
+Use the optimized build script for faster builds:
+
+```bash
+./scripts/build.sh
+```
+
+This script:
+
+- Uses `LEAN_NUM_THREADS` for parallel compilation with all available CPU cores
+- Fetches precompiled mathlib4 cache to avoid recompiling the entire library
+- Performs incremental builds when possible
+
+### Manual Build
+
+For manual control:
+
+```bash
+# Update dependencies and fetch mathlib4 cache
+lake update -R
+lake exe cache get
+
+# Build with parallel jobs (adjust number based on your CPU)
+LEAN_NUM_THREADS=8 lake build
+```
+
+### Building Specific Targets
+
+To build only specific modules (faster for development):
+
+```bash
+# Build only MumeiLean library (excludes Generated)
+./scripts/build-target.sh MumeiLean
+
+# Build specific module
+./scripts/build-target.sh MumeiLean.Basic
+
+# Build only Generated library
+./scripts/build-target.sh Generated
+```
+
+### Performance Notes
+
+- The first build will take longer as it downloads and compiles dependencies
+- Subsequent builds are much faster due to Lake's incremental compilation
+- The `.lake` directory contains build cache - do not delete it unless necessary
+- mathlib4 is pinned to v4.15.0 for stability
 
 ## Design constraints (read me before extending)
 

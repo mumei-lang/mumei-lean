@@ -3,7 +3,8 @@ open Lake DSL
 
 package «mumei-lean» where
   leanOptions := #[
-    ⟨`autoImplicit, false⟩
+    ⟨`autoImplicit, false⟩,
+    ⟨`maxHeartbeats, .ofNat 1000000⟩
   ]
 
 -- Pinned to a mathlib4 release tag matching `lean-toolchain`

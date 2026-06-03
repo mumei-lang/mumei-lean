@@ -339,14 +339,23 @@ def _decl_parts_for_identifiers(
     identifiers: List[str],
     array_identifiers: List[str],
     string_identifiers: List[str],
+    predicate_identifiers: Optional[List[str]] = None,
 ) -> List[str]:
+    predicate_identifiers = predicate_identifiers or []
     scalar = [
         ident for ident in identifiers
-        if ident not in array_identifiers and ident not in string_identifiers
+        if (
+            ident not in array_identifiers
+            and ident not in string_identifiers
+            and ident not in predicate_identifiers
+        )
     ]
     parts: List[str] = []
     if scalar:
         parts.append(f"({' '.join(scalar)} : Int)")
+    for pred in predicate_identifiers:
+        if pred in identifiers:
+            parts.append(f"({pred} : Int → Prop)")
     for ident in array_identifiers:
         if ident in identifiers:
             parts.append(f"({ident} : List Int)")
@@ -439,6 +448,13 @@ def render_theorem(atom: IngestedAtom) -> str:
         for ident in tr.string_identifiers:
             if ident not in string_idents:
                 string_idents.append(ident)
+    predicate_idents: List[str] = []
+    for tr in (req, ens, body_tr):
+        if tr is None:
+            continue
+        for ident in tr.predicate_identifiers:
+            if ident not in predicate_idents:
+                predicate_idents.append(ident)
 
     result_name = _atom_result_name(atom.name)
     use_body_semantics = (
@@ -452,7 +468,12 @@ def render_theorem(atom: IngestedAtom) -> str:
 
     scalar_params: List[str] = [
         i for i in idents
-        if i not in array_idents and i not in string_idents and i != "result"
+        if (
+            i not in array_idents
+            and i not in string_idents
+            and i not in predicate_idents
+            and i != "result"
+        )
     ]
     if (
         has_result
@@ -467,6 +488,9 @@ def render_theorem(atom: IngestedAtom) -> str:
         decl_parts = []
         if scalar_params:
             decl_parts.append("(" + " ".join(scalar_params) + " : Int)")
+        for pred in predicate_idents:
+            if pred != "result":
+                decl_parts.append(f"({pred} : Int → Prop)")
         for arr in array_idents:
             if arr != "result":
                 decl_parts.append(f"({arr} : List Int)")
@@ -489,6 +513,7 @@ def render_theorem(atom: IngestedAtom) -> str:
             def_params,
             body_tr.array_identifiers,
             body_tr.string_identifiers,
+            body_tr.predicate_identifiers,
         )
         def_params_decl = f" {' '.join(def_param_parts)}" if def_param_parts else ""
         def_decl = (

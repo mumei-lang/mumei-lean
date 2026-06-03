@@ -318,11 +318,19 @@ def _run_lake_build(repo_dir: Path, log_path: Path) -> int:
     on ``$PATH`` so callers can distinguish "Lean toolchain missing"
     from "build failed".
     """
-    if shutil.which("lake") is None:
+    lake = shutil.which("lake")
+    elan = shutil.which("elan")
+    toolchain_path = repo_dir / "lean-toolchain"
+    cmd = ["lake", "build"]
+    if elan is not None and toolchain_path.exists():
+        toolchain = toolchain_path.read_text().strip()
+        if toolchain:
+            cmd = [elan, "run", toolchain, "lake", "build"]
+    elif lake is None:
         log_path.write_text("error: `lake` not found on PATH\n")
         return 127
     proc = subprocess.run(  # noqa: S603 - explicit lake invocation
-        ["lake", "build"],
+        cmd,
         cwd=repo_dir,
         capture_output=True,
         text=True,
@@ -606,6 +614,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     build_log = log_path.read_text()
     print(f"`lake build` exited with status {rc}; log: {log_path}")
+    if rc != 0:
+        print("--- lake build log tail ---", file=sys.stderr)
+        print("\n".join(build_log.splitlines()[-80:]), file=sys.stderr)
+        print("--- end lake build log tail ---", file=sys.stderr)
 
     # 3. Export per-input certificate.
     if not args.no_export and args.lean_cert_out is None:

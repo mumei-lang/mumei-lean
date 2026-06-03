@@ -8,6 +8,9 @@ from expr_translator import (
     contains_identifier,
     translate_body,
     translate_contract,
+    translate_finite_field,
+    translate_group_theory,
+    translate_quantifier,
     validate_translator_ir_compliance,
 )
 
@@ -169,6 +172,13 @@ def test_nested_unbounded_quantifiers():
     result = translate_contract("forall i: forall j: i < j")
     assert result.lean_expr == "(∀ i : Int, (∀ j : Int, i < j))"
     assert result.identifiers == []
+    assert result.is_partial is False
+
+
+def test_translate_quantifier_public_entrypoint_handles_nested_exists():
+    result = translate_quantifier("forall i: exists(j, 0, n, j >= i)")
+    assert result.lean_expr == "(∀ i : Int, (∃ j : Int, 0 ≤ j ∧ j < n ∧ j ≥ i))"
+    assert result.identifiers == ["n"]
     assert result.is_partial is False
 
 
@@ -360,6 +370,67 @@ def test_algebra_function_calls_lower_to_mumei_lean_algebra():
     assert "(MumeiLean.Algebra.mumei_is_prime p)" in prime_result.lean_expr
     assert "(MumeiLean.Algebra.mumei_mod_eq x y p)" in prime_result.lean_expr
     assert prime_result.is_partial is False
+
+
+def test_finite_field_and_group_public_lowering_helpers():
+    assert translate_finite_field("ff_mul", ["a", "b", "p"]) == (
+        "(MumeiLean.Algebra.mumei_ff_mul a b p)"
+    )
+    assert translate_group_theory("group_inv", ["g"]) == (
+        "(MumeiLean.Algebra.mumei_group_inv g)"
+    )
+    assert translate_finite_field("ff_mul", ["a", "b"]) is None
+    assert translate_group_theory("ff_mul", ["a", "b", "p"]) is None
+
+
+def test_crypto_primitive_calls_lower_to_mumei_lean_crypto():
+    result = translate_contract(
+        "decrypt(encrypt(message, key, nonce), key, nonce) == message && "
+        "signature_verify(signature, message, public_key, n)"
+    )
+    assert "(MumeiLean.Crypto.encrypt message key nonce)" in result.lean_expr
+    assert (
+        "(MumeiLean.Crypto.decrypt "
+        "(MumeiLean.Crypto.encrypt message key nonce) key nonce)"
+        in result.lean_expr
+    )
+    assert "(MumeiLean.Crypto.signature_verify signature message public_key n)" in result.lean_expr
+    assert result.identifiers == ["message", "key", "nonce", "signature", "public_key", "n"]
+    assert result.is_partial is False
+    assert result.translator_ir is not None
+    assert "crypto_primitive_lowering" in result.translator_ir.lowering_rules
+    assert "mumei_crypto_primitive_bridge" in result.translator_ir.requires_bridge_lemmas
+
+
+def test_higher_order_predicate_call_types_predicate_binder():
+    result = translate_contract("forall(x, 0, n, holds(P, x))")
+    assert result.lean_expr == "(∀ x : Int, 0 ≤ x → x < n → (P x))"
+    assert result.identifiers == ["n", "P"]
+    assert result.predicate_identifiers == ["P"]
+    assert result.is_partial is False
+    assert result.translator_ir is not None
+    binder_payload = result.translator_ir.to_dict()["binders"]
+    assert {"mumei_name": "P", "lean_name": "P", "mumei_type": "predicate<i64>", "lean_type": "Int → Prop", "role": "free"} in binder_payload
+    assert "higher_order_predicate_lowering" in result.translator_ir.lowering_rules
+
+
+def test_nested_quantifier_with_finite_field_and_group_metadata():
+    result = translate_contract(
+        "forall(x, 0, p, exists(y, 0, p, ff_in_field(ff_add(x, y, p), p) && "
+        "group_mul(group_inv(g), g) == group_identity()))"
+    )
+    assert "∀ x : Int" in result.lean_expr
+    assert "∃ y : Int" in result.lean_expr
+    assert "(MumeiLean.Algebra.mumei_ff_add x y p)" in result.lean_expr
+    assert "(MumeiLean.Algebra.mumei_group_mul (MumeiLean.Algebra.mumei_group_inv g) g)" in result.lean_expr
+    assert "(MumeiLean.Algebra.mumei_group_identity)" in result.lean_expr
+    assert result.identifiers == ["p", "g"]
+    assert result.is_partial is False
+    assert result.translator_ir is not None
+    assert "finite_field_lowering" in result.translator_ir.lowering_rules
+    assert "group_theory_lowering" in result.translator_ir.lowering_rules
+    assert "mumei_finite_field_bridge" in result.translator_ir.requires_bridge_lemmas
+    assert "mumei_group_theory_bridge" in result.translator_ir.requires_bridge_lemmas
 
 
 def test_if_then_else_expression():

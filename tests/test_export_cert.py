@@ -32,7 +32,7 @@ def _certificate(atoms: list) -> dict:
     return {
         "version": "1.0",
         "timestamp": "2026-04-28T00:00:00Z",
-        "mumei_version": "0.5.6",
+        "mumei_version": "0.6.0",
         "z3_version": "4.12.2",
         "file": "math.mm",
         "atoms": atoms,

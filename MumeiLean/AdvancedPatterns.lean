@@ -57,7 +57,11 @@ theorem int_nonnegative_induction_pattern (P : Int → Prop)
     ∀ n : Int, 0 ≤ n → P n := by
   intro n hn
   lift n to Nat using hn
-  exact nat_induction_pattern P h0 hstep n
+  induction n with
+  | zero =>
+      simpa using h0
+  | succ n ih =>
+      simpa [Nat.succ_eq_add_one, Int.ofNat_add] using hstep n ih
 
 theorem finite_field_binary_closed (op : Int → Int → Int) (a b p : Int)
     (hclosed : ∀ x y : Int, mumei_ff_in_field (op x y) p)

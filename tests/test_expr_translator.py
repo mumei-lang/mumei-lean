@@ -683,3 +683,163 @@ def test_translate_contract_prints_compliance_warnings(monkeypatch, capsys):
         "TranslatorIR compliance warning: synthetic spec drift"
         in capsys.readouterr().out
     )
+
+
+# ==== Advanced Contract Translation Tests ====
+
+
+def test_implication_operator_translates_to_arrow():
+    result = translate_contract("x > 0 ==> y > 0")
+    assert "→" in result.lean_expr
+    assert result.identifiers == ["x", "y"]
+    assert result.is_partial is False
+
+
+def test_implies_function_translates_to_arrow():
+    result = translate_contract("implies(x > 0, y > 0)")
+    assert "→" in result.lean_expr
+    assert result.identifiers == ["x", "y"]
+    assert result.is_partial is False
+
+
+def test_let_binding_basic():
+    result = translate_contract("let x = 5 in x > 0")
+    assert "let x := 5" in result.lean_expr
+    assert result.is_partial is False
+
+
+def test_let_binding_with_complex_expr():
+    result = translate_contract("let y = a + b in y > 0")
+    assert "let y := a + b" in result.lean_expr
+    assert result.is_partial is False
+
+
+def test_let_binding_marks_partial_when_malformed():
+    result = translate_contract("let x")
+    assert result.is_partial is True
+
+
+def test_new_crypto_functions_kdf():
+    result = translate_contract("kdf(key, info, 32) > 0")
+    assert "(MumeiLean.Crypto.kdf key info 32)" in result.lean_expr
+    assert result.is_partial is False
+
+
+def test_new_crypto_functions_hmac():
+    result = translate_contract("hmac(key, message) > 0")
+    assert "(MumeiLean.Crypto.hmac key message)" in result.lean_expr
+    assert result.is_partial is False
+
+
+def test_new_crypto_functions_commitment_hash():
+    result = translate_contract("commitment_hash(value, randomness) > 0")
+    assert "(MumeiLean.Crypto.commitment_hash value randomness)" in result.lean_expr
+    assert result.is_partial is False
+
+
+def test_new_crypto_functions_zk_verify():
+    result = translate_contract("zk_verify(proof, public_input, circuit)")
+    assert "(MumeiLean.Crypto.zk_verify proof public_input circuit)" in result.lean_expr
+    assert result.is_partial is False
+
+
+def test_new_algebra_functions_ff_zero_and_ff_one():
+    result = translate_contract("ff_zero(p) == 0 && ff_one(p) == 1")
+    assert "(MumeiLean.Algebra.mumei_ff_zero p) = 0" in result.lean_expr
+    assert "(MumeiLean.Algebra.mumei_ff_one p) = 1" in result.lean_expr
+    assert result.is_partial is False
+
+
+def test_new_algebra_functions_ff_eq():
+    result = translate_contract("ff_eq(a, b, p)")
+    assert "(MumeiLean.Algebra.mumei_ff_eq a b p)" in result.lean_expr
+    assert result.is_partial is False
+
+
+def test_new_algebra_functions_group_order():
+    result = translate_contract("group_order(g) > 1")
+    assert "(MumeiLean.Algebra.mumei_group_order g)" in result.lean_expr
+    assert result.is_partial is False
+
+
+def test_new_algebra_functions_group_comm():
+    result = translate_contract("group_comm(a, b)")
+    assert "(MumeiLean.Algebra.mumei_group_comm a b)" in result.lean_expr
+    assert result.is_partial is False
+
+
+def test_quantifier_with_crypto_lowers_skolemize_rule():
+    result = translate_contract(
+        "forall(x, 0, n, hash(x, salt) > 0)"
+    )
+    assert "∀ x : Int" in result.lean_expr
+    assert "(MumeiLean.Crypto.hash x salt)" in result.lean_expr
+    assert result.is_partial is False
+    assert result.translator_ir is not None
+    assert "quantifier_skolemize_lowering" in result.translator_ir.lowering_rules
+    assert "mumei_quantifier_skolemize_bridge" in result.translator_ir.requires_bridge_lemmas
+
+
+def test_implication_lowering_rule_added():
+    result = translate_contract("x > 0 ==> y > 0")
+    assert result.translator_ir is not None
+    assert "implication_lowering" in result.translator_ir.lowering_rules
+    assert "mumei_implication_bridge" in result.translator_ir.requires_bridge_lemmas
+    assert any(
+        "implication_lowering:" in note
+        for note in result.translator_ir.semantic_gap_notes
+    )
+
+
+def test_let_binding_lowering_rule_added():
+    result = translate_contract("let x = 5 in x > 0")
+    assert result.translator_ir is not None
+    assert "let_binding_lowering" in result.translator_ir.lowering_rules
+    assert "mumei_let_binding_bridge" in result.translator_ir.requires_bridge_lemmas
+
+
+def test_complex_quantifier_with_algebra_and_implication():
+    result = translate_contract(
+        "forall(x, 0, p, is_prime(p) ==> ff_in_field(x, p))"
+    )
+    assert "∀ x : Int" in result.lean_expr
+    assert "→" in result.lean_expr
+    assert "(MumeiLean.Algebra.mumei_is_prime p)" in result.lean_expr
+    assert "(MumeiLean.Algebra.mumei_ff_in_field x p)" in result.lean_expr
+    assert result.is_partial is False
+
+
+def test_nested_quantifier_with_let_binding():
+    result = translate_contract(
+        "forall(i, 0, n, let bound = n in arr[i] < bound)"
+    )
+    assert "∀ i : Int" in result.lean_expr
+    assert "let bound := n" in result.lean_expr
+    # ``bound`` appears as a free identifier at the token level because
+    # ``_extract_identifiers`` does not track ``let`` scopes. This is
+    # acceptable: the generated theorem simply quantifies over ``bound``
+    # and the let binding shadows it at the Lean level.
+    assert "n" in result.identifiers
+    assert "arr" in result.identifiers
+
+
+def test_crypto_roundtrip_with_quantifier():
+    result = translate_contract(
+        "forall(i, 0, n, decrypt(encrypt(i, key, i), key, i) == i)"
+    )
+    assert "∀ i : Int" in result.lean_expr
+    assert "(MumeiLean.Crypto.encrypt i key i)" in result.lean_expr
+    assert "(MumeiLean.Crypto.decrypt" in result.lean_expr
+    assert result.is_partial is False
+
+
+def test_multiple_quantifiers_with_algebra():
+    result = translate_contract(
+        "forall(x, 0, p, forall(y, 0, p, "
+        "ff_add(x, y, p) == ff_add(y, x, p)))"
+    )
+    assert result.lean_expr.count("∀ ") == 2
+    assert "(MumeiLean.Algebra.mumei_ff_add x y p)" in result.lean_expr
+    assert "(MumeiLean.Algebra.mumei_ff_add y x p)" in result.lean_expr
+    assert result.is_partial is False
+    assert "finite_field_lowering" in result.translator_ir.lowering_rules

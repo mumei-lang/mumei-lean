@@ -43,11 +43,11 @@ _TOKEN_RE = re.compile(
     (?P<STR>"(?:\\.|[^"\\])*") |  # string literal
     (?P<NUM>\d+)                 |  # integer literal
     (?P<BOOL>\btrue\b|\bfalse\b) |  # boolean literal
-    (?P<KW>\bforall\b|\bexists\b|\bif\b|\bthen\b|\belse\b|\bmatch\b) |  # keywords
+    (?P<KW>\bforall\b|\bexists\b|\bif\b|\bthen\b|\belse\b|\bmatch\b|\blet\b|\bin\b) |  # keywords
     (?P<ID>[A-Za-z_][A-Za-z0-9_]*) |  # identifier
     (?P<OP>
-        ==|!=|>=|<=|&&|\|\||=>|
-        [+\-*/%<>!()\[\]{},:]
+        ==>|==|!=|>=|<=|&&|\|\||=>|
+        [+\-*/%<>=!()\[\]{},:]
     )
     """,
     re.VERBOSE,
@@ -69,12 +69,15 @@ _RESERVED_IDENTS: Set[str] = {
     "ff_add", "ff_sub", "ff_mul", "ff_neg", "ff_pow", "ff_inv", "ff_div",
     "ff_in_field", "is_prime", "mod_eq", "group_mul", "group_inv",
     "group_pow", "group_identity",
-    "if", "then", "else", "match", "_",
+    "if", "then", "else", "match", "let", "in", "_",
+    "implies",
+    "kdf", "hmac", "commitment_hash", "zk_verify",
+    "ff_zero", "ff_one", "ff_eq", "group_order", "group_comm",
     "i64", "u64", "f64", "bool", "string", "str", "int", "nat", "field",
     "predicate",
     # Lean keywords we never want to over-bind even if the contract uses
     # them as identifier names (it should not, but defensively).
-    "Type", "Prop", "fun", "let", "do", "match", "with", "by",
+    "Type", "Prop", "fun", "let", "do", "match", "with", "by", "in",
 }
 
 # Operator translation: token text → Lean token text.
@@ -84,6 +87,7 @@ _OP_TRANSLATION = {
     "==": "=",
     "!=": "≠",
     "!":  "¬",
+    "==>": "→",
     # passthrough for the rest
     ">=": "≥",
     "<=": "≤",
@@ -123,6 +127,16 @@ _KNOWN_FUNCTIONS = {
     "group_inv": "MumeiLean.Algebra.mumei_group_inv",
     "group_pow": "MumeiLean.Algebra.mumei_group_pow",
     "group_identity": "MumeiLean.Algebra.mumei_group_identity",
+    "kdf": "MumeiLean.Crypto.kdf",
+    "hmac": "MumeiLean.Crypto.hmac",
+    "commitment_hash": "MumeiLean.Crypto.commitment_hash",
+    "zk_verify": "MumeiLean.Crypto.zk_verify",
+    "ff_zero": "MumeiLean.Algebra.mumei_ff_zero",
+    "ff_one": "MumeiLean.Algebra.mumei_ff_one",
+    "ff_eq": "MumeiLean.Algebra.mumei_ff_eq",
+    "group_order": "MumeiLean.Algebra.mumei_group_order",
+    "group_comm": "MumeiLean.Algebra.mumei_group_comm",
+    "implies": "implies",
 }
 
 _KNOWN_FUNCTION_ARITY = {
@@ -159,6 +173,16 @@ _KNOWN_FUNCTION_ARITY = {
     "group_inv": 1,
     "group_pow": 2,
     "group_identity": 0,
+    "kdf": 3,
+    "hmac": 2,
+    "commitment_hash": 2,
+    "zk_verify": 3,
+    "ff_zero": 1,
+    "ff_one": 1,
+    "ff_eq": 3,
+    "group_order": 1,
+    "group_comm": 2,
+    "implies": 2,
 }
 
 _QUANTIFIER_KEYWORDS = {"forall", "exists"}
@@ -166,10 +190,10 @@ _STRING_FUNCTIONS = {"starts_with", "ends_with", "contains", "not_contains"}
 _ARRAY_FIRST_ARG_FUNCTIONS = {"sum", "count"}
 _FINITE_FIELD_FUNCTIONS = {
     "ff_add", "ff_sub", "ff_mul", "ff_neg", "ff_pow", "ff_inv", "ff_div",
-    "ff_in_field", "is_prime", "mod_eq",
+    "ff_in_field", "is_prime", "mod_eq", "ff_zero", "ff_one", "ff_eq",
 }
-_GROUP_FUNCTIONS = {"group_mul", "group_inv", "group_pow", "group_identity"}
-_CRYPTO_FUNCTIONS = {"hash", "signature_verify", "encrypt", "decrypt"}
+_GROUP_FUNCTIONS = {"group_mul", "group_inv", "group_pow", "group_identity", "group_order", "group_comm"}
+_CRYPTO_FUNCTIONS = {"hash", "signature_verify", "encrypt", "decrypt", "kdf", "hmac", "commitment_hash", "zk_verify"}
 _HIGHER_ORDER_PREDICATE_FUNCTIONS = {"holds"}
 _SCALAR_CALL_FUNCTIONS = (
     set(_KNOWN_FUNCTIONS)
@@ -309,6 +333,9 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "higher_order_predicate_lowering",
     "inductive_definition_lowering",
     "mathlib4_bridge",
+    "quantifier_skolemize_lowering",
+    "implication_lowering",
+    "let_binding_lowering",
 }
 
 _FORMAL_SPEC_TYPE_MAPPINGS: Dict[str, str] = {
@@ -441,6 +468,18 @@ def _lowering_rules(tokens: List[tuple], array_ids: List[str], string_ids: List[
         rules.extend(["higher_order_predicate_lowering", "mathlib4_bridge"])
     if any(kind == "KW" and text == "match" for kind, text in tokens):
         rules.append("inductive_definition_lowering")
+    if any(kind == "OP" and text == "==>" for kind, text in tokens) or any(
+        kind == "ID" and text == "implies" for kind, text in tokens
+    ):
+        rules.append("implication_lowering")
+    if any(kind == "KW" and text == "let" for kind, text in tokens):
+        rules.append("let_binding_lowering")
+    if any(
+        kind == "KW" and text in _QUANTIFIER_KEYWORDS for kind, text in tokens
+    ) and any(
+        kind == "ID" and text in _CRYPTO_FUNCTIONS for kind, text in tokens
+    ):
+        rules.append("quantifier_skolemize_lowering")
     deduped: List[str] = []
     for rule in rules:
         if rule not in deduped:
@@ -494,6 +533,18 @@ def _build_semantic_gap_notes(
             "higher_order_predicate_lowering: predicate parameters are typed "
             "as Lean functions and applied directly."
         )
+    if any(kind == "OP" and text == "==>" for kind, text in tokens) or any(
+        kind == "ID" and text == "implies" for kind, text in tokens
+    ):
+        notes.append(
+            "implication_lowering: Mumei ==> / implies(a,b) maps to Lean → "
+            "via MumeiLean.Quantifiers.mumei_implies_intro."
+        )
+    if any(kind == "KW" and text == "let" for kind, text in tokens):
+        notes.append(
+            "let_binding_lowering: let x = e in body maps to Lean let "
+            "binding. Scoping rules match Lean 4 semantics."
+        )
     return notes
 
 
@@ -517,6 +568,12 @@ def _bridge_lemmas_for_rules(lowering_rules: List[str]) -> List[str]:
         bridge_lemmas.append("mumei_higher_order_predicate_bridge")
     if "inductive_definition_lowering" in lowering_rules:
         bridge_lemmas.append("mumei_inductive_definition_bridge")
+    if "implication_lowering" in lowering_rules:
+        bridge_lemmas.append("mumei_implication_bridge")
+    if "let_binding_lowering" in lowering_rules:
+        bridge_lemmas.append("mumei_let_binding_bridge")
+    if "quantifier_skolemize_lowering" in lowering_rules:
+        bridge_lemmas.append("mumei_quantifier_skolemize_bridge")
     return bridge_lemmas
 
 
@@ -540,6 +597,12 @@ def _proof_trace_hints_for_rules(lowering_rules: List[str]) -> List[str]:
         hints.append("instantiate predicate hypotheses before arithmetic simplification")
     if "inductive_definition_lowering" in lowering_rules:
         hints.append("split base and step cases with the AdvancedPatterns induction lemmas")
+    if "implication_lowering" in lowering_rules:
+        hints.append("use MumeiLean.Quantifiers.mumei_implies_intro for implication goals")
+    if "let_binding_lowering" in lowering_rules:
+        hints.append("unfold let bindings before applying arithmetic or predicate lemmas")
+    if "quantifier_skolemize_lowering" in lowering_rules:
+        hints.append("apply skolemize_bounded_exists or herbrand_bounded_forall from Quantifiers module")
     return hints
 
 
@@ -916,6 +979,48 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
     while i < n:
         kind, text = tokens[i]
 
+        # let var = expr in body → let var := expr in body (Lean 4 syntax)
+        if kind == "KW" and text == "let":
+            # Expect: let <id> = <expr> in <body>
+            if i + 1 < n and tokens[i + 1][0] == "ID":
+                var_name = tokens[i + 1][1]
+                eq_idx = -1
+                j = i + 2
+                if j < n and tokens[j] == ("OP", "="):
+                    eq_idx = j
+                elif j < n and tokens[j] == ("OP", ":"):
+                    # let x : Type = ...
+                    j2 = j + 1
+                    while j2 < n and tokens[j2][0] == "ID":
+                        j2 += 1
+                    if j2 < n and tokens[j2] == ("OP", "="):
+                        eq_idx = j2
+                if eq_idx != -1:
+                    in_idx = -1
+                    depth = 0
+                    j = eq_idx + 1
+                    while j < n:
+                        tk, tt = tokens[j]
+                        if tk == "OP" and tt in ("(", "[", "{"):
+                            depth += 1
+                        elif tk == "OP" and tt in (")", "]", "}"):
+                            depth -= 1
+                        elif tk == "KW" and tt == "in" and depth == 0:
+                            in_idx = j
+                            break
+                        j += 1
+                    if in_idx != -1:
+                        expr_src, p1 = _emit_tokens(tokens[eq_idx + 1 : in_idx])
+                        body_src, p2 = _emit_tokens(tokens[in_idx + 1 :])
+                        pieces.append(f"(let {var_name} := {expr_src}; {body_src})")
+                        is_partial = is_partial or p1 or p2
+                        i = n
+                        continue
+            pieces.append(text)
+            is_partial = True
+            i += 1
+            continue
+
         # if cond then a else b → if cond then a else b
         if kind == "KW" and text == "if":
             depth = 0
@@ -1207,6 +1312,10 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                         is_partial = True
                     else:
                         pieces.append(lowered)
+                elif text == "implies":
+                    pieces.append(f"({arg_srcs[0]} → {arg_srcs[1]})")
+                elif text == "zk_verify":
+                    pieces.append(f"({_KNOWN_FUNCTIONS[text]} {' '.join(arg_srcs)})")
                 else:
                     call_args = f" {' '.join(arg_srcs)}" if arg_srcs else ""
                     pieces.append(f"({_KNOWN_FUNCTIONS[text]}{call_args})")
@@ -1218,6 +1327,11 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
 
         if kind == "OP":
             if text == ":":
+                is_partial = True
+            if text == "=" and (i == 0 or tokens[i - 1] != ("OP", "!")):
+                # Bare ``=`` outside a ``let..in`` binding is not part of
+                # the supported contract surface (use ``==`` for equality).
+                # The let handler consumes ``=`` before reaching here.
                 is_partial = True
             pieces.append(_OP_TRANSLATION.get(text, text))
         elif kind == "BOOL":

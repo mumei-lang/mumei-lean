@@ -10,6 +10,7 @@ import MumeiLean.Patterns
 import MumeiLean.CryptoHelpers
 import MumeiLean.Algebra
 import MumeiLean.Crypto
+import MumeiLean.Quantifiers
 import MumeiLean.AdvancedPatterns
 import MumeiLean.Settlement
 import MumeiLean.SmartContract
@@ -47,6 +48,8 @@ Top-level layout:
   helpers emitted by the bridge translator
 * `MumeiLean.Crypto`     – reusable cryptographic proof patterns for
   RSA-style signature checks and finite-field bounds
+* `MumeiLean.Quantifiers`  – quantifier manipulation lemmas: skolemization,
+  herbrandization, bounded/unbounded conversions, list quantification
 * `MumeiLean.AdvancedPatterns` – reusable quantifier, higher-order predicate,
   inductive, algebraic, and crypto escalation lemmas
 * `MumeiLean.Settlement` – RTGS settlement temporal safety + balance

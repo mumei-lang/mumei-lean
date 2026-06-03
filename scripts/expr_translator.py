@@ -14,7 +14,9 @@ subset:
   ``if .. then .. else ..``, ``match`` expressions,
   ``arr[i]`` access, and known calls:
   ``len``, ``abs``, ``min``, ``max``, ``old``, ``starts_with``, ``ends_with``,
-  ``contains``, ``not_contains``, ``sum``, ``count``, ``mod``, ``pow``, ``phi``
+  ``contains``, ``not_contains``, ``sum``, ``count``, ``mod``, ``pow``, ``phi``,
+  finite-field helpers, group-theory helpers, crypto helpers, and higher-order
+  predicate calls through ``holds(P, x)``
 
 Anything outside this subset is preserved verbatim and emitted as a
 Lean fragment that almost certainly will not type-check; the generated
@@ -62,11 +64,14 @@ _RESERVED_IDENTS: Set[str] = {
     "forall", "exists", "len", "abs", "min", "max", "old",
     "starts_with", "ends_with", "contains", "not_contains", "sum", "count",
     "mod", "pow", "phi",
+    "hash", "signature_verify", "encrypt", "decrypt",
+    "holds",
     "ff_add", "ff_sub", "ff_mul", "ff_neg", "ff_pow", "ff_inv", "ff_div",
     "ff_in_field", "is_prime", "mod_eq", "group_mul", "group_inv",
     "group_pow", "group_identity",
     "if", "then", "else", "match", "_",
     "i64", "u64", "f64", "bool", "string", "str", "int", "nat", "field",
+    "predicate",
     # Lean keywords we never want to over-bind even if the contract uses
     # them as identifier names (it should not, but defensively).
     "Type", "Prop", "fun", "let", "do", "match", "with", "by",
@@ -99,6 +104,11 @@ _KNOWN_FUNCTIONS = {
     "mod": "MumeiLean.CryptoHelpers.mumei_mod",
     "pow": "MumeiLean.CryptoHelpers.mumei_pow",
     "phi": "MumeiLean.CryptoHelpers.mumei_phi",
+    "hash": "MumeiLean.Crypto.hash",
+    "signature_verify": "MumeiLean.Crypto.signature_verify",
+    "encrypt": "MumeiLean.Crypto.encrypt",
+    "decrypt": "MumeiLean.Crypto.decrypt",
+    "holds": "holds",
     "ff_add": "MumeiLean.Algebra.mumei_ff_add",
     "ff_sub": "MumeiLean.Algebra.mumei_ff_sub",
     "ff_mul": "MumeiLean.Algebra.mumei_ff_mul",
@@ -130,6 +140,11 @@ _KNOWN_FUNCTION_ARITY = {
     "mod": 2,
     "pow": 2,
     "phi": 1,
+    "hash": 2,
+    "signature_verify": 4,
+    "encrypt": 3,
+    "decrypt": 3,
+    "holds": 2,
     "ff_add": 3,
     "ff_sub": 3,
     "ff_mul": 3,
@@ -154,8 +169,14 @@ _FINITE_FIELD_FUNCTIONS = {
     "ff_in_field", "is_prime", "mod_eq",
 }
 _GROUP_FUNCTIONS = {"group_mul", "group_inv", "group_pow", "group_identity"}
+_CRYPTO_FUNCTIONS = {"hash", "signature_verify", "encrypt", "decrypt"}
+_HIGHER_ORDER_PREDICATE_FUNCTIONS = {"holds"}
 _SCALAR_CALL_FUNCTIONS = (
-    set(_KNOWN_FUNCTIONS) - _STRING_FUNCTIONS - _ARRAY_FIRST_ARG_FUNCTIONS - {"old"}
+    set(_KNOWN_FUNCTIONS)
+    - _STRING_FUNCTIONS
+    - _ARRAY_FIRST_ARG_FUNCTIONS
+    - _HIGHER_ORDER_PREDICATE_FUNCTIONS
+    - {"old"}
 )
 
 TRANSLATOR_VERSION = "mumei-lean-translator-ir-v1"
@@ -261,6 +282,10 @@ class TranslationResult:
     such as ``starts_with`` / ``ends_with``. The renderer types these
     identifiers as ``String`` instead of the scalar ``Int`` default."""
 
+    predicate_identifiers: List[str] = field(default_factory=list)
+    """Subset of ``identifiers`` used as higher-order predicates through
+    ``holds(P, x)``. The renderer types these as ``Int → Prop``."""
+
     translator_ir: Optional[TranslatorIR] = None
     """Typed TranslatorIR metadata used by the escalation handshake."""
 
@@ -280,6 +305,9 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "integer_overflow_bridge",
     "finite_field_lowering",
     "group_theory_lowering",
+    "crypto_primitive_lowering",
+    "higher_order_predicate_lowering",
+    "inductive_definition_lowering",
     "mathlib4_bridge",
 }
 
@@ -293,6 +321,8 @@ _FORMAL_SPEC_TYPE_MAPPINGS: Dict[str, str] = {
     "int": "Int",
     "nat": "Nat",
     "field": "Int",
+    "predicate<i64>": "Int → Prop",
+    "predicate<nat>": "Nat → Prop",
 }
 
 _QUANTIFIER_TYPE_ALIASES: Dict[str, Tuple[str, str]] = {
@@ -359,7 +389,14 @@ def _lean_binder_name(name: str) -> str:
     return clean
 
 
-def _binder_for_identifier(name: str, array_ids: List[str], string_ids: List[str]) -> TranslatorIRBinder:
+def _binder_for_identifier(
+    name: str,
+    array_ids: List[str],
+    string_ids: List[str],
+    predicate_ids: Optional[List[str]] = None,
+) -> TranslatorIRBinder:
+    if predicate_ids and name in predicate_ids:
+        return TranslatorIRBinder(name, _lean_binder_name(name), "predicate<i64>", "Int → Prop")
     if name in array_ids:
         return TranslatorIRBinder(name, _lean_binder_name(name), "array<i64>", "List Int")
     if name in string_ids:
@@ -398,6 +435,12 @@ def _lowering_rules(tokens: List[tuple], array_ids: List[str], string_ids: List[
         rules.extend(["finite_field_lowering", "mathlib4_bridge"])
     if any(kind == "ID" and text in _GROUP_FUNCTIONS for kind, text in tokens):
         rules.extend(["group_theory_lowering", "mathlib4_bridge"])
+    if any(kind == "ID" and text in _CRYPTO_FUNCTIONS for kind, text in tokens):
+        rules.extend(["crypto_primitive_lowering", "mathlib4_bridge"])
+    if any(kind == "ID" and text in _HIGHER_ORDER_PREDICATE_FUNCTIONS for kind, text in tokens):
+        rules.extend(["higher_order_predicate_lowering", "mathlib4_bridge"])
+    if any(kind == "KW" and text == "match" for kind, text in tokens):
+        rules.append("inductive_definition_lowering")
     deduped: List[str] = []
     for rule in rules:
         if rule not in deduped:
@@ -431,6 +474,26 @@ def _build_semantic_gap_notes(
             "refinement_predicate_lowering: Quantifiers are lowered to Lean "
             "dependent types. Bridge lemma may be required for complex predicates."
         )
+    if any(kind == "ID" and text in _FINITE_FIELD_FUNCTIONS for kind, text in tokens):
+        notes.append(
+            "finite_field_lowering: GF(p)-style helpers are lowered through "
+            "mathlib4 modular arithmetic and ZMod bridge lemmas."
+        )
+    if any(kind == "ID" and text in _GROUP_FUNCTIONS for kind, text in tokens):
+        notes.append(
+            "group_theory_lowering: group expressions are lowered to reusable "
+            "mathlib4 group law lemmas."
+        )
+    if any(kind == "ID" and text in _CRYPTO_FUNCTIONS for kind, text in tokens):
+        notes.append(
+            "crypto_primitive_lowering: hash/signature/encryption primitives "
+            "are routed through MumeiLean.Crypto proof patterns."
+        )
+    if any(kind == "ID" and text in _HIGHER_ORDER_PREDICATE_FUNCTIONS for kind, text in tokens):
+        notes.append(
+            "higher_order_predicate_lowering: predicate parameters are typed "
+            "as Lean functions and applied directly."
+        )
     return notes
 
 
@@ -444,6 +507,16 @@ def _bridge_lemmas_for_rules(lowering_rules: List[str]) -> List[str]:
         bridge_lemmas.append("mumei_regex_bridge")
     if "refinement_predicate_lowering" in lowering_rules:
         bridge_lemmas.append("mumei_subtype_predicate_bridge")
+    if "finite_field_lowering" in lowering_rules:
+        bridge_lemmas.append("mumei_finite_field_bridge")
+    if "group_theory_lowering" in lowering_rules:
+        bridge_lemmas.append("mumei_group_theory_bridge")
+    if "crypto_primitive_lowering" in lowering_rules:
+        bridge_lemmas.append("mumei_crypto_primitive_bridge")
+    if "higher_order_predicate_lowering" in lowering_rules:
+        bridge_lemmas.append("mumei_higher_order_predicate_bridge")
+    if "inductive_definition_lowering" in lowering_rules:
+        bridge_lemmas.append("mumei_inductive_definition_bridge")
     return bridge_lemmas
 
 
@@ -457,6 +530,16 @@ def _proof_trace_hints_for_rules(lowering_rules: List[str]) -> List[str]:
         hints.append("route regex/string obligations through explicit bridge assumptions")
     if "refinement_predicate_lowering" in lowering_rules:
         hints.append("carry subtype predicate witnesses through quantifier lowering")
+    if "finite_field_lowering" in lowering_rules:
+        hints.append("try finite-field closure lemmas before falling back to manual proof")
+    if "group_theory_lowering" in lowering_rules:
+        hints.append("rewrite with group associativity, identity, and inverse lemmas")
+    if "crypto_primitive_lowering" in lowering_rules:
+        hints.append("apply hash/signature/encryption pattern lemma matching the primitive")
+    if "higher_order_predicate_lowering" in lowering_rules:
+        hints.append("instantiate predicate hypotheses before arithmetic simplification")
+    if "inductive_definition_lowering" in lowering_rules:
+        hints.append("split base and step cases with the AdvancedPatterns induction lemmas")
     return hints
 
 
@@ -480,6 +563,27 @@ def _result_binder_for_source(source: str, tokens: List[tuple]) -> TranslatorIRB
     return TranslatorIRBinder("result", "result", mumei_type, lean_type, role="result")
 
 
+def _extract_predicate_identifiers(tokens: List[tuple]) -> List[str]:
+    predicate_ids: List[str] = []
+    for idx, (kind, text) in enumerate(tokens):
+        if (
+            kind == "ID"
+            and text in _HIGHER_ORDER_PREDICATE_FUNCTIONS
+            and idx + 1 < len(tokens)
+            and tokens[idx + 1] == ("OP", "(")
+        ):
+            close = _find_matching(tokens, idx + 1, "(", ")")
+            if close == -1:
+                continue
+            parts = _split_top_level(tokens, idx + 2, close)
+            if not parts or len(parts[0]) != 1 or parts[0][0][0] != "ID":
+                continue
+            name = parts[0][0][1]
+            if name not in _RESERVED_IDENTS and name not in predicate_ids:
+                predicate_ids.append(name)
+    return predicate_ids
+
+
 def _build_translator_ir(
     source: str,
     lean_expr: str,
@@ -489,7 +593,11 @@ def _build_translator_ir(
     tokens: List[tuple],
     manual_lemma_reason: Optional[str],
 ) -> TranslatorIR:
-    binders = [_binder_for_identifier(name, array_ids, string_ids) for name in identifiers]
+    predicate_ids = _extract_predicate_identifiers(tokens)
+    binders = [
+        _binder_for_identifier(name, array_ids, string_ids, predicate_ids)
+        for name in identifiers
+    ]
     if contains_identifier(source, "result") and "result" not in identifiers:
         binders.append(_result_binder_for_source(source, tokens))
     sort = "manual_lemma_required" if manual_lemma_reason else "contract_obligation"
@@ -514,6 +622,7 @@ def _make_translation_result(
     is_partial: bool,
     array_identifiers: List[str],
     string_identifiers: List[str],
+    predicate_identifiers: Optional[List[str]] = None,
     tokens: Optional[List[tuple]] = None,
 ) -> TranslationResult:
     result = TranslationResult(
@@ -523,6 +632,7 @@ def _make_translation_result(
         is_partial=is_partial,
         array_identifiers=array_identifiers,
         string_identifiers=string_identifiers,
+        predicate_identifiers=predicate_identifiers or [],
     )
     result = _attach_translator_ir(source, result, tokens)
     if result.translator_ir is not None:
@@ -537,6 +647,7 @@ def _attach_translator_ir(
     tokens: Optional[List[tuple]] = None,
 ) -> TranslationResult:
     real_tokens = tokens if tokens is not None else _tokenize(source or "")
+    result.predicate_identifiers = _extract_predicate_identifiers(real_tokens)
     reasons = _unsupported_reasons(source or "", real_tokens, result.is_partial)
     result.unsupported_reasons = reasons
     result.manual_lemma_reason = ";".join(reasons) if reasons else None
@@ -756,6 +867,36 @@ def _parse_unbounded_quantifier(
     if body_start >= len(tokens):
         return None
     return var_name, lean_type, body_start, tokens[body_start:]
+
+
+def translate_quantifier(source: str) -> TranslationResult:
+    """Translate a standalone ``forall`` / ``exists`` contract fragment.
+
+    This public wrapper makes the quantifier lowering entry point explicit for
+    callers that want to route Z3-``unknown`` quantified obligations directly
+    into the Lean escalation path.
+    """
+    return translate_contract(source)
+
+
+def translate_finite_field(function_name: str, arg_srcs: List[str]) -> Optional[str]:
+    """Return the Lean helper call for a finite-field expression."""
+    if function_name not in _FINITE_FIELD_FUNCTIONS:
+        return None
+    if len(arg_srcs) != _KNOWN_FUNCTION_ARITY[function_name]:
+        return None
+    call_args = f" {' '.join(arg_srcs)}" if arg_srcs else ""
+    return f"({_KNOWN_FUNCTIONS[function_name]}{call_args})"
+
+
+def translate_group_theory(function_name: str, arg_srcs: List[str]) -> Optional[str]:
+    """Return the Lean helper call for a group-theory expression."""
+    if function_name not in _GROUP_FUNCTIONS:
+        return None
+    if len(arg_srcs) != _KNOWN_FUNCTION_ARITY[function_name]:
+        return None
+    call_args = f" {' '.join(arg_srcs)}" if arg_srcs else ""
+    return f"({_KNOWN_FUNCTIONS[function_name]}{call_args})"
 
 
 def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
@@ -1045,6 +1186,27 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                     else:
                         pieces.append(f"old_ ({arg_srcs[0]})")
                         is_partial = True
+                elif text == "holds":
+                    predicate_arg = arg_parts[0]
+                    if len(predicate_arg) == 1 and predicate_arg[0][0] == "ID":
+                        pieces.append(f"({arg_srcs[0]} {arg_srcs[1]})")
+                    else:
+                        pieces.append(f"holds ({', '.join(arg_srcs)})")
+                        is_partial = True
+                elif text in _FINITE_FIELD_FUNCTIONS:
+                    lowered = translate_finite_field(text, arg_srcs)
+                    if lowered is None:
+                        pieces.append(f"{text} ({', '.join(arg_srcs)})")
+                        is_partial = True
+                    else:
+                        pieces.append(lowered)
+                elif text in _GROUP_FUNCTIONS:
+                    lowered = translate_group_theory(text, arg_srcs)
+                    if lowered is None:
+                        pieces.append(f"{text} ({', '.join(arg_srcs)})")
+                        is_partial = True
+                    else:
+                        pieces.append(lowered)
                 else:
                     call_args = f" {' '.join(arg_srcs)}" if arg_srcs else ""
                     pieces.append(f"({_KNOWN_FUNCTIONS[text]}{call_args})")

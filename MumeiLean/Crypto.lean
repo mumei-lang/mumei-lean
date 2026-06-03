@@ -15,6 +15,35 @@ namespace MumeiLean.Crypto
 
 open MumeiLean.CryptoHelpers
 
+def hash (message salt : Int) : Int :=
+  mumei_mod (message * 1315423911 + salt) 2147483647
+
+def signature_verify (signature message publicKey modulus : Int) : Prop :=
+  mumei_pow signature publicKey ≡ message [ZMOD modulus]
+
+def encrypt (plaintext key nonce : Int) : Int :=
+  plaintext + key + nonce
+
+def decrypt (ciphertext key nonce : Int) : Int :=
+  ciphertext - key - nonce
+
+theorem hash_deterministic (message salt : Int) :
+    hash message salt = hash message salt := by
+  rfl
+
+theorem hash_modulus_bounds (message salt : Int) :
+    0 ≤ hash message salt ∧ hash message salt < 2147483647 := by
+  unfold hash mumei_mod
+  have hpos : (0 : Int) < 2147483647 := by norm_num
+  constructor
+  · exact Int.emod_nonneg (message * 1315423911 + salt) (ne_of_gt hpos)
+  · exact Int.emod_lt_of_pos (message * 1315423911 + salt) hpos
+
+theorem hash_collision_resistance_pattern (m₁ m₂ salt : Int)
+    (h : hash m₁ salt = hash m₂ salt → m₁ = m₂) :
+    hash m₁ salt = hash m₂ salt → m₁ = m₂ := by
+  exact h
+
 theorem rsa_signature_correct
     (m e d n : Int)
     (_h_n : n > 0)
@@ -31,6 +60,32 @@ theorem rsa_signature_verifies_of_modEq (signature message publicKey n : Int)
     (h_verify : mumei_pow signature publicKey ≡ message [ZMOD n]) :
     mumei_pow signature publicKey ≡ message [ZMOD n] := by
   exact h_verify
+
+theorem signature_verify_sound (signature message publicKey modulus : Int)
+    (h : signature_verify signature message publicKey modulus) :
+    mumei_pow signature publicKey ≡ message [ZMOD modulus] := by
+  exact h
+
+theorem signature_verify_complete (signature message publicKey modulus : Int)
+    (h : mumei_pow signature publicKey ≡ message [ZMOD modulus]) :
+    signature_verify signature message publicKey modulus := by
+  exact h
+
+theorem encryption_roundtrip (plaintext key nonce : Int) :
+    decrypt (encrypt plaintext key nonce) key nonce = plaintext := by
+  unfold encrypt decrypt
+  ring
+
+theorem encryption_roundtrip_of_ciphertext (plaintext ciphertext key nonce : Int)
+    (h_cipher : ciphertext = encrypt plaintext key nonce) :
+    decrypt ciphertext key nonce = plaintext := by
+  rw [h_cipher]
+  exact encryption_roundtrip plaintext key nonce
+
+theorem encryption_integrity_pattern (plaintext ciphertext key nonce : Int)
+    (h_roundtrip : decrypt ciphertext key nonce = plaintext) :
+    decrypt ciphertext key nonce = plaintext := by
+  exact h_roundtrip
 
 theorem field_add_preserves
     (a b p : Int)

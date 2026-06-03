@@ -135,7 +135,7 @@ theorem abs_saturating_auto_correct (x result : Int)
 ```
 
 The expression translator (`scripts/expr_translator.py`) handles a
-v3 surface:
+v4 surface:
 
 | Category    | Operators / forms                                              |
 |-------------|----------------------------------------------------------------|
@@ -146,10 +146,14 @@ v3 surface:
 | Variables   | identifiers, including `result`                                |
 | Conditionals | `if cond then a else b`                                       |
 | Match       | `match x { 0 => a, 1 => b, _ => c }` (→ Lean `match x with ...`) |
-| Quantifier  | `forall(i, lo, hi, body)` (→ bounded `∀ i : Int, ...`)          |
+| Quantifier  | `forall(i, lo, hi, body)`, `exists(i, lo, hi, body)`, `forall x: body`, `exists(x, body)` (→ Lean `∀` / `∃`) |
 | Arrays      | `arr[i]` (→ `arr.get! i.toNat`)                                |
 | Calls       | `len(x)` (→ `mumei_len x`), `abs(x)` (→ `mumei_abs x`), `min(a, b)`, `max(a, b)`, `old(x)` (→ `old_x`) |
 | Strings     | `starts_with(s, prefix)` (→ `mumei_starts_with s prefix`), `ends_with(s, suffix)` (→ `mumei_ends_with s suffix`), `not_contains(s, sub)` (→ `mumei_not_contains s sub`) |
+| Finite field | `ff_add(a,b,p)`, `ff_sub`, `ff_mul`, `ff_neg`, `ff_pow`, `ff_inv`, `ff_div`, `ff_in_field(a,p)`, `is_prime(p)`, `mod_eq(a,b,p)` (→ `MumeiLean.Algebra.*`) |
+| Group theory | `group_mul(a,b)`, `group_inv(a)`, `group_pow(a,n)`, `group_identity()` (→ `MumeiLean.Algebra.*`) |
+| Crypto      | `hash(message,salt)`, `signature_verify(sig,msg,key,n)`, `encrypt(plain,key,nonce)`, `decrypt(cipher,key,nonce)` (→ `MumeiLean.Crypto.*`) |
+| Higher-order predicates | `holds(P, x)` (→ `P x`, with `P : Int → Prop`) |
 
 Anything else is forwarded verbatim and the theorem is marked with
 `-- TODO: unproven` so it can be triaged via `git grep`. Commas inside
@@ -203,9 +207,32 @@ translator can be extended to context-dispatch `len(arr)` to
   `ProofCertificateData` after merging a `(name, ProofResult)` list,
   flipping `z3_check_result` to `"lean_verified"` for proved atoms,
   recomputing `all_verified`, and inlining `lean_version`.
+* `MumeiLean.Algebra` — mathlib4-backed finite-field (`ZMod` / modular
+  arithmetic) and group-theory helpers used by translator calls.
+* `MumeiLean.Crypto` — hash determinism/range, signature verification, and
+  encryption round-trip proof patterns for cryptographic obligations.
+* `MumeiLean.AdvancedPatterns` — reusable quantifier, higher-order predicate,
+  induction, finite-field, group, and crypto pattern lemmas for Lean escalation.
 * `MumeiLean.StdMathAbs` — hand-written Lean witnesses for real std
   atom contracts from `std/math/abs.mm`, `std/math/fixed_point.mm`,
   and `std/list.mm`.
+
+### Advanced escalation patterns
+
+The v4 translator exposes explicit lowering entry points:
+
+* `translate_quantifier()` routes nested `forall` / `exists` obligations to
+  Lean quantifiers instead of leaving them as unsupported Z3 text.
+* `translate_finite_field()` maps GF-style helper calls to
+  `MumeiLean.Algebra` modular arithmetic / `ZMod` bridge lemmas.
+* `translate_group_theory()` maps group helper calls to mathlib4 group laws.
+
+TranslatorIR records `finite_field_lowering`, `group_theory_lowering`,
+`crypto_primitive_lowering`, `higher_order_predicate_lowering`, and
+`inductive_definition_lowering` metadata. These route Z3 `unknown` obligations
+to `MumeiLean.Algebra`, `MumeiLean.Crypto`, and
+`MumeiLean.AdvancedPatterns`, which is the intended path for reaching the
+≥70% Lean escalation success target on quantified algebraic/crypto contracts.
 
 The Python bridge (`scripts/bridge.py`) is still the production
 entry point; the Lean modules above mirror the same logic so

@@ -14,6 +14,7 @@ namespace MumeiLean.AdvancedPatterns
 
 open MumeiLean.Algebra
 open MumeiLean.Crypto
+open MumeiLean.CryptoHelpers
 
 theorem bounded_forall_weaken (lo hi : Int) (P Q : Int → Prop)
     (hmap : ∀ i : Int, lo ≤ i → i < hi → P i → Q i)

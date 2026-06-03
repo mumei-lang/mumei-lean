@@ -614,6 +614,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     build_log = log_path.read_text()
     print(f"`lake build` exited with status {rc}; log: {log_path}")
+    if rc != 0:
+        print("--- lake build log tail ---", file=sys.stderr)
+        print("\n".join(build_log.splitlines()[-80:]), file=sys.stderr)
+        print("--- end lake build log tail ---", file=sys.stderr)
 
     # 3. Export per-input certificate.
     if not args.no_export and args.lean_cert_out is None:

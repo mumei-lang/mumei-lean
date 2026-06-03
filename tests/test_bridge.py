@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -64,6 +65,50 @@ def test_scan_unknown_certs_finds_only_unknown(tmp_path: Path):
     )
     found = _scan_unknown_certs(certs_dir)
     assert [p.name for p, _ in found] == ["todo.json"]
+
+
+def test_select_proof_strategy_uses_translator_ir_lowering_rules():
+    atom = SimpleNamespace(
+        translator_ir={
+            "lowering_rules": [
+                "finite_field_lowering",
+                "crypto_primitive_lowering",
+                "implication_lowering",
+            ],
+            "proof_trace_hints": ["try finite-field closure lemmas"],
+        }
+    )
+
+    strategy = bridge.select_proof_strategy(atom)
+
+    assert strategy["strategy"] == "finite_field+crypto+implication"
+    assert strategy["imports"] == [
+        "MumeiLean.Algebra",
+        "MumeiLean.Crypto",
+        "MumeiLean.Quantifiers",
+    ]
+    assert "try finite-field closure lemmas" in strategy["hints"]
+
+
+def test_resolve_mathlib_imports_from_lowering_rules():
+    atom = SimpleNamespace(
+        translator_ir={
+            "lowering_rules": [
+                "finite_field_lowering",
+                "group_theory_lowering",
+                "crypto_primitive_lowering",
+            ]
+        }
+    )
+
+    imports = bridge.resolve_mathlib_imports(atom)
+
+    assert imports == [
+        "import Mathlib.Algebra.Group.Basic",
+        "import Mathlib.Data.Int.ModEq",
+        "import Mathlib.Data.Nat.Totient",
+        "import Mathlib.Data.ZMod.Basic",
+    ]
 
 
 def test_main_dry_run_writes_generated_files(tmp_path: Path):

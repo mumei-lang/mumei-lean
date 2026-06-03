@@ -216,7 +216,6 @@ def select_proof_strategy(atom: IngestedAtom) -> dict:
             "hints": "no TranslatorIR metadata; using default cascade",
         }
     rules = ir.get("lowering_rules", [])
-    bridge_lemmas = ir.get("requires_bridge_lemmas", [])
     hints_list = ir.get("proof_trace_hints", [])
 
     tactics: List[str] = []

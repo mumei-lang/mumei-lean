@@ -762,6 +762,57 @@ def _extract_identifiers(tokens: List[tuple]) -> List[str]:
     return seen
 
 
+def _parse_let_binding_scope(
+    tokens: List[tuple], start: int
+) -> Optional[tuple[str, int, int]]:
+    if start + 1 >= len(tokens) or tokens[start + 1][0] != "ID":
+        return None
+    var_name = tokens[start + 1][1]
+    eq_idx = -1
+    j = start + 2
+    if j < len(tokens) and tokens[j] == ("OP", "="):
+        eq_idx = j
+    elif j < len(tokens) and tokens[j] == ("OP", ":"):
+        j2 = j + 1
+        while j2 < len(tokens) and tokens[j2][0] == "ID":
+            j2 += 1
+        if j2 < len(tokens) and tokens[j2] == ("OP", "="):
+            eq_idx = j2
+    if eq_idx == -1:
+        return None
+
+    in_idx = -1
+    depth = 0
+    j = eq_idx + 1
+    while j < len(tokens):
+        tk, tt = tokens[j]
+        if tk == "OP" and tt in ("(", "[", "{"):
+            depth += 1
+        elif tk == "OP" and tt in (")", "]", "}"):
+            depth -= 1
+        elif tk == "KW" and tt == "in" and depth == 0:
+            in_idx = j
+            break
+        j += 1
+    if in_idx == -1:
+        return None
+
+    body_end = len(tokens)
+    depth = 0
+    j = in_idx + 1
+    while j < len(tokens):
+        tk, tt = tokens[j]
+        if depth == 0 and tk == "OP" and tt in {",", ")", "]", "}"}:
+            body_end = j
+            break
+        if tk == "OP" and tt in ("(", "[", "{"):
+            depth += 1
+        elif tk == "OP" and tt in (")", "]", "}"):
+            depth -= 1
+        j += 1
+    return var_name, in_idx + 1, body_end
+
+
 def _tokenize(source: str) -> List[tuple]:
     """Return a list of ``(kind, text)`` tuples for ``source``.
 
@@ -1548,6 +1599,8 @@ def translate_contract(source: str) -> TranslationResult:
     # quantifier body, so emitting them as ``variable`` declarations
     # would be wrong. Filter explicit quantifier-bound names out.
     bound: Set[str] = set()
+    let_bound: Set[str] = set()
+    let_scopes: List[tuple[int, int, str, int]] = []
     quantifier_type_names: Set[str] = set()
     i = 0
     while i < len(tokens):
@@ -1568,10 +1621,18 @@ def translate_contract(source: str) -> TranslationResult:
                         bound.add(parsed_binder[0])
                         if len(parts[0]) == 3:
                             quantifier_type_names.add(parts[0][2][1])
+        elif kind == "KW" and text == "let":
+            parsed_let = _parse_let_binding_scope(tokens, i)
+            if parsed_let is not None:
+                let_name, body_start, body_end = parsed_let
+                let_bound.add(let_name)
+                let_scopes.append((body_start, body_end, let_name, i + 1))
         i += 1
     free = [
         name for name in _extract_identifiers(tokens)
-        if name not in bound and name not in quantifier_type_names
+        if name not in bound
+        and name not in let_bound
+        and name not in quantifier_type_names
     ]
     for ident in string_idents:
         if ident in array_idents:
@@ -1602,6 +1663,21 @@ def translate_contract(source: str) -> TranslationResult:
                 if not any(name == text for _, name in scope_stack):
                     is_partial = True
                     break
+    if let_bound:
+        for j, (kind, text) in enumerate(tokens):
+            if kind != "ID" or text not in let_bound:
+                continue
+            if any(
+                binder_idx == j and name == text
+                for _, _, name, binder_idx in let_scopes
+            ):
+                continue
+            if not any(
+                start <= j < end and name == text
+                for start, end, name, _ in let_scopes
+            ):
+                is_partial = True
+                break
     return _make_translation_result(
         stripped,
         lean_expr=lean_expr,

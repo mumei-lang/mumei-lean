@@ -815,12 +815,13 @@ def test_nested_quantifier_with_let_binding():
     )
     assert "∀ i : Int" in result.lean_expr
     assert "let bound := n" in result.lean_expr
-    # ``bound`` appears as a free identifier at the token level because
-    # ``_extract_identifiers`` does not track ``let`` scopes. This is
-    # acceptable: the generated theorem simply quantifies over ``bound``
-    # and the let binding shadows it at the Lean level.
-    assert "n" in result.identifiers
-    assert "arr" in result.identifiers
+    assert result.identifiers == ["n", "arr"]
+    assert result.is_partial is False
+
+
+def test_let_binding_same_name_free_outside_scope_marks_partial():
+    result = translate_contract("x > 0 && let x = 1 in x > 0")
+    assert result.is_partial is True
 
 
 def test_crypto_roundtrip_with_quantifier():

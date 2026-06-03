@@ -47,12 +47,12 @@ def mumei_is_prime (p : Int) : Prop :=
 def mumei_mod_eq (a b p : Int) : Prop :=
   a ≡ b [ZMOD p]
 
--- New: field identity elements
+-- field identity elements
 def mumei_ff_zero (_p : Int) : Int := 0
 
 def mumei_ff_one (_p : Int) : Int := 1
 
--- New: field equality modulo p
+-- field equality modulo p
 def mumei_ff_eq (a b p : Int) : Prop :=
   a % p = b % p
 
@@ -68,10 +68,10 @@ def mumei_group_pow (a n : Int) : Int :=
 def mumei_group_identity : Int :=
   0
 
--- New: group order (abstract, axiomatized as input parameter)
+-- group order (abstract, axiomatized as input parameter)
 def mumei_group_order (g : Int) : Int := g
 
--- New: commutativity check (for abelian groups)
+-- commutativity check (for abelian groups)
 def mumei_group_comm (a b : Int) : Prop :=
   mumei_group_mul a b = mumei_group_mul b a
 
@@ -89,7 +89,7 @@ theorem ff_mul_in_field (a b p : Int) (hp : 0 < p) :
   · exact Int.emod_nonneg (a * b) (ne_of_gt hp)
   · exact Int.emod_lt_of_pos (a * b) hp
 
--- New: subtraction closure
+-- subtraction closure
 theorem ff_sub_in_field (a b p : Int) (hp : 0 < p) :
     mumei_ff_in_field (mumei_ff_sub a b p) p := by
   unfold mumei_ff_in_field mumei_ff_sub
@@ -97,7 +97,7 @@ theorem ff_sub_in_field (a b p : Int) (hp : 0 < p) :
   · exact Int.emod_nonneg (a - b) (ne_of_gt hp)
   · exact Int.emod_lt_of_pos (a - b) hp
 
--- New: negation closure
+-- negation closure
 theorem ff_neg_in_field (a p : Int) (hp : 0 < p) :
     mumei_ff_in_field (mumei_ff_neg a p) p := by
   unfold mumei_ff_in_field mumei_ff_neg
@@ -105,43 +105,43 @@ theorem ff_neg_in_field (a p : Int) (hp : 0 < p) :
   · exact Int.emod_nonneg (-a) (ne_of_gt hp)
   · exact Int.emod_lt_of_pos (-a) hp
 
--- New: zero is in field
+-- zero is in field
 theorem ff_zero_in_field (p : Int) (hp : 0 < p) :
     mumei_ff_in_field (mumei_ff_zero p) p := by
   unfold mumei_ff_in_field mumei_ff_zero
   exact ⟨le_refl 0, hp⟩
 
--- New: additive identity
+-- additive identity
 theorem ff_add_zero (a p : Int) :
     mumei_ff_add a (mumei_ff_zero p) p = a % p := by
   unfold mumei_ff_add mumei_ff_zero
   simp
 
--- New: multiplicative identity
+-- multiplicative identity
 theorem ff_mul_one (a p : Int) :
     mumei_ff_mul a (mumei_ff_one p) p = a % p := by
   unfold mumei_ff_mul mumei_ff_one
   simp
 
--- New: ff_eq reflexivity
+-- ff_eq reflexivity
 theorem ff_eq_refl (a p : Int) :
     mumei_ff_eq a a p := by
   unfold mumei_ff_eq
   rfl
 
--- New: commutativity of field add
+-- commutativity of field add
 theorem ff_add_comm (a b p : Int) :
     mumei_ff_add a b p = mumei_ff_add b a p := by
   unfold mumei_ff_add
-  ring
+  ring_nf
 
--- New: commutativity of field mul
+-- commutativity of field mul
 theorem ff_mul_comm (a b p : Int) :
     mumei_ff_mul a b p = mumei_ff_mul b a p := by
   unfold mumei_ff_mul
-  ring
+  ring_nf
 
--- New: distributivity
+-- distributivity
 theorem ff_mul_add_distrib (a b c p : Int) :
     mumei_ff_mul a (mumei_ff_add b c p) p =
     (a * ((b + c) % p)) % p := by
@@ -164,12 +164,12 @@ theorem group_left_inv {G : Type u} [Group G] (a : G) :
     a⁻¹ * a = 1 := by
   simp
 
--- New: right inverse
+-- right inverse
 theorem group_right_inv {G : Type u} [Group G] (a : G) :
     a * a⁻¹ = 1 := by
   simp
 
--- New: identity laws
+-- identity laws
 theorem group_mul_one {G : Type u} [Group G] (a : G) :
     a * 1 = a := by
   simp
@@ -178,17 +178,17 @@ theorem group_one_mul {G : Type u} [Group G] (a : G) :
     1 * a = a := by
   simp
 
--- New: inverse of inverse
+-- inverse of inverse
 theorem group_inv_inv {G : Type u} [Group G] (a : G) :
     a⁻¹⁻¹ = a := by
   simp
 
--- New: inverse of product
+-- inverse of product
 theorem group_mul_inv_rev {G : Type u} [Group G] (a b : G) :
     (a * b)⁻¹ = b⁻¹ * a⁻¹ := by
   simp [mul_inv_rev]
 
--- New: group commutativity witness for Int
+-- group commutativity witness for Int
 theorem mumei_group_comm_int (a b : Int) :
     mumei_group_comm a b := by
   unfold mumei_group_comm mumei_group_mul

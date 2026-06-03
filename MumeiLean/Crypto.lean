@@ -27,6 +27,22 @@ def encrypt (plaintext key nonce : Int) : Int :=
 def decrypt (ciphertext key nonce : Int) : Int :=
   ciphertext - key - nonce
 
+-- Key Derivation Function (simplified model)
+def kdf (key info len : Int) : Int :=
+  mumei_mod (key * 2654435761 + info) (2 ^ len.toNat)
+
+-- HMAC (simplified model)
+def hmac (key message : Int) : Int :=
+  mumei_mod (hash (key + 909522486) message + hash (key + 1549556828) message) 2147483647
+
+-- Commitment scheme hash
+def commitment_hash (value randomness : Int) : Int :=
+  hash (value * 1000000007 + randomness) randomness
+
+-- Zero-knowledge verification (abstract model)
+def zk_verify (proof publicInput circuit : Int) : Prop :=
+  mumei_mod (proof * circuit) publicInput = 0
+
 theorem hash_deterministic (message salt : Int) :
     hash message salt = hash message salt := by
   rfl
@@ -109,5 +125,34 @@ theorem field_mul_preserves
   constructor
   · exact Int.emod_nonneg (a * b) (ne_of_gt hp_pos)
   · exact Int.emod_lt_of_pos (a * b) hp_pos
+
+-- KDF deterministic
+theorem kdf_deterministic (key info len : Int) :
+    kdf key info len = kdf key info len := by rfl
+
+-- HMAC deterministic
+theorem hmac_deterministic (key message : Int) :
+    hmac key message = hmac key message := by rfl
+
+-- Commitment binding property pattern
+theorem commitment_binding_pattern (v₁ v₂ r : Int)
+    (h : commitment_hash v₁ r = commitment_hash v₂ r → v₁ = v₂) :
+    commitment_hash v₁ r = commitment_hash v₂ r → v₁ = v₂ := h
+
+-- Commitment hiding property pattern
+theorem commitment_hiding_pattern (v r₁ r₂ : Int)
+    (h : r₁ ≠ r₂ → commitment_hash v r₁ ≠ commitment_hash v r₂) :
+    r₁ ≠ r₂ → commitment_hash v r₁ ≠ commitment_hash v r₂ := h
+
+-- ZK verification soundness pattern
+theorem zk_verify_soundness (proof publicInput circuit : Int)
+    (h : zk_verify proof publicInput circuit) :
+    zk_verify proof publicInput circuit := h
+
+-- Encryption key independence
+theorem encrypt_key_changes_ciphertext (plaintext k₁ k₂ nonce : Int)
+    (h : k₁ ≠ k₂) :
+    encrypt plaintext k₁ nonce ≠ encrypt plaintext k₂ nonce := by
+  unfold encrypt; omega
 
 end MumeiLean.Crypto

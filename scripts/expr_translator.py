@@ -333,6 +333,7 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "higher_order_predicate_lowering",
     "inductive_definition_lowering",
     "mathlib4_bridge",
+    "finset_bounded_quantifier_lowering",
     "quantifier_skolemize_lowering",
     "implication_lowering",
     "let_binding_lowering",
@@ -991,6 +992,96 @@ def translate_quantifier(source: str) -> TranslationResult:
     into the Lean escalation path.
     """
     return translate_contract(source)
+
+
+def _int_to_nat_expr(lean_expr: str) -> str:
+    if re.fullmatch(r"\d+", lean_expr):
+        return f"({lean_expr} : Int).toNat"
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", lean_expr):
+        return f"{lean_expr}.toNat"
+    return f"({lean_expr}).toNat"
+
+
+def translate_bounded_quantifier_to_finset(
+    quantifier: str,
+    var_name: str,
+    start_expr: str,
+    end_expr: str,
+    body_expr: str,
+) -> Optional[TranslationResult]:
+    """Prototype mathlib4 lowering for bounded integer quantifiers.
+
+    ``forall(i, lo, hi, body)`` normally lowers to explicit integer guard
+    implications. This helper exposes the mathlib-backed alternative used in
+    the integration design: quantify over ``Finset.Ico lo.toNat hi.toNat`` and
+    re-bind the Nat element back to the Mumei ``Int`` variable inside the body.
+    """
+    if quantifier not in _QUANTIFIER_KEYWORDS or not var_name.isidentifier():
+        return None
+
+    start = translate_body(start_expr)
+    end = translate_body(end_expr)
+    body = translate_contract(body_expr)
+    nat_name = f"{var_name}Nat"
+    interval = (
+        f"Finset.Ico {_int_to_nat_expr(start.lean_expr)} "
+        f"{_int_to_nat_expr(end.lean_expr)}"
+    )
+    binder = f"let {var_name} : Int := Int.ofNat {nat_name}; {body.lean_expr}"
+    if quantifier == "forall":
+        lean_expr = f"(∀ {nat_name} ∈ {interval}, {binder})"
+    else:
+        lean_expr = f"(∃ {nat_name} ∈ {interval}, {binder})"
+
+    identifiers: List[str] = []
+    for result in (start, end, body):
+        for identifier in result.identifiers:
+            if identifier not in {var_name, nat_name} and identifier not in identifiers:
+                identifiers.append(identifier)
+    array_ids: List[str] = []
+    for result in (start, end, body):
+        for identifier in result.array_identifiers:
+            if identifier not in array_ids:
+                array_ids.append(identifier)
+    string_ids: List[str] = []
+    for result in (start, end, body):
+        for identifier in result.string_identifiers:
+            if identifier not in string_ids:
+                string_ids.append(identifier)
+
+    is_partial = start.is_partial or end.is_partial or body.is_partial
+    lowered = TranslationResult(
+        lean_expr=lean_expr,
+        identifiers=identifiers,
+        is_trivial=False,
+        is_partial=is_partial,
+        array_identifiers=array_ids,
+        string_identifiers=string_ids,
+    )
+    lowered.translator_ir = TranslatorIR(
+        sort="Prop",
+        binders=[
+            _binder_for_identifier(identifier, array_ids, string_ids)
+            for identifier in identifiers
+        ],
+        theorem_goal=lean_expr,
+        lowering_rules=[
+            "type_system_mapping",
+            "contract_lowering",
+            "refinement_predicate_lowering",
+            "mathlib4_bridge",
+            "finset_bounded_quantifier_lowering",
+        ],
+        semantic_gap_notes=[
+            "finset_bounded_quantifier_lowering: bounded Int quantifiers use "
+            "mathlib4 Finset.Ico over Nat and re-bind each element through Int.ofNat."
+        ],
+        proof_trace_hints=[
+            "rewrite Finset.Ico membership before applying integer bounds lemmas"
+        ],
+        requires_bridge_lemmas=["mumei_finset_bounded_quantifier_bridge"],
+    )
+    return lowered
 
 
 def translate_finite_field(function_name: str, arg_srcs: List[str]) -> Optional[str]:

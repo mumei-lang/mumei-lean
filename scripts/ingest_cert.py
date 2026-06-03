@@ -86,6 +86,7 @@ class IngestedAtom:
     body_translation: Optional[TranslationResult]
 
     z3_check_result: str
+    z3_result_class: str
     status: str
     escalation_reason: str
     logic_fragment_tags: List[str]
@@ -208,6 +209,12 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
                     body_expr=str(body_expr),
                     body_translation=body_translation,
                     z3_check_result=str(atom.get("z3_check_result", "unknown")),
+                    z3_result_class=str(
+                        atom.get(
+                            "z3_result_class",
+                            atom.get("z3_check_result", "unknown"),
+                        )
+                    ),
                     status=str(atom.get("status", "unknown")),
                     escalation_reason=str(atom.get("escalation_reason", "")),
                     logic_fragment_tags=[str(tag) for tag in tags],
@@ -547,13 +554,30 @@ def render_theorem(atom: IngestedAtom) -> str:
         note_block += "\n"
 
     metadata = [f"z3_check_result={atom.z3_check_result}"]
+    if atom.z3_result_class:
+        metadata.append(f"z3_result_class={atom.z3_result_class}")
     metadata.extend(_translator_ir_metadata(atom))
     if atom.escalation_reason:
         metadata.append(f"escalation_reason={atom.escalation_reason}")
     if atom.logic_fragment_tags:
         metadata.append("logic_fragments=" + ",".join(atom.logic_fragment_tags))
+    traceability_comments: List[str] = []
+    if atom.escalation_reason:
+        traceability_comments.append(
+            f"-- mumei_escalation_reason: {atom.escalation_reason}"
+        )
+    if atom.logic_fragment_tags:
+        traceability_comments.append(
+            "-- mumei_logic_fragment_tags: " + ",".join(atom.logic_fragment_tags)
+        )
+    if atom.z3_result_class:
+        traceability_comments.append(f"-- mumei_z3_result_class: {atom.z3_result_class}")
+    traceability_block = "\n".join(traceability_comments)
+    if traceability_block:
+        traceability_block += "\n"
     decl = (
         def_decl +
+        traceability_block +
         f"/-- Auto-generated from mumei atom `{atom.name}` "
         f"({' ; '.join(metadata)}). -/\n"
         f"theorem {atom.name}_correct {params_decl}{h_body_param} :\n"

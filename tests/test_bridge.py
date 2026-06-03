@@ -410,6 +410,7 @@ def test_main_escalation_bundle_exports_metrics_and_metadata(
                 "candidates": [
                     {
                         **_atom("inc", z3="unknown"),
+                        "z3_result_class": "unknown",
                         "escalation_reason": "z3_unknown",
                         "logic_fragment_tags": ["quantifier_alternation"],
                     }
@@ -423,7 +424,7 @@ def test_main_escalation_bundle_exports_metrics_and_metadata(
 
     rc = main(
         [
-            "--escalation-bundle", str(bundle_path),
+            "--ingest-bundle", str(bundle_path),
             "--out-dir", str(tmp_path / "generated"),
             "--module-prefix", "Generated",
             "--lean-cert-out", str(out_cert),
@@ -436,6 +437,9 @@ def test_main_escalation_bundle_exports_metrics_and_metadata(
     candidate = upgraded["candidates"][0]
     assert candidate["z3_check_result"] == "lean_verified"
     assert candidate["lean_metadata"]["status"] == "lean_verified"
+    assert candidate["lean_metadata"]["z3_result_class"] == "unknown"
+    assert candidate["lean_metadata"]["escalation_reason"] == "z3_unknown"
+    assert candidate["lean_metadata"]["logic_fragment_tags"] == ["quantifier_alternation"]
     assert "escalation_reason=z3_unknown" in candidate["lean_metadata"]["diagnostics"]
     assert upgraded["harness_contract"]["policy"] == "mumei-lean-bridge-harness/v1"
     assert candidate["lean_metadata"]["harness"]["failure_taxonomy"] == "proved"
@@ -443,6 +447,7 @@ def test_main_escalation_bundle_exports_metrics_and_metadata(
     assert metrics["escalation_attempts"] == 1
     assert metrics["lean_successes"] == 1
     assert metrics["by_logic_fragment"]["quantifier_alternation"]["success_rate"] == 1.0
+    assert metrics["by_z3_result_class"]["unknown"]["success_rate"] == 1.0
 
 
 def test_main_escalation_bundle_includes_solver_heatmap_metadata(

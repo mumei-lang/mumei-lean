@@ -95,6 +95,7 @@ def test_collect_unknown_atoms_handles_escalation_bundle():
         "candidates": [
             {
                 **_make_atom("nla", z3="timeout"),
+                "z3_result_class": "timeout",
                 "escalation_reason": "z3_timeout_or_resource_limit",
                 "logic_fragment_tags": ["nonlinear_arithmetic"],
             }
@@ -104,6 +105,7 @@ def test_collect_unknown_atoms_handles_escalation_bundle():
     [atom] = collect_unknown_atoms(bundle)
     assert atom.name == "nla"
     assert atom.module_key == "std/math"
+    assert atom.z3_result_class == "timeout"
     assert atom.escalation_reason == "z3_timeout_or_resource_limit"
     assert atom.logic_fragment_tags == ["nonlinear_arithmetic"]
 
@@ -157,6 +159,25 @@ def test_render_theorem_includes_atom_name_and_mumei_arith_body():
     # both x and result should appear in the params declaration
     assert "x" in rendered
     assert "result" in rendered
+
+
+def test_render_theorem_includes_escalation_traceability_comments():
+    cert = _make_certificate(
+        "m.mm",
+        [
+            {
+                **_make_atom("nla", requires="x > 0", ensures="result >= x", z3="timeout"),
+                "z3_result_class": "timeout",
+                "escalation_reason": "z3_timeout_complex_fragment",
+                "logic_fragment_tags": ["nonlinear_arithmetic"],
+            }
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "-- mumei_escalation_reason: z3_timeout_complex_fragment" in rendered
+    assert "-- mumei_logic_fragment_tags: nonlinear_arithmetic" in rendered
+    assert "-- mumei_z3_result_class: timeout" in rendered
 
 
 def test_render_theorem_injects_body_semantics_for_simple_body():

@@ -1,4 +1,4 @@
-"""Tests for the ``MumeiLean.Settlement`` RTGS proof module."""
+"""Tests for the ``MumeiLean.StdMathSettlement`` proof library."""
 from __future__ import annotations
 
 import os
@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SETTLEMENT_LEAN = REPO_ROOT / "MumeiLean" / "Settlement.lean"
+STD_MATH_SETTLEMENT_LEAN = REPO_ROOT / "MumeiLean" / "StdMathSettlement.lean"
 
 
 def _lake_env() -> dict[str, str]:
@@ -23,38 +23,25 @@ def _have_lake() -> bool:
     return shutil.which("lake", path=_lake_env()["PATH"]) is not None
 
 
-def test_settlement_lean_declares_expected_rtgs_proofs():
-    src = SETTLEMENT_LEAN.read_text()
+def test_std_math_settlement_declares_expected_patterns():
+    src = STD_MATH_SETTLEMENT_LEAN.read_text()
     for declaration in (
-        "inductive State",
-        "inductive Op",
-        "def step",
-        "def run",
-        "theorem no_settlement_without_validate",
-        "structure Transfer",
-        "def apply_transfer",
-        "theorem single_transfer_preserves_sum",
-        "def process_queue",
-        "theorem settlement_terminates",
-        "theorem no_negative_balance",
-        "inductive TransferTrace",
-        "theorem balance_conservation",
-        "theorem trace_balance_conservation",
-        "MumeiLean.Patterns.list_transfer_preserves_sum",
+        "theorem safe_add_bounded",
+        "theorem conservation_law",
+        "theorem monotone_transfer",
     ):
         assert declaration in src
-    assert "Op.reject" in src or ".reject" in src
-    assert "by sorry" not in src
-    assert "by\n  sorry" not in src
+    assert "omega" in src
+    assert "sorry" not in src
 
 
 @pytest.mark.skipif(not _have_lake(),
                     reason="lake not on PATH; skipping live Lean build")
 @pytest.mark.skipif(os.environ.get("MUMEI_LEAN_SKIP_LIVE") == "1",
                     reason="MUMEI_LEAN_SKIP_LIVE=1 set")
-def test_settlement_lean_builds_without_sorry_warnings():
+def test_std_math_settlement_builds_without_sorry_warnings():
     proc = subprocess.run(
-        ["lake", "build", "MumeiLean.Settlement"],
+        ["lake", "build", "MumeiLean.StdMathSettlement"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
@@ -63,7 +50,7 @@ def test_settlement_lean_builds_without_sorry_warnings():
     )
     combined = f"{proc.stdout}\n{proc.stderr}"
     assert proc.returncode == 0, (
-        f"lake build MumeiLean.Settlement exited {proc.returncode}\n{combined}"
+        f"lake build MumeiLean.StdMathSettlement exited {proc.returncode}\n{combined}"
     )
     assert "declaration uses 'sorry'" not in combined
     assert "declaration uses sorry" not in combined

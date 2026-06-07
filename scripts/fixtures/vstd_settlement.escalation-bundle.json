@@ -1,0 +1,37 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-06-07T00:00:00Z",
+  "mumei_version": "0.6.0",
+  "file": "std/settlement.mm",
+  "source_certificate": "scripts/fixtures/vstd_settlement.proof-cert.json",
+  "bundle_kind": "escalation_bundle",
+  "candidates": [
+    {
+      "name": "balance_conservation",
+      "z3_check_result": "unknown",
+      "z3_result_class": "unknown",
+      "content_hash": "phase2-vstd-settlement-balance-conservation",
+      "status": "unknown",
+      "proof_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "dependencies": [],
+      "effects": [
+        "settlement_transfer"
+      ],
+      "requires": "amount > 0 && from_balance >= amount",
+      "ensures": "(from_balance - amount) + (to_balance + amount) == from_balance + to_balance",
+      "body_summary": "RTGS transfer debits one account and credits another by the same positive amount",
+      "body_expr": "",
+      "escalation_reason": "z3_unknown_global_balance_conservation",
+      "logic_fragment_tags": [
+        "linear_arithmetic",
+        "settlement",
+        "conservation_law"
+      ]
+    }
+  ],
+  "summary": {
+    "total_candidates": 1,
+    "unknown_atoms": 1,
+    "phase": "Phase 2 Demo (RTGS Settlement)"
+  }
+}

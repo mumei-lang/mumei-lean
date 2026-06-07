@@ -514,7 +514,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         type=Path,
         default=None,
         help="Where to write the resulting .lean-cert.json. "
-        "Required unless --no-export is set.",
+        "Required unless --no-export is set. For --escalation-bundle, "
+        "defaults to out/<bundle-stem>.lean-cert.json.",
     )
     parser.add_argument(
         "--summary-json",
@@ -553,6 +554,21 @@ def main(argv: Optional[List[str]] = None) -> int:
         "(default: this repo).",
     )
     args = parser.parse_args(argv)
+
+    if (
+        args.lean_cert_out is None
+        and args.escalation_bundle is not None
+        and not args.no_export
+    ):
+        bundle_name = args.escalation_bundle.name
+        suffix = ".escalation-bundle.json"
+        if bundle_name.endswith(suffix):
+            stem = bundle_name[: -len(suffix)]
+        elif bundle_name.endswith(".json"):
+            stem = bundle_name[: -len(".json")]
+        else:
+            stem = args.escalation_bundle.stem
+        args.lean_cert_out = Path("out") / f"{stem}.lean-cert.json"
 
     if args.cert is not None:
         input_kind = "cert"

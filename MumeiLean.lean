@@ -20,6 +20,7 @@ import MumeiLean.DeFi
 import MumeiLean.ArkLibAudit
 import MumeiLean.MedicalDevice
 import MumeiLean.StdMathAbs
+import MumeiLean.StdMathSettlement
 
 /-!
 # MumeiLean
@@ -65,6 +66,8 @@ Top-level layout:
   safety proofs
 * `MumeiLean.StdMathAbs` – hand-written std/math + std/list proof
   witnesses for real standard-library atom contracts
+* `MumeiLean.StdMathSettlement` – reusable settlement / smart-contract
+  arithmetic lemmas for escalated RTGS obligations
 
 The Python bridge under `scripts/` does the heavy lifting of
 JSON ↔ Lean source translation; the modules above provide the

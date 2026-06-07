@@ -450,6 +450,40 @@ def test_main_escalation_bundle_exports_metrics_and_metadata(
     assert metrics["by_z3_result_class"]["unknown"]["success_rate"] == 1.0
 
 
+def test_main_escalation_bundle_defaults_lean_cert_out(
+    tmp_path: Path, monkeypatch
+):
+    bundle_path = tmp_path / "vstd_settlement.escalation-bundle.json"
+    bundle_path.write_text(
+        json.dumps(
+            {
+                "version": "1.0",
+                "file": "std/settlement.mm",
+                "summary": {},
+                "candidates": [
+                    {
+                        **_atom("balance_conservation", z3="unknown"),
+                        "requires": "amount > 0 && from_balance >= amount",
+                        "ensures": "(from_balance - amount) + (to_balance + amount) == from_balance + to_balance",
+                        "z3_result_class": "unknown",
+                        "escalation_reason": "z3_unknown_global_balance_conservation",
+                        "logic_fragment_tags": ["linear_arithmetic", "settlement"],
+                    }
+                ],
+            }
+        )
+    )
+    _patch_lake(monkeypatch, rc=0, log="")
+    monkeypatch.chdir(tmp_path)
+
+    rc = main(["--escalation-bundle", str(bundle_path)])
+
+    assert rc == 0
+    out_cert = tmp_path / "out" / "vstd_settlement.lean-cert.json"
+    candidate = json.loads(out_cert.read_text())["candidates"][0]
+    assert candidate["z3_check_result"] == "lean_verified"
+
+
 def test_main_escalation_bundle_includes_solver_heatmap_metadata(
     tmp_path: Path, monkeypatch
 ):

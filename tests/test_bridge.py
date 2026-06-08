@@ -397,6 +397,41 @@ def test_run_lake_build_falls_back_to_lake_without_toolchain(
     assert log_path.read_text() == "done\n"
 
 
+def test_verify_known_witnesses_requires_canonical_module(
+    tmp_path: Path, monkeypatch
+):
+    source = tmp_path / "MumeiLean" / "StdMathAbs.lean"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "theorem abs_saturating_correct : True := by trivial\n"
+        "theorem list_length_correct : True := by trivial\n"
+    )
+    calls: list[list[str]] = []
+
+    def fake_which(name: str) -> str | None:
+        return "/mock/bin/lake" if name == "lake" else None
+
+    def fake_run(cmd, cwd, capture_output, text):  # noqa: ANN001
+        calls.append(cmd)
+        assert cwd == tmp_path
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(bridge.shutil, "which", fake_which)
+    monkeypatch.setattr(bridge.subprocess, "run", fake_run)
+
+    proved = bridge._verify_known_witnesses(
+        [
+            SimpleNamespace(name="abs_saturating", module_key="custom/math"),
+            SimpleNamespace(name="list_length", module_key="std/list"),
+        ],
+        tmp_path,
+        tmp_path / "logs",
+    )
+
+    assert proved == [("std/list", "list_length")]
+    assert calls == [["lake", "build", "MumeiLean.StdMathAbs"]]
+
+
 def test_main_escalation_bundle_exports_metrics_and_metadata(
     tmp_path: Path, monkeypatch
 ):

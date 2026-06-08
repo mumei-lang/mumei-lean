@@ -29,7 +29,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 try:
     from .ingest_cert import (
@@ -333,22 +333,21 @@ def _atom_key(atom: IngestedAtom) -> AtomKey:
 
 def _known_witness_names(
     atoms: List[IngestedAtom],
-    known_witness_proved: set[AtomKey],
-) -> List[str]:
-    return sorted(
-        {
-            atom.name
-            for atom in atoms
-            if _atom_key(atom) in known_witness_proved
-        }
-    )
+    known_witness_proved: Set[AtomKey],
+) -> Set[str]:
+    return {
+        atom.name
+        for atom in atoms
+        if _atom_key(atom) in known_witness_proved
+    }
 
 
 def _candidate_status(
     atom: IngestedAtom,
     proved: List[str],
     failed: List[str],
-    known_witness_proved: Optional[set[AtomKey]] = None,
+    *,
+    known_witness_proved: Optional[Set[AtomKey]] = None,
 ) -> str:
     if (
         known_witness_proved is not None
@@ -378,14 +377,14 @@ def _metadata_for_atoms(
     proved: List[str],
     failed: List[str],
     harness_stage: Optional[dict] = None,
-    known_witness_proved: Optional[set[AtomKey]] = None,
+    known_witness_proved: Optional[Set[AtomKey]] = None,
 ) -> Dict[str, dict]:
     return {
         atom.name: _candidate_metadata(
             atom,
             out_dir,
             module_prefix,
-            _candidate_status(atom, proved, failed, known_witness_proved),
+            _candidate_status(atom, proved, failed, known_witness_proved=known_witness_proved),
             harness_stage,
         )
         for atom in atoms
@@ -829,6 +828,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 proved,
                 proved,
                 harness_stage,
+                known_witness_proved=set(),
             )
             for atoms, proved in zip(atoms_per_payload, proved_per_payload)
         ]
@@ -911,7 +911,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("--- lake build log tail ---", file=sys.stderr)
         print("\n".join(build_log.splitlines()[-80:]), file=sys.stderr)
         print("--- end lake build log tail ---", file=sys.stderr)
-    known_witness_proved: set[AtomKey] = set(
+    known_witness_proved: Set[AtomKey] = set(
         _verify_known_witnesses(
             all_candidate_atoms,
             args.repo_dir,
@@ -920,6 +920,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         if rc != 0 and not lake_missing
         else []
     )
+    # Inject canonical known-witness names into ``proved_per_payload`` so
+    # that downstream ``upgrade_certificate()`` and ``_candidate_status()``
+    # see them as proved atoms (the meaning of ``proved_per_payload`` is
+    # now "atoms emitted to Generated/*.lean + canonical known witnesses").
     if known_witness_proved:
         for index, atoms in enumerate(atoms_per_payload):
             existing = set(proved_per_payload[index])
@@ -974,7 +978,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         # conservative (no false ``lean_verified``).
         per_payload_failed: List[List[str]] = []
         for atoms, proved in zip(atoms_per_payload, proved_per_payload):
-            local_known = set(_known_witness_names(atoms, known_witness_proved))
+            local_known = _known_witness_names(atoms, known_witness_proved)
             per_payload_failed.append(sorted(set(proved) - local_known))
     else:
         # Map each payload to the set of generated source files it
@@ -1027,7 +1031,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     # generated; fall back to applying the failure
                     # globally rather than silently ignoring it.
                     local.add(name)
-            local_known = set(_known_witness_names(atoms, known_witness_proved))
+            local_known = _known_witness_names(atoms, known_witness_proved)
             local -= local_known
             per_payload_failed.append(sorted(local))
 

@@ -78,18 +78,22 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
 
 KNOWN_LEAN_WITNESSES: Dict[str, Dict[str, str]] = {
     "abs_saturating": {
+        "module_key": "std/math/abs",
         "module": "MumeiLean.StdMathAbs",
         "theorem": "abs_saturating_correct",
     },
     "fixed_point_abs": {
+        "module_key": "std/math/fixed_point",
         "module": "MumeiLean.StdMathAbs",
         "theorem": "fixed_point_abs_correct",
     },
     "fixed_point_from_int": {
+        "module_key": "std/math/fixed_point",
         "module": "MumeiLean.StdMathAbs",
         "theorem": "fixed_point_from_int_correct",
     },
     "list_length": {
+        "module_key": "std/list",
         "module": "MumeiLean.StdMathAbs",
         "theorem": "list_length_correct",
     },
@@ -507,20 +511,12 @@ def _verify_known_witnesses(
     atoms: List[IngestedAtom],
     repo_dir: Path,
     log_dir: Path,
-) -> List[str]:
-    witness_names = sorted(
-        {
-            atom.name
-            for atom in atoms
-            if atom.name in KNOWN_LEAN_WITNESSES
-        }
-    )
-    if not witness_names:
-        return []
-
-    modules: Dict[str, List[str]] = {}
-    for name in witness_names:
-        witness = KNOWN_LEAN_WITNESSES[name]
+) -> List[Tuple[str, str]]:
+    modules: Dict[str, List[Tuple[str, str]]] = {}
+    for atom in atoms:
+        witness = KNOWN_LEAN_WITNESSES.get(atom.name)
+        if witness is None or atom.module_key != witness["module_key"]:
+            continue
         src = _module_source_path(repo_dir, witness["module"])
         try:
             source_text = src.read_text()
@@ -528,11 +524,11 @@ def _verify_known_witnesses(
             continue
         if f"theorem {witness['theorem']}" not in source_text:
             continue
-        modules.setdefault(witness["module"], []).append(name)
+        modules.setdefault(witness["module"], []).append((atom.module_key, atom.name))
 
-    proved: List[str] = []
+    proved: List[Tuple[str, str]] = []
     log_dir.mkdir(parents=True, exist_ok=True)
-    for module, names in sorted(modules.items()):
+    for module, atom_keys in sorted(modules.items()):
         cmd = _lake_build_command(repo_dir, module)
         log_path = log_dir / f"known_witness_{module.replace('.', '_')}.log"
         if cmd is None:
@@ -546,7 +542,7 @@ def _verify_known_witnesses(
         )
         log_path.write_text(proc.stdout + proc.stderr)
         if proc.returncode == 0:
-            proved.extend(names)
+            proved.extend(atom_keys)
     return sorted(set(proved))
 
 
@@ -937,10 +933,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         # Treat every atom we would have lifted into Lean as failed
         # in *every* payload so the resulting certificate is
         # conservative (no false ``lean_verified``).
-        per_payload_failed: List[List[str]] = [
-            sorted(set(proved) - known_witness_proved)
-            for proved in proved_per_payload
-        ]
+        per_payload_failed: List[List[str]] = []
+        for atoms, proved in zip(atoms_per_payload, proved_per_payload):
+            local_known = {
+                atom.name
+                for atom in atoms
+                if (atom.module_key, atom.name) in known_witness_proved
+            }
+            per_payload_failed.append(sorted(set(proved) - local_known))
     else:
         # Map each payload to the set of generated source files it
         # owns. Failures whose Lake-reported file path matches one of
@@ -962,7 +962,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         all_known_files: set = set().union(*payload_files) if payload_files else set()
 
         per_payload_failed = []
-        for proved, files in zip(proved_per_payload, payload_files):
+        for atoms, proved, files in zip(
+            atoms_per_payload,
+            proved_per_payload,
+            payload_files,
+        ):
             local: set = set()
             proved_set = set(proved)
             for file_path, name in attributions:
@@ -988,7 +992,12 @@ def main(argv: Optional[List[str]] = None) -> int:
                     # generated; fall back to applying the failure
                     # globally rather than silently ignoring it.
                     local.add(name)
-            local -= known_witness_proved
+            local_known = {
+                atom.name
+                for atom in atoms
+                if (atom.module_key, atom.name) in known_witness_proved
+            }
+            local -= local_known
             per_payload_failed.append(sorted(local))
 
     metadata_per_payload = [

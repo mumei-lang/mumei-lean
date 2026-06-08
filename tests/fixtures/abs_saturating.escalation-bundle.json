@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "file": "std/math/abs.mm",
+  "summary": {
+    "unknown": 1
+  },
+  "candidates": [
+    {
+      "name": "abs_saturating",
+      "z3_check_result": "unknown",
+      "content_hash": "fixture-abs-saturating",
+      "status": "unknown",
+      "proof_hash": "fixture-proof-abs-saturating",
+      "dependencies": [],
+      "effects": [],
+      "requires": "true",
+      "ensures": "result >= 0",
+      "z3_result_class": "unknown",
+      "escalation_reason": "z3_unknown",
+      "logic_fragment_tags": [
+        "linear_arithmetic",
+        "std_math_abs"
+      ]
+    }
+  ]
+}

@@ -728,6 +728,42 @@ def main(argv: Optional[List[str]] = None) -> int:
             args.summary_json.write_text(
                 json.dumps(summary_payload, indent=2, ensure_ascii=False) + "\n"
             )
+        if not args.no_export and args.lean_cert_out is not None:
+            if len(payloads) == 1:
+                upgraded = upgrade_certificate(
+                    cert=payloads[0][1],
+                    proved_atoms=proved_per_payload[0],
+                    failed_atoms=proved_per_payload[0],
+                    lean_version=args.lean_version,
+                    atom_metadata=metadata_per_payload[0],
+                    harness_contract=harness_contract,
+                )
+                args.lean_cert_out.parent.mkdir(parents=True, exist_ok=True)
+                args.lean_cert_out.write_text(
+                    json.dumps(upgraded, indent=2, ensure_ascii=False) + "\n"
+                )
+                print(f"wrote {args.lean_cert_out}")
+            else:
+                out_dir = args.lean_cert_out
+                out_dir.mkdir(parents=True, exist_ok=True)
+                for (src_path, payload), proved, metadata in zip(
+                    payloads,
+                    proved_per_payload,
+                    metadata_per_payload,
+                ):
+                    upgraded = upgrade_certificate(
+                        cert=payload,
+                        proved_atoms=proved,
+                        failed_atoms=proved,
+                        lean_version=args.lean_version,
+                        atom_metadata=metadata,
+                        harness_contract=harness_contract,
+                    )
+                    target = out_dir / src_path.name
+                    target.write_text(
+                        json.dumps(upgraded, indent=2, ensure_ascii=False) + "\n"
+                    )
+                    print(f"wrote {target}")
         print("dry run: skipping `lake build`")
         return 0
 

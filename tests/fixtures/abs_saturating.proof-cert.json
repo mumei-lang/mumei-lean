@@ -1,0 +1,24 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-06-08T00:00:00Z",
+  "mumei_version": "0.6.0",
+  "z3_version": "Z3 version 4.12.2",
+  "file": "std/math/abs.mm",
+  "atoms": [
+    {
+      "name": "abs_saturating",
+      "z3_check_result": "unknown",
+      "content_hash": "fixture-abs-saturating",
+      "status": "unknown",
+      "proof_hash": "fixture-proof-abs-saturating",
+      "dependencies": [],
+      "effects": [],
+      "requires": "true",
+      "ensures": "result >= 0"
+    }
+  ],
+  "package_name": "std",
+  "package_version": "0",
+  "certificate_hash": "",
+  "all_verified": false
+}

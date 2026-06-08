@@ -432,6 +432,40 @@ def test_verify_known_witnesses_requires_canonical_module(
     assert calls == [["lake", "build", "MumeiLean.StdMathAbs"]]
 
 
+def test_known_witness_adds_partial_atom_to_proved_payload(
+    tmp_path: Path, monkeypatch
+):
+    cert_path = tmp_path / "cert.json"
+    atom = {
+        **_atom("list_length", z3="unknown"),
+        "requires": "foo(x)",
+        "ensures": "result >= 0",
+    }
+    cert_path.write_text(json.dumps(_cert("std/list.mm", [atom])))
+    out_cert = tmp_path / "out.lean-cert.json"
+    _patch_lake(monkeypatch, rc=1, log="error: cannot resolve dependency 'mathlib'\n")
+    monkeypatch.setattr(
+        bridge,
+        "_verify_known_witnesses",
+        lambda atoms, repo_dir, log_dir: [("std/list", "list_length")],
+    )
+
+    rc = main(
+        [
+            "--cert", str(cert_path),
+            "--out-dir", str(tmp_path / "generated"),
+            "--module-prefix", "Generated",
+            "--lean-cert-out", str(out_cert),
+        ]
+    )
+
+    assert rc == 0
+    upgraded = json.loads(out_cert.read_text())
+    list_length = next(a for a in upgraded["atoms"] if a["name"] == "list_length")
+    assert list_length["z3_check_result"] == "lean_verified"
+    assert list_length["lean_metadata"]["status"] == "lean_verified"
+
+
 def test_main_escalation_bundle_exports_metrics_and_metadata(
     tmp_path: Path, monkeypatch
 ):

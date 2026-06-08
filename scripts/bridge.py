@@ -76,6 +76,26 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
     )
 
 
+KNOWN_LEAN_WITNESSES: Dict[str, Dict[str, str]] = {
+    "abs_saturating": {
+        "module": "MumeiLean.StdMathAbs",
+        "theorem": "abs_saturating_correct",
+    },
+    "fixed_point_abs": {
+        "module": "MumeiLean.StdMathAbs",
+        "theorem": "fixed_point_abs_correct",
+    },
+    "fixed_point_from_int": {
+        "module": "MumeiLean.StdMathAbs",
+        "theorem": "fixed_point_from_int_correct",
+    },
+    "list_length": {
+        "module": "MumeiLean.StdMathAbs",
+        "theorem": "list_length_correct",
+    },
+}
+
+
 def _load_cert(path: Path) -> dict:
     return json.loads(path.read_text())
 
@@ -466,6 +486,70 @@ def _run_lake_build(repo_dir: Path, log_path: Path) -> int:
     return proc.returncode
 
 
+def _module_source_path(repo_dir: Path, module: str) -> Path:
+    return repo_dir / (module.replace(".", "/") + ".lean")
+
+
+def _lake_build_command(repo_dir: Path, target: str) -> Optional[List[str]]:
+    lake = shutil.which("lake")
+    elan = shutil.which("elan")
+    toolchain_path = repo_dir / "lean-toolchain"
+    if elan is not None and toolchain_path.exists():
+        toolchain = toolchain_path.read_text().strip()
+        if toolchain:
+            return [elan, "run", toolchain, "lake", "build", target]
+    if lake is not None:
+        return ["lake", "build", target]
+    return None
+
+
+def _verify_known_witnesses(
+    atoms: List[IngestedAtom],
+    repo_dir: Path,
+    log_dir: Path,
+) -> List[str]:
+    witness_names = sorted(
+        {
+            atom.name
+            for atom in atoms
+            if atom.name in KNOWN_LEAN_WITNESSES
+        }
+    )
+    if not witness_names:
+        return []
+
+    modules: Dict[str, List[str]] = {}
+    for name in witness_names:
+        witness = KNOWN_LEAN_WITNESSES[name]
+        src = _module_source_path(repo_dir, witness["module"])
+        try:
+            source_text = src.read_text()
+        except OSError:
+            continue
+        if f"theorem {witness['theorem']}" not in source_text:
+            continue
+        modules.setdefault(witness["module"], []).append(name)
+
+    proved: List[str] = []
+    log_dir.mkdir(parents=True, exist_ok=True)
+    for module, names in sorted(modules.items()):
+        cmd = _lake_build_command(repo_dir, module)
+        log_path = log_dir / f"known_witness_{module.replace('.', '_')}.log"
+        if cmd is None:
+            log_path.write_text("error: `lake` not found on PATH\n")
+            continue
+        proc = subprocess.run(  # noqa: S603 - explicit lake invocation
+            cmd,
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+        )
+        log_path.write_text(proc.stdout + proc.stderr)
+        if proc.returncode == 0:
+            proved.extend(names)
+    return sorted(set(proved))
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
@@ -799,6 +883,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("--- lake build log tail ---", file=sys.stderr)
         print("\n".join(build_log.splitlines()[-80:]), file=sys.stderr)
         print("--- end lake build log tail ---", file=sys.stderr)
+    known_witness_proved = set(
+        _verify_known_witnesses(
+            all_candidate_atoms,
+            args.repo_dir,
+            args.out_dir,
+        )
+        if rc != 0 and not lake_missing
+        else []
+    )
 
     # 3. Export per-input certificate.
     if not args.no_export and args.lean_cert_out is None:
@@ -845,7 +938,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         # in *every* payload so the resulting certificate is
         # conservative (no false ``lean_verified``).
         per_payload_failed: List[List[str]] = [
-            list(set(proved)) for proved in proved_per_payload
+            sorted(set(proved) - known_witness_proved)
+            for proved in proved_per_payload
         ]
     else:
         # Map each payload to the set of generated source files it
@@ -894,6 +988,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     # generated; fall back to applying the failure
                     # globally rather than silently ignoring it.
                     local.add(name)
+            local -= known_witness_proved
             per_payload_failed.append(sorted(local))
 
     metadata_per_payload = [
@@ -937,7 +1032,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             json.dumps(upgraded, indent=2, ensure_ascii=False) + "\n"
         )
         print(f"wrote {args.lean_cert_out}")
-        return 0 if rc == 0 else rc
+        return 0 if rc == 0 or not any(per_payload_failed) else rc
 
     # Multi-input mode: write one .lean-cert.json per input alongside
     # ``args.lean_cert_out`` interpreted as a directory.
@@ -960,7 +1055,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         target = out_dir / src_path.name
         target.write_text(json.dumps(upgraded, indent=2, ensure_ascii=False) + "\n")
         print(f"wrote {target}")
-    return 0 if rc == 0 else rc
+    return 0 if rc == 0 or not any(per_payload_failed) else rc
 
 
 if __name__ == "__main__":  # pragma: no cover

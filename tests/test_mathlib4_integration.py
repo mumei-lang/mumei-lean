@@ -50,15 +50,13 @@ def test_finset_bounded_exists_prototype_preserves_body_translation():
 
 
 def test_finite_field_add_mul_prototype_uses_algebra_bridge():
-    assert translate_finite_field("ff_add", ["a", "b", "p"]) == (
-        "(MumeiLean.Algebra.mumei_ff_add a b p)"
-    )
+    assert translate_finite_field("ff_add", ["a", "b", "p"]) == "((a + b) % p)"
     assert translate_finite_field("ff_mul", ["a", "b", "p"]) == (
         "(MumeiLean.Algebra.mumei_ff_mul a b p)"
     )
 
     result = translate_contract("ff_eq(ff_add(a, b, p), ff_mul(c, d, p), p)")
-    assert "(MumeiLean.Algebra.mumei_ff_add a b p)" in result.lean_expr
+    assert "((a + b) % p)" in result.lean_expr
     assert "(MumeiLean.Algebra.mumei_ff_mul c d p)" in result.lean_expr
     assert result.translator_ir is not None
     assert "finite_field_lowering" in result.translator_ir.lowering_rules

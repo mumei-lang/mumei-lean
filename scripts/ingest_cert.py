@@ -347,8 +347,10 @@ def _decl_parts_for_identifiers(
     array_identifiers: List[str],
     string_identifiers: List[str],
     predicate_identifiers: Optional[List[str]] = None,
+    predicate_arities: Optional[dict[str, int]] = None,
 ) -> List[str]:
     predicate_identifiers = predicate_identifiers or []
+    predicate_arities = predicate_arities or {}
     scalar = [
         ident for ident in identifiers
         if (
@@ -362,7 +364,9 @@ def _decl_parts_for_identifiers(
         parts.append(f"({' '.join(scalar)} : Int)")
     for pred in predicate_identifiers:
         if pred in identifiers:
-            parts.append(f"({pred} : Int → Prop)")
+            arity = max(1, predicate_arities.get(pred, 1))
+            pred_type = " → ".join(["Int"] * arity + ["Prop"])
+            parts.append(f"({pred} : {pred_type})")
     for ident in array_identifiers:
         if ident in identifiers:
             parts.append(f"({ident} : List Int)")
@@ -385,6 +389,8 @@ def _body_result_type(source: str, translation: TranslationResult) -> str:
     if stripped in {"true", "false"}:
         return "Prop"
     if any(stripped.startswith(f"{name}(") for name in ("starts_with", "ends_with", "contains", "not_contains")):
+        return "Prop"
+    if any(stripped.startswith(f"{name}(") for name in translation.predicate_identifiers):
         return "Prop"
     if translation.string_identifiers and not translation.array_identifiers:
         if stripped in translation.string_identifiers:
@@ -456,12 +462,17 @@ def render_theorem(atom: IngestedAtom) -> str:
             if ident not in string_idents:
                 string_idents.append(ident)
     predicate_idents: List[str] = []
+    predicate_arities: dict[str, int] = {}
     for tr in (req, ens, body_tr):
         if tr is None:
             continue
         for ident in tr.predicate_identifiers:
             if ident not in predicate_idents:
                 predicate_idents.append(ident)
+            predicate_arities[ident] = max(
+                predicate_arities.get(ident, 1),
+                tr.predicate_arities.get(ident, 1),
+            )
 
     result_name = _atom_result_name(atom.name)
     use_body_semantics = (
@@ -497,7 +508,9 @@ def render_theorem(atom: IngestedAtom) -> str:
             decl_parts.append("(" + " ".join(scalar_params) + " : Int)")
         for pred in predicate_idents:
             if pred != "result":
-                decl_parts.append(f"({pred} : Int → Prop)")
+                arity = max(1, predicate_arities.get(pred, 1))
+                pred_type = " → ".join(["Int"] * arity + ["Prop"])
+                decl_parts.append(f"({pred} : {pred_type})")
         for arr in array_idents:
             if arr != "result":
                 decl_parts.append(f"({arr} : List Int)")
@@ -521,6 +534,7 @@ def render_theorem(atom: IngestedAtom) -> str:
             body_tr.array_identifiers,
             body_tr.string_identifiers,
             body_tr.predicate_identifiers,
+            body_tr.predicate_arities,
         )
         def_params_decl = f" {' '.join(def_param_parts)}" if def_param_parts else ""
         def_decl = (

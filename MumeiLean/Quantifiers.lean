@@ -45,10 +45,19 @@ theorem bounded_exists_of_witness (lo hi : Int) (P : Int → Prop)
 
 /-! ### Quantifier composition helpers -/
 
+theorem forall_and_intro (P Q : Int → Prop)
+    (hp : ∀ x : Int, P x) (hq : ∀ x : Int, Q x) :
+    ∀ x : Int, P x ∧ Q x := by
+  intro x; exact ⟨hp x, hq x⟩
+
 theorem forall_and_split (P Q : Int → Prop)
     (hp : ∀ x : Int, P x) (hq : ∀ x : Int, Q x) :
     ∀ x : Int, P x ∧ Q x := by
   intro x; exact ⟨hp x, hq x⟩
+
+theorem exists_intro (P : Int → Prop) (w : Int) (hp : P w) :
+    ∃ x : Int, P x :=
+  ⟨w, hp⟩
 
 theorem exists_or_left (P Q : Int → Prop)
     (hp : ∃ x : Int, P x) :
@@ -59,6 +68,22 @@ theorem forall_implies_trans (P Q R : Int → Prop)
     (hpq : ∀ x : Int, P x → Q x) (hqr : ∀ x : Int, Q x → R x) :
     ∀ x : Int, P x → R x := by
   intro x hp; exact hqr x (hpq x hp)
+
+theorem nested_forall_intro (P : Int → Int → Prop)
+    (h : ∀ x : Int, ∀ y : Int, P x y) :
+    ∀ x : Int, ∀ y : Int, P x y := by
+  intro x y; exact h x y
+
+theorem nested_exists_intro (P : Int → Int → Prop)
+    (x y : Int) (h : P x y) :
+    ∃ x : Int, ∃ y : Int, P x y :=
+  ⟨x, y, h⟩
+
+theorem bounded_forall_and_intro (lo hi : Int) (P Q : Int → Prop)
+    (hp : ∀ x : Int, lo ≤ x → x < hi → P x)
+    (hq : ∀ x : Int, lo ≤ x → x < hi → Q x) :
+    ∀ x : Int, lo ≤ x → x < hi → P x ∧ Q x := by
+  intro x hlo hhi; exact ⟨hp x hlo hhi, hq x hlo hhi⟩
 
 /-! ### List-based quantification -/
 

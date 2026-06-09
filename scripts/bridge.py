@@ -97,6 +97,46 @@ KNOWN_LEAN_WITNESSES: Dict[str, Dict[str, str]] = {
         "module": "MumeiLean.StdMathAbs",
         "theorem": "list_length_correct",
     },
+    "balance_conservation": {
+        "module_key": "std/finance/settlement",
+        "module": "MumeiLean.Settlement",
+        "theorem": "balance_conservation",
+    },
+    "trace_balance_conservation": {
+        "module_key": "std/finance/settlement",
+        "module": "MumeiLean.Settlement",
+        "theorem": "trace_balance_conservation",
+    },
+    "no_settlement_without_validate": {
+        "module_key": "std/finance/settlement",
+        "module": "MumeiLean.Settlement",
+        "theorem": "no_settlement_without_validate",
+    },
+    "no_reentrancy_after_withdraw": {
+        "module_key": "std/contract/vault",
+        "module": "MumeiLean.SmartContract",
+        "theorem": "no_reentrancy_after_withdraw",
+    },
+    "withdraw_preserves_other_balance": {
+        "module_key": "std/contract/vault",
+        "module": "MumeiLean.SmartContract",
+        "theorem": "withdraw_preserves_other_balance",
+    },
+    "withdraw_amount_nonnegative_bound": {
+        "module_key": "std/contract/vault",
+        "module": "MumeiLean.SmartContract",
+        "theorem": "withdraw_amount_nonnegative_bound",
+    },
+    "add_bounded": {
+        "module_key": "std/math/patterns",
+        "module": "MumeiLean.Patterns",
+        "theorem": "add_bounded",
+    },
+    "transfer_preserves_sum": {
+        "module_key": "std/math/patterns",
+        "module": "MumeiLean.Patterns",
+        "theorem": "transfer_preserves_sum",
+    },
 }
 
 AtomKey = Tuple[str, str]

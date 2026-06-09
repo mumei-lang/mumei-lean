@@ -432,6 +432,80 @@ def test_verify_known_witnesses_requires_canonical_module(
     assert calls == [["lake", "build", "MumeiLean.StdMathAbs"]]
 
 
+def test_verify_known_witnesses_builds_domain_witness_modules(
+    tmp_path: Path, monkeypatch
+):
+    witnesses = [
+        ("balance_conservation", "std/finance/settlement", "MumeiLean.Settlement"),
+        (
+            "trace_balance_conservation",
+            "std/finance/settlement",
+            "MumeiLean.Settlement",
+        ),
+        (
+            "no_settlement_without_validate",
+            "std/finance/settlement",
+            "MumeiLean.Settlement",
+        ),
+        (
+            "no_reentrancy_after_withdraw",
+            "std/contract/vault",
+            "MumeiLean.SmartContract",
+        ),
+        (
+            "withdraw_preserves_other_balance",
+            "std/contract/vault",
+            "MumeiLean.SmartContract",
+        ),
+        (
+            "withdraw_amount_nonnegative_bound",
+            "std/contract/vault",
+            "MumeiLean.SmartContract",
+        ),
+        ("add_bounded", "std/math/patterns", "MumeiLean.Patterns"),
+        ("transfer_preserves_sum", "std/math/patterns", "MumeiLean.Patterns"),
+    ]
+    for module in {module for _, _, module in witnesses}:
+        source = tmp_path / Path(*module.split(".")).with_suffix(".lean")
+        source.parent.mkdir(parents=True, exist_ok=True)
+        theorem_lines = [
+            f"theorem {name} : True := by trivial\n"
+            for name, _, witness_module in witnesses
+            if witness_module == module
+        ]
+        source.write_text("".join(theorem_lines))
+    calls: list[list[str]] = []
+
+    def fake_which(name: str) -> str | None:
+        return "/mock/bin/lake" if name == "lake" else None
+
+    def fake_run(cmd, cwd, capture_output, text):  # noqa: ANN001
+        calls.append(cmd)
+        assert cwd == tmp_path
+        assert capture_output is True
+        assert text is True
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(bridge.shutil, "which", fake_which)
+    monkeypatch.setattr(bridge.subprocess, "run", fake_run)
+
+    proved = bridge._verify_known_witnesses(
+        [
+            SimpleNamespace(name=name, module_key=module_key)
+            for name, module_key, _ in witnesses
+        ],
+        tmp_path,
+        tmp_path / "logs",
+    )
+
+    assert set(proved) == {(module_key, name) for name, module_key, _ in witnesses}
+    assert calls == [
+        ["lake", "build", "MumeiLean.Patterns"],
+        ["lake", "build", "MumeiLean.Settlement"],
+        ["lake", "build", "MumeiLean.SmartContract"],
+    ]
+
+
 def test_known_witness_adds_partial_atom_to_proved_payload(
     tmp_path: Path, monkeypatch
 ):

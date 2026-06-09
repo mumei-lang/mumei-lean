@@ -175,6 +175,22 @@ def test_nested_unbounded_quantifiers():
     assert result.is_partial is False
 
 
+def test_nested_unbounded_quantifiers_comma_form():
+    result = translate_contract("forall x, exists y, P(x, y)")
+    assert result.lean_expr == "(∀ x : Int, (∃ y : Int, (P x y)))"
+    assert result.identifiers == ["P"]
+    assert result.predicate_identifiers == ["P"]
+    assert result.predicate_arities == {"P": 2}
+    assert result.is_partial is False
+
+
+def test_nested_unbounded_quantifiers_typed_comma_form():
+    result = translate_contract("forall x : T, forall y : T, P(x, y)")
+    assert result.lean_expr == "(∀ x : Int, (∀ y : Int, (P x y)))"
+    assert result.identifiers == ["P"]
+    assert result.is_partial is False
+
+
 def test_translate_quantifier_public_entrypoint_handles_nested_exists():
     result = translate_quantifier("forall i: exists(j, 0, n, j >= i)")
     assert result.lean_expr == "(∀ i : Int, (∃ j : Int, 0 ≤ j ∧ j < n ∧ j ≥ i))"
@@ -216,6 +232,15 @@ def test_exists_call_form_with_type_annotation():
     assert result.lean_expr == '(∃ name : String, (mumei_starts_with name "M"))'
     assert result.identifiers == []
     assert result.string_identifiers == []
+    assert result.is_partial is False
+
+
+def test_bounded_forall_in_range_form():
+    result = translate_contract("forall(x in 0..n, P(x))")
+    assert result.lean_expr == "(∀ x : Int, 0 ≤ x → x < n → (P x))"
+    assert result.identifiers == ["n", "P"]
+    assert result.predicate_identifiers == ["P"]
+    assert result.predicate_arities == {"P": 1}
     assert result.is_partial is False
 
 
@@ -361,7 +386,7 @@ def test_crypto_function_calls():
 
 def test_algebra_function_calls_lower_to_mumei_lean_algebra():
     result = translate_contract("ff_add(x, y, p) == z && group_identity() == e")
-    assert "(MumeiLean.Algebra.mumei_ff_add x y p) = z" in result.lean_expr
+    assert "((x + y) % p) = z" in result.lean_expr
     assert "(MumeiLean.Algebra.mumei_group_identity) = e" in result.lean_expr
     assert result.identifiers == ["x", "y", "p", "z", "e"]
     assert result.is_partial is False
@@ -373,6 +398,8 @@ def test_algebra_function_calls_lower_to_mumei_lean_algebra():
 
 
 def test_finite_field_and_group_public_lowering_helpers():
+    assert translate_finite_field("ff_in_field", ["x", "p"]) == "(0 ≤ x ∧ x < p)"
+    assert translate_finite_field("ff_add", ["a", "b", "p"]) == "((a + b) % p)"
     assert translate_finite_field("ff_mul", ["a", "b", "p"]) == (
         "(MumeiLean.Algebra.mumei_ff_mul a b p)"
     )
@@ -421,7 +448,7 @@ def test_nested_quantifier_with_finite_field_and_group_metadata():
     )
     assert "∀ x : Int" in result.lean_expr
     assert "∃ y : Int" in result.lean_expr
-    assert "(MumeiLean.Algebra.mumei_ff_add x y p)" in result.lean_expr
+    assert "0 ≤ ((x + y) % p) ∧ ((x + y) % p) < p" in result.lean_expr
     assert "(MumeiLean.Algebra.mumei_group_mul (MumeiLean.Algebra.mumei_group_inv g) g)" in result.lean_expr
     assert "(MumeiLean.Algebra.mumei_group_identity)" in result.lean_expr
     assert result.identifiers == ["p", "g"]
@@ -805,7 +832,7 @@ def test_complex_quantifier_with_algebra_and_implication():
     assert "∀ x : Int" in result.lean_expr
     assert "→" in result.lean_expr
     assert "(MumeiLean.Algebra.mumei_is_prime p)" in result.lean_expr
-    assert "(MumeiLean.Algebra.mumei_ff_in_field x p)" in result.lean_expr
+    assert "0 ≤ x ∧ x < p" in result.lean_expr
     assert result.is_partial is False
 
 
@@ -840,7 +867,7 @@ def test_multiple_quantifiers_with_algebra():
         "ff_add(x, y, p) == ff_add(y, x, p)))"
     )
     assert result.lean_expr.count("∀ ") == 2
-    assert "(MumeiLean.Algebra.mumei_ff_add x y p)" in result.lean_expr
-    assert "(MumeiLean.Algebra.mumei_ff_add y x p)" in result.lean_expr
+    assert "((x + y) % p)" in result.lean_expr
+    assert "((y + x) % p)" in result.lean_expr
     assert result.is_partial is False
     assert "finite_field_lowering" in result.translator_ir.lowering_rules

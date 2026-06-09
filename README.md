@@ -56,14 +56,17 @@ mumei-lean/
 ├── MumeiLean.lean         # Public umbrella module
 ├── MumeiLean/
 │   ├── Basic.lean         # Core types: MumeiContract, ProofResult
-│   ├── CertParser.lean    # In-Lean .proof-cert.json parser (skeleton)
+│   ├── CertParser.lean    # Lean.Json-based .proof-cert.json parser
 │   ├── TheoremGen.lean    # Helpers used by generated Lean theorems
 │   ├── Verify.lean        # Per-atom proof outcome helpers
-│   ├── CertWriter.lean    # In-Lean .lean-cert.json writer (skeleton)
+│   ├── CertWriter.lean    # Lean.Json-based .lean-cert.json writer
 │   ├── Pilot.lean         # Hand-proven pilot theorems (PR 3)
 │   ├── Ownership.lean     # Ownership Transfer Protocol state proof
 │   ├── Patterns.lean      # Reusable SC proof patterns
 │   ├── Algebra.lean       # mathlib-backed finite-field/group helpers
+│   ├── Crypto.lean        # Hash, signature, and crypto primitive proof patterns
+│   ├── AdvancedPatterns.lean  # Reusable domain proof patterns
+│   ├── StdMathAbs.lean    # std/math_abs Lean witness proofs
 │   └── Settlement.lean    # RTGS settlement and balance proofs
 ├── scripts/
 │   ├── expr_translator.py # mumei contract expr → Lean Prop translator
@@ -75,6 +78,12 @@ mumei-lean/
 ├── tests/                 # pytest suite for the Python bridge
 ├── docs/
 │   ├── ARCHITECTURE.md
+│   ├── BRIDGE_PIPELINE.md
+│   ├── BRIDGE_HARNESS_SPEC.md
+│   ├── LEAN_HARNESS_CONTRACT.md
+│   ├── LEAN_TRANSLATOR_SPEC.md
+│   ├── MATHLIB4_INTEGRATION.md
+│   ├── LEAN_EXECUTABLE.md
 │   └── INTEGRATION.md
 └── .github/workflows/ci.yml
 ```
@@ -198,20 +207,23 @@ To build only specific modules (faster for development):
    exclusively over the existing certificate chain. The mumei compiler
    keeps treating any `z3_check_result != "unsat"` as unproven, so the
    new `"lean_verified"` value is forward-compatible.
-3. **Python is the bridge today.** Doing the JSON ↔ Lean source
-   translation in Python is dramatically simpler than reimplementing
-   it in `Lean.Json`; the `MumeiLean.CertParser` / `MumeiLean.CertWriter`
-   modules are deliberate stubs for the day we want a native path.
+3. **Python is the production bridge today.** The end-to-end JSON ↔ Lean
+   source translation still lives in Python, while `MumeiLean.CertParser`
+   and `MumeiLean.CertWriter` are implemented Lean.Json-based native
+   parser/writer modules for downstream tooling that wants a pure Lean path.
 4. **Scope is intentionally small.** The expression translator handles
    arithmetic comparisons, boolean connectives, integer literals,
    conditionals, compact `match x { ... }` expressions, typed bounded and
-   unbounded quantifiers, `arr[i]`, list/string literals, and known calls
-   (`len`, `abs`, `min`, `max`, crypto helpers, finite-field helpers, and
-   group helpers). If a certificate carries a supported `body_expr`, the
-   bridge emits a Lean `def <atom>Result` plus an `h_body` equality so the
-   theorem can prove postconditions from body semantics instead of only
-   `requires → ensures`. Anything else is preserved verbatim and tagged
-   `-- TODO: unproven` or falls back to the contract-only proof path.
+   unbounded quantifiers, `arr[i]`, list/string literals, and known calls.
+   Finite-field helpers (`ff_add`, `ff_mul`, etc.) and group-theory helpers
+   (`group_mul`, etc.) route through `MumeiLean.Algebra`; cryptographic
+   primitives (`hash`, `signature_verify`, etc.) route through
+   `MumeiLean.Crypto`; higher-order predicates (`holds(P, x)`) lower to
+   direct Lean application (`P x`). If a certificate carries a supported
+   `body_expr`, the bridge emits a Lean `def <atom>Result` plus an `h_body`
+   equality so the theorem can prove postconditions from body semantics
+   instead of only `requires → ensures`. Anything else is preserved verbatim
+   and tagged `-- TODO: unproven` or falls back to the contract-only proof path.
    Current limitations: unknown function calls and domain-specific
    invariants that need bespoke lemmas still require a hand-written
    witness.

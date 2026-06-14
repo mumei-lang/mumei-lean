@@ -555,6 +555,7 @@ def test_main_escalation_bundle_exports_metrics_and_metadata(
                         **_atom("inc", z3="unknown"),
                         "z3_result_class": "unknown",
                         "escalation_reason": "z3_unknown",
+                        "logic_fragment_tag": "quantified_formula",
                         "logic_fragment_tags": ["quantifier_alternation"],
                     }
                 ],
@@ -582,7 +583,9 @@ def test_main_escalation_bundle_exports_metrics_and_metadata(
     assert candidate["lean_metadata"]["status"] == "lean_verified"
     assert candidate["lean_metadata"]["z3_result_class"] == "unknown"
     assert candidate["lean_metadata"]["escalation_reason"] == "z3_unknown"
+    assert candidate["lean_metadata"]["logic_fragment_tag"] == "quantified_formula"
     assert candidate["lean_metadata"]["logic_fragment_tags"] == ["quantifier_alternation"]
+    assert candidate["lean_result_metadata"]["status"] == "lean_verified"
     assert "escalation_reason=z3_unknown" in candidate["lean_metadata"]["diagnostics"]
     assert upgraded["harness_contract"]["policy"] == "mumei-lean-bridge-harness/v1"
     assert candidate["lean_metadata"]["harness"]["failure_taxonomy"] == "proved"

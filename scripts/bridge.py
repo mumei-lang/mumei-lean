@@ -185,6 +185,8 @@ def _candidate_metadata(
         diagnostics.append(
             "logic_fragments=" + ",".join(sorted(atom.logic_fragment_tags))
         )
+    if atom.logic_fragment_tag:
+        diagnostics.append(f"logic_fragment_tag={atom.logic_fragment_tag}")
     if atom.is_partial_translation:
         diagnostics.append("partial_translation")
     if atom.manual_lemma_reason:
@@ -206,6 +208,7 @@ def _candidate_metadata(
         "proof_path": str((out_dir / rel).as_posix()),
         "diagnostics": diagnostics,
         "escalation_reason": atom.escalation_reason,
+        "logic_fragment_tag": atom.logic_fragment_tag,
         "logic_fragment_tags": atom.logic_fragment_tags,
         "z3_result_class": atom.z3_result_class,
         "translator_ir": atom.translator_ir,

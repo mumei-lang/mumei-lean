@@ -216,8 +216,10 @@ def test_upgrade_certificate_handles_escalation_bundle_metadata():
     by_name = {a["name"]: a for a in upgraded["candidates"]}
     assert by_name["inc"]["z3_check_result"] == LEAN_VERIFIED
     assert by_name["inc"]["lean_metadata"]["proof_path"] == "Generated/Math.lean"
+    assert by_name["inc"]["lean_result_metadata"]["proof_path"] == "Generated/Math.lean"
     assert by_name["manual"]["z3_check_result"] == "unknown"
     assert by_name["manual"]["lean_metadata"]["status"] == "manual_required"
+    assert by_name["manual"]["lean_result_metadata"]["status"] == "manual_required"
 
 
 def test_main_end_to_end(tmp_path: Path):

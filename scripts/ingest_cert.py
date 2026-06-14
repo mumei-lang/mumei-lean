@@ -90,6 +90,7 @@ class IngestedAtom:
     z3_result_class: str
     status: str
     escalation_reason: str
+    logic_fragment_tag: str
     logic_fragment_tags: List[str]
     proof_hash: str
     translator_version: str
@@ -180,6 +181,10 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
             tags = atom.get("logic_fragment_tags", [])
             if not isinstance(tags, list):
                 tags = []
+            tags = [str(tag) for tag in tags]
+            logic_fragment_tag = str(atom.get("logic_fragment_tag", "") or "")
+            if logic_fragment_tag and not tags:
+                tags.append(logic_fragment_tag)
             requires_translation = _translate_expr(requires)
             ensures_translation = _translate_expr(ensures)
             body_translation = (
@@ -218,7 +223,8 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
                     ),
                     status=str(atom.get("status", "unknown")),
                     escalation_reason=str(atom.get("escalation_reason", "")),
-                    logic_fragment_tags=[str(tag) for tag in tags],
+                    logic_fragment_tag=logic_fragment_tag,
+                    logic_fragment_tags=tags,
                     proof_hash=str(atom.get("proof_hash", "")),
                     translator_version=str(atom.get("translator_version", TRANSLATOR_VERSION)),
                     bridge_lemma_hash=str(atom.get("bridge_lemma_hash", BRIDGE_LEMMA_HASH)),

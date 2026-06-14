@@ -73,6 +73,27 @@ def test_upgrade_certificate_marks_proven_atoms():
     assert upgraded["lean_version"] == "leanprover/lean4:v4.15.0"
 
 
+def test_upgrade_certificate_known_witness_override_marks_atom_verified():
+    cert = _certificate([_atom("abs_saturating")])
+    upgraded = upgrade_certificate(
+        cert=cert,
+        proved_atoms=[],
+        failed_atoms=["abs_saturating"],
+        lean_version="leanprover/lean4:v4.15.0",
+        known_witness_override=["abs_saturating"],
+        atom_metadata={
+            "abs_saturating": {
+                "status": LEAN_VERIFIED,
+                "proof_path": "MumeiLean/StdMathAbs.lean",
+            }
+        },
+    )
+    atom = upgraded["atoms"][0]
+    assert atom["z3_check_result"] == LEAN_VERIFIED
+    assert atom["status"] == "verified"
+    assert atom["lean_metadata"]["proof_path"] == "MumeiLean/StdMathAbs.lean"
+
+
 def test_upgrade_certificate_drops_stale_certificate_hash():
     cert = _certificate([_atom("inc")])
     cert["certificate_hash"] = "stale"

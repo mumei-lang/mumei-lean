@@ -205,6 +205,42 @@ def test_render_theorem_injects_body_semantics_for_simple_body():
     assert "sorry" not in rendered
 
 
+def test_render_theorem_applies_translator_ir_binder_names_to_goal():
+    cert = _make_certificate(
+        "m.mm",
+        [
+            _make_atom(
+                "reserved_binder",
+                requires="theorem > 0",
+                ensures="result >= theorem",
+            )
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "(theorem_binder result : Int)" in rendered
+    assert "(theorem_binder > 0)" in rendered
+    assert "(result ≥ theorem_binder)" in rendered
+
+
+def test_render_theorem_applies_binder_mapping_to_body_semantics():
+    raw_atom = _make_atom(
+        "mapped_body",
+        requires="true",
+        ensures="result >= x",
+        body_expr="x + 1",
+    )
+    raw_atom["binder_mapping"] = {"x": "x_lean"}
+    cert = _make_certificate("m.mm", [raw_atom])
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "def mappedBodyResult (x_lean : Int) : Int :=" in rendered
+    assert "x_lean + 1" in rendered
+    assert "(result : Int)" in rendered
+    assert "(h_body : result = mappedBodyResult x_lean)" in rendered
+    assert "(result ≥ x_lean)" in rendered
+
+
 def test_render_theorem_injects_list_body_semantics():
     cert = _make_certificate(
         "m.mm",

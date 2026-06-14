@@ -20,6 +20,15 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 
+def pytest_addoption(parser) -> None:
+    parser.addoption(
+        "--run-integration",
+        action="store_true",
+        default=False,
+        help="accepted for live Lean bridge E2E compatibility",
+    )
+
+
 @pytest.fixture
 def lake_available():
     if shutil.which("lake") is None:

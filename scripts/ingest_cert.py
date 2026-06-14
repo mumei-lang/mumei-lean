@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -324,22 +325,109 @@ def _atom_result_name(atom_name: str) -> str:
     return parts[0] + "".join(part[:1].upper() + part[1:] for part in parts[1:]) + "Result"
 
 
-def _decl_parts_from_translator_ir(translator_ir: dict) -> List[str]:
-    raw_binders = translator_ir.get("binders", []) if isinstance(translator_ir, dict) else []
+_LEAN_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _lean_binder_mapping(atom: IngestedAtom) -> dict[str, str]:
+    mapping = dict(atom.binder_mapping)
+    raw_binders = (
+        atom.translator_ir.get("binders", [])
+        if isinstance(atom.translator_ir, dict)
+        else []
+    )
+    if isinstance(raw_binders, list):
+        for raw in raw_binders:
+            if not isinstance(raw, dict):
+                continue
+            mumei_name = str(raw.get("mumei_name") or "")
+            lean_name = str(raw.get("lean_name") or "")
+            if mumei_name and lean_name:
+                mapping.setdefault(mumei_name, lean_name)
+    return {
+        source: target
+        for source, target in mapping.items()
+        if source and target
+    }
+
+
+def _apply_identifier_mapping(source: str, mapping: dict[str, str]) -> str:
+    if not mapping:
+        return source
+    rendered: List[str] = []
+    index = 0
+    while index < len(source):
+        if source[index] == '"':
+            start = index
+            index += 1
+            while index < len(source):
+                if source[index] == "\\":
+                    index += 2
+                    continue
+                if source[index] == '"':
+                    index += 1
+                    break
+                index += 1
+            rendered.append(source[start:index])
+            continue
+        match = _LEAN_IDENTIFIER_RE.match(source, index)
+        if match:
+            ident = match.group(0)
+            rendered.append(mapping.get(ident, ident))
+            index = match.end()
+            continue
+        rendered.append(source[index])
+        index += 1
+    return "".join(rendered)
+
+
+def _map_identifier_list(
+    identifiers: List[str],
+    mapping: dict[str, str],
+) -> List[str]:
+    mapped: List[str] = []
+    for ident in identifiers:
+        lean_ident = mapping.get(ident, ident)
+        if lean_ident not in mapped:
+            mapped.append(lean_ident)
+    return mapped
+
+
+def _decl_parts_from_translator_ir(
+    translator_ir: dict,
+    binder_mapping: Optional[dict[str, str]] = None,
+) -> List[str]:
+    raw_binders = (
+        translator_ir.get("binders", [])
+        if isinstance(translator_ir, dict)
+        else []
+    )
     if not isinstance(raw_binders, list):
         return []
+    binder_mapping = binder_mapping or {}
     grouped: dict[str, List[str]] = {}
     seen: set[str] = set()
     for raw in raw_binders:
         if not isinstance(raw, dict):
             continue
-        lean_name = str(raw.get("lean_name") or raw.get("mumei_name") or "")
+        role = str(raw.get("role") or "free")
+        if role in {"quantifier", "refinement_witness"}:
+            continue
+        mumei_name = str(raw.get("mumei_name") or "")
+        lean_name = str(
+            binder_mapping.get(mumei_name)
+            or raw.get("lean_name")
+            or raw.get("mumei_name")
+            or ""
+        )
         lean_type = str(raw.get("lean_type") or "Int")
         if not lean_name or lean_name in seen:
             continue
         seen.add(lean_name)
         grouped.setdefault(lean_type, []).append(lean_name)
-    return [f"({' '.join(names)} : {lean_type})" for lean_type, names in grouped.items()]
+    return [
+        f"({' '.join(names)} : {lean_type})"
+        for lean_type, names in grouped.items()
+    ]
 
 
 def _decl_parts_for_identifiers(
@@ -424,6 +512,7 @@ def render_theorem(atom: IngestedAtom) -> str:
     req = atom.requires_translation
     ens = atom.ensures_translation
     body_tr = atom.body_translation
+    binder_mapping = _lean_binder_mapping(atom)
 
     # Collect identifiers we need to quantify over.
     idents: List[str] = []
@@ -493,6 +582,7 @@ def render_theorem(atom: IngestedAtom) -> str:
             and i != "result"
         )
     ]
+    result_binder = binder_mapping.get("result", "result")
     if (
         has_result
         and result_type_override is None
@@ -501,48 +591,79 @@ def render_theorem(atom: IngestedAtom) -> str:
     ):
         scalar_params.append("result")
 
-    decl_parts = [] if result_type_override is not None else _decl_parts_from_translator_ir(atom.translator_ir)
+    decl_parts = (
+        []
+        if result_type_override is not None
+        else _decl_parts_from_translator_ir(atom.translator_ir, binder_mapping)
+    )
     if not decl_parts:
         decl_parts = []
         if scalar_params:
-            decl_parts.append("(" + " ".join(scalar_params) + " : Int)")
+            mapped_scalar_params = _map_identifier_list(
+                scalar_params,
+                binder_mapping,
+            )
+            decl_parts.append(
+                "(" + " ".join(mapped_scalar_params) + " : Int)"
+            )
         for pred in predicate_idents:
             if pred != "result":
                 arity = max(1, predicate_arities.get(pred, 1))
                 pred_type = " → ".join(["Int"] * arity + ["Prop"])
-                decl_parts.append(f"({pred} : {pred_type})")
+                decl_parts.append(
+                    f"({binder_mapping.get(pred, pred)} : {pred_type})"
+                )
         for arr in array_idents:
             if arr != "result":
-                decl_parts.append(f"({arr} : List Int)")
+                decl_parts.append(f"({binder_mapping.get(arr, arr)} : List Int)")
         non_result_strings = [s for s in string_idents if s != "result"]
         if non_result_strings:
-            decl_parts.append("(" + " ".join(non_result_strings) + " : String)")
+            mapped_strings = _map_identifier_list(
+                non_result_strings,
+                binder_mapping,
+            )
+            decl_parts.append(
+                "(" + " ".join(mapped_strings) + " : String)"
+            )
         if result_type_override is not None:
-            decl_parts.append(f"(result : {result_type_override})")
+            decl_parts.append(f"({result_binder} : {result_type_override})")
     params_decl = " ".join(decl_parts)
 
-    requires_lean = req.lean_expr
-    ensures_lean = ens.lean_expr
+    requires_lean = _apply_identifier_mapping(req.lean_expr, binder_mapping)
+    ensures_lean = _apply_identifier_mapping(ens.lean_expr, binder_mapping)
 
     def_params = [i for i in idents if i != "result"]
     def_decl = ""
     h_body_param = ""
     if use_body_semantics:
         body_type = result_type_override or "Int"
+        mapped_def_params = _map_identifier_list(def_params, binder_mapping)
+        mapped_predicate_arities = {
+            binder_mapping.get(name, name): arity
+            for name, arity in body_tr.predicate_arities.items()
+        }
         def_param_parts = _decl_parts_for_identifiers(
-            def_params,
-            body_tr.array_identifiers,
-            body_tr.string_identifiers,
-            body_tr.predicate_identifiers,
-            body_tr.predicate_arities,
+            mapped_def_params,
+            _map_identifier_list(body_tr.array_identifiers, binder_mapping),
+            _map_identifier_list(body_tr.string_identifiers, binder_mapping),
+            _map_identifier_list(body_tr.predicate_identifiers, binder_mapping),
+            mapped_predicate_arities,
         )
         def_params_decl = f" {' '.join(def_param_parts)}" if def_param_parts else ""
+        mapped_body_expr = _apply_identifier_mapping(
+            body_tr.lean_expr,
+            binder_mapping,
+        )
         def_decl = (
             f"def {result_name}{def_params_decl} : {body_type} :=\n"
-            f"  {body_tr.lean_expr}\n\n"
+            f"  {mapped_body_expr}\n\n"
         )
-        result_args = f" {' '.join(def_params)}" if def_params else ""
-        h_body_param = f" (h_body : result = {result_name}{result_args})"
+        result_args = (
+            f" {' '.join(mapped_def_params)}" if mapped_def_params else ""
+        )
+        h_body_param = (
+            f" (h_body : {result_binder} = {result_name}{result_args})"
+        )
 
     # Default tactic body: try ``mumei_arith`` (mathlib4-backed
     # ``omega`` / ``linarith`` / ``norm_num`` / ``simp`` cascade). Any

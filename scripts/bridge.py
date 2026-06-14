@@ -419,16 +419,69 @@ def _metadata_for_atoms(
     harness_stage: Optional[dict] = None,
     known_witness_proved: Optional[Set[AtomKey]] = None,
 ) -> Dict[str, dict]:
-    return {
-        atom.name: _candidate_metadata(
+    metadata_by_atom: Dict[str, dict] = {}
+    known_witness_proved = known_witness_proved or set()
+    for atom in atoms:
+        metadata = _candidate_metadata(
             atom,
             out_dir,
             module_prefix,
             _candidate_status(atom, proved, failed, known_witness_proved=known_witness_proved),
             harness_stage,
         )
-        for atom in atoms
+        if _atom_key(atom) in known_witness_proved:
+            metadata = _known_witness_metadata(atom, metadata, harness_stage)
+        metadata_by_atom[atom.name] = metadata
+    return metadata_by_atom
+
+
+def _known_witness_metadata(
+    atom: IngestedAtom,
+    metadata: dict,
+    harness_stage: Optional[dict],
+) -> dict:
+    witness = KNOWN_LEAN_WITNESSES.get(atom.name)
+    if witness is None:
+        return metadata
+    metadata = dict(metadata)
+    diagnostics = list(metadata.get("diagnostics", []))
+    diagnostics.append("known_witness_module")
+    metadata["diagnostics"] = diagnostics
+    metadata["theorem_name"] = witness["theorem"]
+    metadata["proof_path"] = _module_source_path(
+        Path("."),
+        witness["module"],
+    ).as_posix()
+    metadata["proof_strategy"] = {
+        "strategy": "known_witness_module",
+        "module": witness["module"],
+        "theorem": witness["theorem"],
     }
+    if harness_stage is not None:
+        metadata["harness"] = {
+            **harness_stage,
+            "verifier_gate": (
+                "known hand-written Lean witness module builds successfully."
+            ),
+            "failure_taxonomy": bridge_failure_taxonomy(LEAN_VERIFIED, diagnostics),
+        }
+    return metadata
+
+
+def _remove_stale_generated_modules(
+    *,
+    out_dir: Path,
+    module_prefix: str,
+    known_witness_proved: Set[AtomKey],
+    generated_atoms: List[IngestedAtom],
+) -> None:
+    generated_module_keys = {atom.module_key for atom in generated_atoms}
+    for module_key, _name in known_witness_proved:
+        if module_key in generated_module_keys:
+            continue
+        target = out_dir / module_to_path(module_key, module_prefix)
+        if target.exists():
+            target.unlink()
 
 
 def _empty_metric_bucket() -> dict:
@@ -802,25 +855,54 @@ def main(argv: Optional[List[str]] = None) -> int:
     # per-file failure attribution further down.
     proved_per_payload: List[List[str]] = []
     atoms_per_payload: List[List[IngestedAtom]] = []
+    proof_atoms_per_payload: List[List[IngestedAtom]] = []
     # Collect all atoms across payloads first, then call ``write_modules``
     # once. ``write_modules`` writes one Lean file per module key and
     # would silently overwrite earlier payloads if two payloads
     # produced atoms whose module keys collide after sanitisation
     # (e.g. ``math.mm`` vs ``Math.mm`` → ``Generated.Math``).
     all_candidate_atoms: List[IngestedAtom] = []
-    all_atoms: List[IngestedAtom] = []
     for src_path, payload in payloads:
         atoms = collect_unknown_atoms(payload)
         proof_atoms = [atom for atom in atoms if not atom.is_partial_translation]
         all_candidate_atoms.extend(atoms)
-        all_atoms.extend(proof_atoms)
-        proved_per_payload.append([a.name for a in proof_atoms])
+        proof_atoms_per_payload.append(proof_atoms)
         atoms_per_payload.append(atoms)
         partial_count = len(atoms) - len(proof_atoms)
         print(
             f"ingested {len(atoms):3d} Lean candidate(s) from {src_path} "
             f"({partial_count} partial translation)"
         )
+
+    known_witness_proved: Set[AtomKey] = set()
+    if not args.no_build and not args.no_export:
+        known_witness_proved.update(
+            _verify_known_witnesses(
+                all_candidate_atoms,
+                args.repo_dir,
+                args.out_dir,
+            )
+        )
+
+    all_atoms: List[IngestedAtom] = []
+    for atoms, proof_atoms in zip(atoms_per_payload, proof_atoms_per_payload):
+        local_proved: List[str] = []
+        for atom in proof_atoms:
+            if _atom_key(atom) in known_witness_proved:
+                continue
+            all_atoms.append(atom)
+            local_proved.append(atom.name)
+        for name in _known_witness_names(atoms, known_witness_proved):
+            if name not in local_proved:
+                local_proved.append(name)
+        proved_per_payload.append(local_proved)
+
+    _remove_stale_generated_modules(
+        out_dir=args.out_dir,
+        module_prefix=args.module_prefix,
+        known_witness_proved=known_witness_proved,
+        generated_atoms=all_atoms,
+    )
     write_modules(all_atoms, args.out_dir, args.module_prefix)
 
     # Aggregate per-module unknown atom counts so CI / humans can
@@ -889,6 +971,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                     lean_version=args.lean_version,
                     atom_metadata=metadata_per_payload[0],
                     harness_contract=harness_contract,
+                    known_witness_override=_known_witness_names(
+                        atoms_per_payload[0],
+                        known_witness_proved,
+                    ),
                 )
                 args.lean_cert_out.parent.mkdir(parents=True, exist_ok=True)
                 args.lean_cert_out.write_text(
@@ -898,10 +984,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             else:
                 out_dir = args.lean_cert_out
                 out_dir.mkdir(parents=True, exist_ok=True)
-                for (src_path, payload), proved, metadata in zip(
+                for (src_path, payload), proved, metadata, atoms in zip(
                     payloads,
                     proved_per_payload,
                     metadata_per_payload,
+                    atoms_per_payload,
                 ):
                     upgraded = upgrade_certificate(
                         cert=payload,
@@ -910,6 +997,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                         lean_version=args.lean_version,
                         atom_metadata=metadata,
                         harness_contract=harness_contract,
+                        known_witness_override=_known_witness_names(
+                            atoms,
+                            known_witness_proved,
+                        ),
                     )
                     target = out_dir / src_path.name
                     target.write_text(
@@ -922,7 +1013,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     # 2. Build.
     log_path = args.out_dir / "lake_build.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    rc = _run_lake_build(args.repo_dir, log_path)
+    if not all_atoms and known_witness_proved:
+        rc = 0
+        log_path.write_text(
+            "skipped generated lake build: all lifted atoms were discharged "
+            "by known hand-written Lean witnesses\n"
+        )
+        print(
+            "known hand-written Lean witnesses discharged all generated "
+            f"candidate(s); log: {log_path}"
+        )
+    else:
+        rc = _run_lake_build(args.repo_dir, log_path)
     lake_missing = rc == 127
     if lake_missing:
         print(
@@ -951,15 +1053,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("--- lake build log tail ---", file=sys.stderr)
         print("\n".join(build_log.splitlines()[-80:]), file=sys.stderr)
         print("--- end lake build log tail ---", file=sys.stderr)
-    known_witness_proved: Set[AtomKey] = set(
-        _verify_known_witnesses(
-            all_candidate_atoms,
-            args.repo_dir,
-            args.out_dir,
+    if rc != 0 and not lake_missing:
+        known_witness_proved.update(
+            _verify_known_witnesses(
+                all_candidate_atoms,
+                args.repo_dir,
+                args.out_dir,
+            )
         )
-        if rc != 0 and not lake_missing
-        else []
-    )
     # Inject canonical known-witness names into ``proved_per_payload`` so
     # that downstream ``upgrade_certificate()`` and ``_candidate_status()``
     # see them as proved atoms (the meaning of ``proved_per_payload`` is
@@ -1111,6 +1212,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             lean_version=args.lean_version,
             atom_metadata=metadata_per_payload[0],
             harness_contract=harness_contract,
+            known_witness_override=_known_witness_names(
+                atoms_per_payload[0],
+                known_witness_proved,
+            ),
         )
         args.lean_cert_out.parent.mkdir(parents=True, exist_ok=True)
         args.lean_cert_out.write_text(
@@ -1123,11 +1228,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     # ``args.lean_cert_out`` interpreted as a directory.
     out_dir = args.lean_cert_out
     out_dir.mkdir(parents=True, exist_ok=True)
-    for (src_path, payload), proved, failed, metadata in zip(
+    for (src_path, payload), proved, failed, metadata, atoms in zip(
         payloads,
         proved_per_payload,
         per_payload_failed,
         metadata_per_payload,
+        atoms_per_payload,
     ):
         upgraded = upgrade_certificate(
             cert=payload,
@@ -1136,6 +1242,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             lean_version=args.lean_version,
             atom_metadata=metadata,
             harness_contract=harness_contract,
+            known_witness_override=_known_witness_names(
+                atoms,
+                known_witness_proved,
+            ),
         )
         target = out_dir / src_path.name
         target.write_text(json.dumps(upgraded, indent=2, ensure_ascii=False) + "\n")

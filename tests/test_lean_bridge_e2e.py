@@ -59,9 +59,12 @@ def test_bridge_known_witness_abs_saturating(lake_available, tmp_path: Path):
     assert "theorem abs_saturating_correct" in src
 
     out_cert = tmp_path / "abs_saturating.lean-cert.json"
+    out_dir = tmp_path / "generated"
     proc = _run_bridge(
         "--cert",
         str(FIXTURES / "abs_saturating.proof-cert.json"),
+        "--out-dir",
+        str(out_dir),
         "--lean-cert-out",
         str(out_cert),
     )
@@ -69,7 +72,12 @@ def test_bridge_known_witness_abs_saturating(lake_available, tmp_path: Path):
     _assert_bridge_ok(proc)
     payload = json.loads(out_cert.read_text())
     assert payload["atoms"][0]["z3_check_result"] == "lean_verified"
+    assert (
+        payload["atoms"][0]["lean_metadata"]["proof_path"]
+        == "MumeiLean/StdMathAbs.lean"
+    )
     assert payload["all_verified"] is True
+    assert not (out_dir / "Generated" / "Std" / "Math" / "Abs.lean").exists()
 
 
 def test_bridge_no_build_dry_run(tmp_path: Path):

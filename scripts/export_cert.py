@@ -247,6 +247,7 @@ def _atom_proved(
     atom: dict,
     failed: Iterable[str],
     proved: Iterable[str],
+    known_witness_override: Iterable[str] = (),
 ) -> bool:
     """Return True iff ``atom`` was successfully proved on the Lean side.
 
@@ -255,6 +256,8 @@ def _atom_proved(
     left unchanged (returns False).
     """
     name = atom.get("name")
+    if name in known_witness_override:
+        return True
     if name not in proved:
         return False
     if not _translator_contract_current(atom):
@@ -287,13 +290,20 @@ def _upgrade_atom_list(
     proved_set: set,
     failed_set: set,
     atom_metadata: Optional[Dict[str, dict]],
+    known_witness_override: Optional[set] = None,
 ) -> bool:
     upgraded_any = False
+    known_witness_override = known_witness_override or set()
     for atom in atoms:
         if not isinstance(atom, dict):
             continue
         name = atom.get("name")
-        proved = _atom_proved(atom, failed_set, proved_set)
+        proved = _atom_proved(
+            atom,
+            failed_set,
+            proved_set,
+            known_witness_override,
+        )
         metadata = (atom_metadata or {}).get(str(name))
         if proved:
             atom["z3_check_result"] = LEAN_VERIFIED
@@ -323,6 +333,7 @@ def _upgrade_single_certificate(
     proved_set: set,
     failed_set: set,
     atom_metadata: Optional[Dict[str, dict]] = None,
+    known_witness_override: Optional[set] = None,
 ) -> bool:
     """Mutate a single per-module certificate in place.
 
@@ -333,6 +344,7 @@ def _upgrade_single_certificate(
         proved_set,
         failed_set,
         atom_metadata,
+        known_witness_override,
     )
 
     if upgraded_any:
@@ -360,6 +372,7 @@ def upgrade_certificate(
     lean_version: str,
     atom_metadata: Optional[Dict[str, dict]] = None,
     harness_contract: Optional[Dict[str, Any]] = None,
+    known_witness_override: Optional[Iterable[str]] = None,
 ) -> dict:
     """Return a new certificate dict with successful Lean proofs marked.
 
@@ -374,6 +387,7 @@ def upgrade_certificate(
     """
     proved_set = set(proved_atoms)
     failed_set = set(failed_atoms)
+    known_witness_set = set(known_witness_override or [])
     out = json.loads(json.dumps(cert))  # deep copy via JSON round-trip
 
     if isinstance(out.get("modules"), dict):
@@ -385,6 +399,7 @@ def upgrade_certificate(
                     proved_set,
                     failed_set,
                     atom_metadata,
+                    known_witness_set,
                 )
     elif isinstance(out.get("candidates"), list):
         if _upgrade_atom_list(
@@ -392,10 +407,22 @@ def upgrade_certificate(
             proved_set,
             failed_set,
             atom_metadata,
+            known_witness_set,
         ):
-            out.setdefault("summary", {})["lean_verified"] = len(proved_set - failed_set)
+            out.setdefault("summary", {})["lean_verified"] = sum(
+                1
+                for atom in out["candidates"]
+                if isinstance(atom, dict)
+                and atom.get("z3_check_result") == LEAN_VERIFIED
+            )
     else:
-        _upgrade_single_certificate(out, proved_set, failed_set, atom_metadata)
+        _upgrade_single_certificate(
+            out,
+            proved_set,
+            failed_set,
+            atom_metadata,
+            known_witness_set,
+        )
 
     out["lean_version"] = lean_version
     out["lean_cert_schema_version"] = LEAN_CERT_SCHEMA_VERSION

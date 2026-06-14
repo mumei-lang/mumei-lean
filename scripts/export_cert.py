@@ -310,21 +310,25 @@ def _upgrade_atom_list(
             atom["status"] = "verified"
             atom["translator_version"] = TRANSLATOR_VERSION
             atom["bridge_lemma_hash"] = BRIDGE_LEMMA_HASH
-            atom["lean_metadata"] = _metadata_for_atom(
+            metadata = _metadata_for_atom(
                 atom,
                 LEAN_VERIFIED,
                 atom_metadata,
             )
+            atom["lean_metadata"] = metadata
+            atom["lean_result_metadata"] = metadata
             upgraded_any = True
         elif metadata is not None:
             status = str(metadata.get("status", MANUAL_LEMMA_REQUIRED))
             if not _translator_contract_current(atom):
                 status = "stale_translator"
-            atom["lean_metadata"] = _metadata_for_atom(
+            metadata = _metadata_for_atom(
                 atom,
                 status,
                 atom_metadata,
             )
+            atom["lean_metadata"] = metadata
+            atom["lean_result_metadata"] = metadata
     return upgraded_any
 
 

@@ -97,6 +97,7 @@ def test_collect_unknown_atoms_handles_escalation_bundle():
                 **_make_atom("nla", z3="timeout"),
                 "z3_result_class": "timeout",
                 "escalation_reason": "z3_timeout_or_resource_limit",
+                "logic_fragment_tag": "nonlinear_arithmetic",
                 "logic_fragment_tags": ["nonlinear_arithmetic"],
             }
         ],
@@ -107,6 +108,7 @@ def test_collect_unknown_atoms_handles_escalation_bundle():
     assert atom.module_key == "std/math"
     assert atom.z3_result_class == "timeout"
     assert atom.escalation_reason == "z3_timeout_or_resource_limit"
+    assert atom.logic_fragment_tag == "nonlinear_arithmetic"
     assert atom.logic_fragment_tags == ["nonlinear_arithmetic"]
 
 

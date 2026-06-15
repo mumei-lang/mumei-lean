@@ -29,6 +29,13 @@ def pytest_addoption(parser) -> None:
     )
 
 
+def pytest_configure(config) -> None:
+    config.addinivalue_line(
+        "markers",
+        "lake_available: live bridge tests that require Lake/Lean on PATH",
+    )
+
+
 @pytest.fixture
 def lake_available():
     if shutil.which("lake") is None:

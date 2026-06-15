@@ -93,6 +93,22 @@ jobs:
           assert atom["z3_check_result"] == "lean_verified", atom
           PY
 
+      - name: Run bridge E2E pytest tests if lake is available
+        run: |
+          if ! command -v lake >/dev/null 2>&1; then
+            echo "lake not available; skipping bridge E2E pytest"
+            exit 0
+          fi
+          mkdir -p out
+          set -o pipefail
+          python -m pytest \
+              tests/test_lean_bridge_e2e.py \
+              tests/test_bridge.py \
+              -v \
+              --run-integration \
+              -k "lake_available" \
+              2>&1 | tee out/bridge_e2e_pytest.log
+
   lean-build:
     name: lake build
     runs-on: ubuntu-latest

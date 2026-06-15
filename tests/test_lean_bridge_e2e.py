@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -54,6 +56,7 @@ def _assert_bridge_ok(proc: subprocess.CompletedProcess[str]) -> None:
     )
 
 
+@pytest.mark.lake_available
 def test_bridge_known_witness_abs_saturating(lake_available, tmp_path: Path):
     src = (REPO_ROOT / "MumeiLean" / "StdMathAbs.lean").read_text()
     assert "theorem abs_saturating_correct" in src
@@ -131,6 +134,7 @@ def test_bridge_scan_unknown(tmp_path: Path):
     assert payload["total_unknown"] >= 1
 
 
+@pytest.mark.lake_available
 def test_bridge_escalation_bundle(lake_available, tmp_path: Path):
     out_cert = tmp_path / "abs_saturating.escalation.lean-cert.json"
     proc = _run_bridge(

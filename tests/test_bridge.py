@@ -230,6 +230,7 @@ def test_main_dry_run_with_body_semantics_fixture(tmp_path: Path):
                     reason="lake not on PATH; skipping live bridge E2E")
 @pytest.mark.skipif(os.environ.get("MUMEI_LEAN_SKIP_LIVE") == "1",
                     reason="MUMEI_LEAN_SKIP_LIVE=1 set")
+@pytest.mark.lake_available
 def test_body_semantics_bridge_e2e_exports_lean_verified(tmp_path: Path):
     fixture = Path(__file__).resolve().parent / "fixtures" / "std_math_abs.proof-cert.json"
     out_cert = tmp_path / "std_math_abs.lean-cert.json"

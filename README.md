@@ -142,9 +142,71 @@ of the mumei resolver), or roll it into a bundle and point
 ### 3. Run the test suite
 
 ```bash
-python -m pytest -v       # Python bridge
-lake build                # Lean library
+python -m pytest -v                         # Python bridge
+MUMEI_LEAN_SKIP_LIVE=1 python -m pytest -q  # Skip live Lake-backed tests
+lake build                                  # Lean library
 ```
+
+Bridge E2E pytest coverage for the body-semantics path requires `lake` on
+`PATH` and the pinned Lean toolchain installed:
+
+```bash
+python -m pytest \
+    tests/test_lean_bridge_e2e.py \
+    tests/test_bridge.py \
+    -v \
+    --run-integration \
+    -k "lake_available"
+```
+
+The narrow smoke command used by CI for the `std_math_abs` fixture is:
+
+```bash
+mkdir -p out
+python scripts/bridge.py \
+    --cert tests/fixtures/std_math_abs.proof-cert.json \
+    --out-dir generated \
+    --lean-cert-out out/std_math_abs.lean-cert.json
+python - <<'PY'
+import json
+payload = json.load(open("out/std_math_abs.lean-cert.json"))
+atom = next(a for a in payload["atoms"] if a["name"] == "abs_saturating")
+assert atom["z3_check_result"] == "lean_verified", atom
+PY
+```
+
+### Known limitation: `Generated.Std.Math.Abs`
+
+`Generated.Std.Math.Abs` is a generated Lake module, not a stable committed API.
+Use it for bridge E2E validation only. When you need a checked, committed target,
+build the witness module instead:
+
+```bash
+lake build MumeiLean.StdMathAbs
+```
+
+Workarounds:
+
+- For dry-run translation or source inspection, write generated files anywhere
+  and pass `--no-build`:
+  ```bash
+  python scripts/bridge.py \
+      --cert tests/fixtures/std_math_abs.proof-cert.json \
+      --out-dir /tmp/generated \
+      --no-build
+  ```
+- For live `lake build` / `lean_verified` export, write under the repo-local
+  `generated/` tree and pass `--repo-dir` when invoking from another cwd:
+  ```bash
+  python scripts/bridge.py \
+      --cert tests/fixtures/std_math_abs.proof-cert.json \
+      --out-dir generated \
+      --repo-dir "$(pwd)" \
+      --lean-cert-out out/std_math_abs.lean-cert.json
+  ```
+- If a CI runner lacks Lake or mathlib cache, set `MUMEI_LEAN_SKIP_LIVE=1` for
+  non-live pytest, or run the bridge with `--no-build --no-export` to validate
+  ingestion/translation shape without claiming `lean_verified`.
 
 ## Building
 

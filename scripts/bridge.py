@@ -52,6 +52,7 @@ try:
         bridge_harness_contract,
         bridge_stage_metadata,
     )
+    from .known_witnesses import KNOWN_LEAN_WITNESSES
 except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from ingest_cert import (  # type: ignore
@@ -74,70 +75,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
         bridge_harness_contract,
         bridge_stage_metadata,
     )
-
-
-KNOWN_LEAN_WITNESSES: Dict[str, Dict[str, str]] = {
-    "abs_saturating": {
-        "module_key": "std/math/abs",
-        "module": "MumeiLean.StdMathAbs",
-        "theorem": "abs_saturating_correct",
-    },
-    "fixed_point_abs": {
-        "module_key": "std/math/fixed_point",
-        "module": "MumeiLean.StdMathAbs",
-        "theorem": "fixed_point_abs_correct",
-    },
-    "fixed_point_from_int": {
-        "module_key": "std/math/fixed_point",
-        "module": "MumeiLean.StdMathAbs",
-        "theorem": "fixed_point_from_int_correct",
-    },
-    "list_length": {
-        "module_key": "std/list",
-        "module": "MumeiLean.StdMathAbs",
-        "theorem": "list_length_correct",
-    },
-    "balance_conservation": {
-        "module_key": "std/finance/settlement",
-        "module": "MumeiLean.Settlement",
-        "theorem": "balance_conservation",
-    },
-    "trace_balance_conservation": {
-        "module_key": "std/finance/settlement",
-        "module": "MumeiLean.Settlement",
-        "theorem": "trace_balance_conservation",
-    },
-    "no_settlement_without_validate": {
-        "module_key": "std/finance/settlement",
-        "module": "MumeiLean.Settlement",
-        "theorem": "no_settlement_without_validate",
-    },
-    "no_reentrancy_after_withdraw": {
-        "module_key": "std/contract/vault",
-        "module": "MumeiLean.SmartContract",
-        "theorem": "no_reentrancy_after_withdraw",
-    },
-    "withdraw_preserves_other_balance": {
-        "module_key": "std/contract/vault",
-        "module": "MumeiLean.SmartContract",
-        "theorem": "withdraw_preserves_other_balance",
-    },
-    "withdraw_amount_nonnegative_bound": {
-        "module_key": "std/contract/vault",
-        "module": "MumeiLean.SmartContract",
-        "theorem": "withdraw_amount_nonnegative_bound",
-    },
-    "add_bounded": {
-        "module_key": "std/math/patterns",
-        "module": "MumeiLean.Patterns",
-        "theorem": "add_bounded",
-    },
-    "transfer_preserves_sum": {
-        "module_key": "std/math/patterns",
-        "module": "MumeiLean.Patterns",
-        "theorem": "transfer_preserves_sum",
-    },
-}
+    from known_witnesses import KNOWN_LEAN_WITNESSES  # type: ignore
 
 AtomKey = Tuple[str, str]
 
@@ -176,6 +114,7 @@ def _candidate_metadata(
     module_prefix: str,
     status: str,
     harness_stage: Optional[dict] = None,
+    known_witness_used: bool = False,
 ) -> dict:
     rel = module_to_path(atom.module_key, module_prefix)
     diagnostics: List[str] = []
@@ -215,6 +154,7 @@ def _candidate_metadata(
         "manual_lemma_reason": atom.manual_lemma_reason,
         "proof_strategy": proof_strategy,
         "mathlib_imports": mathlib_imports,
+        "known_witness_used": known_witness_used,
     }
     if heatmap_data is not None:
         metadata["solver_heatmap"] = heatmap_data
@@ -431,6 +371,7 @@ def _metadata_for_atoms(
             module_prefix,
             _candidate_status(atom, proved, failed, known_witness_proved=known_witness_proved),
             harness_stage,
+            _atom_key(atom) in known_witness_proved,
         )
         if _atom_key(atom) in known_witness_proved:
             metadata = _known_witness_metadata(atom, metadata, harness_stage)
@@ -451,6 +392,9 @@ def _known_witness_metadata(
     diagnostics.append("known_witness_module")
     metadata["diagnostics"] = diagnostics
     metadata["theorem_name"] = witness["theorem"]
+    metadata["lean_theorem_name"] = witness["theorem"]
+    metadata["lean_module"] = witness["module"]
+    metadata["known_witness_used"] = True
     metadata["proof_path"] = _module_source_path(
         Path("."),
         witness["module"],
@@ -545,6 +489,9 @@ def _aggregate_metrics(
                 "translator_version": atom.translator_version,
                 "bridge_lemma_hash": atom.bridge_lemma_hash,
                 "manual_lemma_reason": atom.manual_lemma_reason,
+                "known_witness_used": bool(metadata.get(atom.name, {}).get("known_witness_used")),
+                "lean_module": metadata.get(atom.name, {}).get("lean_module"),
+                "lean_theorem_name": metadata.get(atom.name, {}).get("lean_theorem_name"),
             }
             reason = atom.escalation_reason or "unknown"
             reason_bucket = metrics["by_failure_reason"].setdefault(
@@ -932,6 +879,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         "modules": modules_list,
         "ci_mode_fallback": False,
         "harness_contract": harness_contract,
+        "lean_fallback": {
+            "attempted": len(all_candidate_atoms),
+            "proved": 0,
+            "known_witness_used": len(known_witness_proved),
+        },
     }
     if args.summary_json is not None:
         args.summary_json.parent.mkdir(parents=True, exist_ok=True)
@@ -961,6 +913,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             metadata_per_payload,
             atoms_per_payload,
         )
+        summary_payload["lean_fallback"]["proved"] = summary_payload["metrics"]["lean_successes"]
         if args.summary_json is not None:
             args.summary_json.write_text(
                 json.dumps(summary_payload, indent=2, ensure_ascii=False) + "\n"
@@ -1199,6 +1152,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         metadata_per_payload,
         atoms_per_payload,
     )
+    summary_payload["lean_fallback"]["proved"] = summary_payload["metrics"]["lean_successes"]
+    summary_payload["lean_fallback"]["known_witness_used"] = len(known_witness_proved)
     if args.summary_json is not None:
         args.summary_json.write_text(
             json.dumps(summary_payload, indent=2, ensure_ascii=False) + "\n"

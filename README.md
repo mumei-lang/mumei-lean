@@ -175,35 +175,23 @@ assert atom["z3_check_result"] == "lean_verified", atom
 PY
 ```
 
-### Known limitation: `Generated.Std.Math.Abs`
+### Known witness attribution
 
-`Generated.Std.Math.Abs` is a generated Lake module, not a stable committed API.
-Use it for bridge E2E validation only. When you need a checked, committed target,
-build the witness module instead:
+Generated theorem names such as `Generated.Std.Math.Abs.abs_saturating_correct`
+are attributed back to their committed Lean witness modules. For
+`abs_saturating`, the bridge records `lean_module = "MumeiLean.StdMathAbs"`,
+`lean_theorem_name = "abs_saturating_correct"`, and
+`known_witness_used = true` before promoting the atom to `lean_verified`.
+
+For dry-run translation or source inspection, generated files can still be
+written anywhere with `--no-build`:
 
 ```bash
-lake build MumeiLean.StdMathAbs
+python scripts/bridge.py \
+    --cert tests/fixtures/std_math_abs.proof-cert.json \
+    --out-dir /tmp/generated \
+    --no-build
 ```
-
-Workarounds:
-
-- For dry-run translation or source inspection, write generated files anywhere
-  and pass `--no-build`:
-  ```bash
-  python scripts/bridge.py \
-      --cert tests/fixtures/std_math_abs.proof-cert.json \
-      --out-dir /tmp/generated \
-      --no-build
-  ```
-- For live `lake build` / `lean_verified` export, write under the repo-local
-  `generated/` tree and pass `--repo-dir` when invoking from another cwd:
-  ```bash
-  python scripts/bridge.py \
-      --cert tests/fixtures/std_math_abs.proof-cert.json \
-      --out-dir generated \
-      --repo-dir "$(pwd)" \
-      --lean-cert-out out/std_math_abs.lean-cert.json
-  ```
 - If a CI runner lacks Lake or mathlib cache, set `MUMEI_LEAN_SKIP_LIVE=1` for
   non-live pytest, or run the bridge with `--no-build --no-export` to validate
   ingestion/translation shape without claiming `lean_verified`.

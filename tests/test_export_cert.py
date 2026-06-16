@@ -94,6 +94,21 @@ def test_upgrade_certificate_known_witness_override_marks_atom_verified():
     assert atom["lean_metadata"]["proof_path"] == "MumeiLean/StdMathAbs.lean"
 
 
+def test_upgrade_certificate_promotes_generated_known_witness_attribution():
+    cert = _certificate([_atom("abs_saturating")])
+    upgraded = upgrade_certificate(
+        cert=cert,
+        proved_atoms=["Generated.Std.Math.Abs.abs_saturating_correct"],
+        failed_atoms=[],
+        lean_version="leanprover/lean4:v4.15.0",
+    )
+    atom = upgraded["atoms"][0]
+    assert atom["z3_check_result"] == LEAN_VERIFIED
+    assert atom["lean_metadata"]["known_witness_used"] is True
+    assert atom["lean_metadata"]["lean_module"] == "MumeiLean.StdMathAbs"
+    assert atom["lean_metadata"]["lean_theorem_name"] == "abs_saturating_correct"
+
+
 def test_upgrade_certificate_drops_stale_certificate_hash():
     cert = _certificate([_atom("inc")])
     cert["certificate_hash"] = "stale"
@@ -318,3 +333,14 @@ def test_failed_theorem_attributions_reads_source_for_declaration_sorry(tmp_path
     attributions = _failed_theorem_attributions(log, source_root=tmp_path)
     assert attributions == [("./generated/Generated/Std/Math/Abs.lean", "abs_saturating")]
     assert _has_unattributable_failures(log, source_root=tmp_path) is False
+
+
+def test_failed_theorem_attributions_maps_generated_known_witness_name():
+    log = (
+        "Generated/Std/Math/Abs.lean:5:0: theorem "
+        "Generated.Std.Math.Abs.abs_saturating_correct\n"
+        "Generated/Std/Math/Abs.lean:5:0: warning: declaration uses 'sorry'\n"
+    )
+    assert _failed_theorem_attributions(log) == [
+        ("Generated/Std/Math/Abs.lean", "abs_saturating")
+    ]

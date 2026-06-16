@@ -33,6 +33,19 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+try:
+    from .known_witnesses import (
+        KNOWN_LEAN_WITNESSES,
+        known_atom_from_generated_theorem,
+        known_witness_proof_path,
+    )
+except ImportError:  # pragma: no cover - direct ``python scripts/export_cert.py``
+    from known_witnesses import (  # type: ignore
+        KNOWN_LEAN_WITNESSES,
+        known_atom_from_generated_theorem,
+        known_witness_proof_path,
+    )
+
 LEAN_CERT_SCHEMA_VERSION = "1.0-lean"
 LEAN_VERIFIED = "lean_verified"
 TRANSLATOR_VERSION = "mumei-lean-translator-ir-v1"
@@ -79,6 +92,10 @@ def _diagnostic_location(line: str) -> Tuple[Optional[str], Optional[int]]:
 
 
 def _name_from_attribution(raw_name: str, from_def: bool) -> str:
+    generated_atom = known_atom_from_generated_theorem(raw_name)
+    if generated_atom is not None:
+        return generated_atom
+    raw_name = raw_name.rsplit(".", 1)[-1]
     if from_def:
         return _camel_to_snake(raw_name)
     if raw_name.endswith("_correct"):
@@ -88,7 +105,10 @@ def _name_from_attribution(raw_name: str, from_def: bool) -> str:
 
 def _attribution_in_text(lines: List[str], start_idx: int) -> Optional[str]:
     for j in range(start_idx, max(-1, start_idx - 40), -1):
-        theorem = re.search(r"theorem\s+([A-Za-z_][A-Za-z0-9_]*)", lines[j])
+        theorem = re.search(
+            r"theorem\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)",
+            lines[j],
+        )
         if theorem:
             return _name_from_attribution(theorem.group(1), from_def=False)
         result_def = _DEF_RESULT_RE.search(lines[j])
@@ -243,6 +263,28 @@ def _translator_contract_current(atom: dict) -> bool:
     )
 
 
+def _normalise_atom_names(names: Iterable[str]) -> set:
+    out: set = set()
+    for name in names:
+        text = str(name).strip()
+        if not text:
+            continue
+        out.add(_name_from_attribution(text, from_def=False))
+    return out
+
+
+def _apply_known_witness_metadata(name: str, metadata: dict) -> dict:
+    witness = KNOWN_LEAN_WITNESSES.get(name)
+    if witness is None:
+        return metadata
+    metadata.setdefault("known_witness_used", True)
+    metadata.setdefault("lean_module", witness["module"])
+    metadata.setdefault("lean_theorem_name", witness["theorem"])
+    metadata.setdefault("theorem_name", witness["theorem"])
+    metadata.setdefault("proof_path", known_witness_proof_path(name))
+    return metadata
+
+
 def _atom_proved(
     atom: dict,
     failed: Iterable[str],
@@ -282,6 +324,8 @@ def _metadata_for_atom(
     if atom.get("manual_lemma_reason"):
         metadata.setdefault("manual_lemma_reason", atom.get("manual_lemma_reason"))
     metadata["status"] = status
+    if status == LEAN_VERIFIED:
+        metadata = _apply_known_witness_metadata(name, metadata)
     return metadata
 
 
@@ -389,9 +433,9 @@ def upgrade_certificate(
     are accepted: bundles are detected by the presence of a ``modules``
     dict, and each nested certificate is upgraded independently.
     """
-    proved_set = set(proved_atoms)
-    failed_set = set(failed_atoms)
-    known_witness_set = set(known_witness_override or [])
+    proved_set = _normalise_atom_names(proved_atoms)
+    failed_set = _normalise_atom_names(failed_atoms)
+    known_witness_set = _normalise_atom_names(known_witness_override or [])
     out = json.loads(json.dumps(cert))  # deep copy via JSON round-trip
 
     if isinstance(out.get("modules"), dict):

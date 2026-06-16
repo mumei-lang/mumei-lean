@@ -19,6 +19,45 @@
    `translator_version`, `binder_mapping`, `bridge_lemma_hash`,
    `manual_lemma_reason`, and `translator_ir`.
 
+   For P8-C escalation routing, mumei can emit the narrower escalation bundle
+   shape instead of a full proof certificate:
+
+   ```bash
+   mumei verify \
+       --emit escalation-bundle \
+       --output out/math.escalation-bundle.json \
+       src/math.mm
+   ```
+
+   The bundle contains only Lean candidates under `candidates[]`; each candidate
+   preserves the proof identity and routing metadata the bridge needs:
+
+   ```json
+   {
+     "summary": {
+       "candidate_count": 1,
+       "by_reason": {"z3_unknown": 1},
+       "by_logic_fragment": {"linear_arithmetic": 1},
+       "by_z3_result_class": {"unknown": 1}
+     },
+     "candidates": [
+       {
+         "name": "abs_saturating",
+         "z3_check_result": "unknown",
+         "z3_result_class": "unknown",
+         "escalation_reason": "z3_unknown",
+         "logic_fragment_tags": ["linear_arithmetic", "std_math_abs"],
+         "proof_hash": "...",
+         "translator_version": "...",
+         "binder_mapping": {"result": "result"},
+         "bridge_lemma_hash": "...",
+         "manual_lemma_reason": null,
+         "translator_ir": {"sort": "postcondition"}
+       }
+     ]
+   }
+   ```
+
 2. **Run the bridge** in a checkout of `mumei-lean`:
 
    ```bash
@@ -26,6 +65,14 @@
        --cert /path/to/.proof-cert.json \
        --lean-cert-out /tmp/math.lean-cert.json \
        --lean-version "$(lake --version | head -n1)"
+   ```
+
+   Or run the P8-C escalation bundle directly:
+
+   ```bash
+   python scripts/bridge.py \
+       --escalation-bundle out/math.escalation-bundle.json \
+       --lean-cert-out out/math.lean-cert.json
    ```
 
    This regenerates `generated/`, runs `lake build`, validates the translator
@@ -93,6 +140,46 @@ python /path/to/mumei/scripts/bundle_std_certs.py \
 `bridge.py --scan-unknown <mumei-repo>` walks `<mumei-repo>/std/certs/`
 and only re-emits certificates that contain at least one `unknown`
 atom; everything else is left untouched.
+
+## P8-C escalation bundle metadata
+
+`mumei --emit escalation-bundle` is the preferred handoff when the caller only
+wants Lean candidates, not a full proof-certificate pass-through. `scripts/ingest_cert.py`
+detects the `"candidates"` envelope and treats each candidate like an atom whose
+`z3_check_result == "unknown"` or whose `escalation_reason` explicitly routes it
+to Lean.
+
+Field usage:
+
+| Field | Bridge usage |
+|---|---|
+| `z3_result_class` | Normalized solver class in `lean_metadata.z3_result_class` and summary metrics. |
+| `escalation_reason` | Routing reason copied into generated theorem comments and `lean_metadata.diagnostics`. |
+| `logic_fragment_tag` / `logic_fragment_tags` | Proof-strategy and mathlib-import selection hints; also emitted in diagnostics. |
+| `translator_version` | Must match the bridge translator version before a `lean_verified` result is trusted downstream. |
+| `binder_mapping` | Auditable Mumei→Lean variable mapping preserved in generated theorem metadata. |
+| `bridge_lemma_hash` | Stale-bridge guard used by the mumei resolver when accepting Lean certificates. |
+| `manual_lemma_reason` | Prevents silent promotion when the translator knows a hand-written lemma is required. |
+| `translator_ir` | Typed lowering audit trail: obligation sort, binders, theorem goal, provenance span, lowering rules. |
+
+Recommended CI shape:
+
+```bash
+mumei verify \
+    --emit escalation-bundle \
+    --output out/module.escalation-bundle.json \
+    src/module.mm
+
+python scripts/bridge.py \
+    --escalation-bundle out/module.escalation-bundle.json \
+    --lean-cert-out out/module.lean-cert.json \
+    --summary-json out/module.lean-summary.json
+```
+
+If `manual_lemma_reason` is present or translation is partial, the bridge must
+keep the atom unpromoted (`z3_check_result` remains `unknown`) and report the
+reason in `lean_metadata.diagnostics`; it should not emit a false
+`lean_verified` result.
 
 ## Bulk scanning (CI / observability)
 

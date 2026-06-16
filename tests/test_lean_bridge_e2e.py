@@ -82,11 +82,15 @@ def test_bridge_known_witness_abs_saturating(lake_available, tmp_path: Path):
         payload["atoms"][0]["lean_metadata"]["proof_path"]
         == "MumeiLean/StdMathAbs.lean"
     )
+    assert payload["atoms"][0]["lean_metadata"]["known_witness_used"] is True
+    assert payload["atoms"][0]["lean_metadata"]["lean_module"] == "MumeiLean.StdMathAbs"
     assert payload["all_verified"] is True
     assert not (out_dir / "Generated" / "Std" / "Math" / "Abs.lean").exists()
     summary_payload = json.loads(summary.read_text())
+    assert summary_payload["lean_fallback"]["proved"] >= 1
     assert summary_payload["metrics"]["lean_successes"] > 0
     assert summary_payload["metrics"]["by_atom"]["abs_saturating"]["status"] == "lean_verified"
+    assert summary_payload["metrics"]["by_atom"]["abs_saturating"]["known_witness_used"] is True
 
 
 def test_bridge_no_build_dry_run(tmp_path: Path):

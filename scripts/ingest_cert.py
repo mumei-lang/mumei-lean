@@ -51,6 +51,7 @@ try:
         translate_body,
         translate_contract,
     )
+    from .known_witnesses import KNOWN_LEAN_WITNESSES
 except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py``
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from expr_translator import (  # type: ignore
@@ -61,6 +62,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py
         translate_body,
         translate_contract,
     )
+    from known_witnesses import KNOWN_LEAN_WITNESSES  # type: ignore
 
 
 def _translate_expr(source: str) -> TranslationResult:
@@ -515,6 +517,10 @@ def _translator_ir_metadata(atom: IngestedAtom) -> List[str]:
 
 def render_theorem(atom: IngestedAtom) -> str:
     """Render a single Lean ``theorem`` declaration for ``atom``."""
+    known_delegate = _render_known_witness_delegate(atom)
+    if known_delegate is not None:
+        return known_delegate
+
     req = atom.requires_translation
     ens = atom.ensures_translation
     body_tr = atom.body_translation
@@ -726,6 +732,25 @@ def render_theorem(atom: IngestedAtom) -> str:
         f"{note_block}{body}\n"
     )
     return decl
+
+
+def _render_known_witness_delegate(atom: IngestedAtom) -> Optional[str]:
+    witness = KNOWN_LEAN_WITNESSES.get(atom.name)
+    if witness is None or atom.module_key != witness["module_key"]:
+        return None
+    metadata = [f"z3_check_result={atom.z3_check_result}", "known_witness_used=true"]
+    metadata.extend(_translator_ir_metadata(atom))
+    if atom.name == "abs_saturating":
+        return (
+            f"/-- Auto-generated from mumei atom `{atom.name}` "
+            f"({' ; '.join(metadata)}). -/\n"
+            "theorem abs_saturating_correct (x result : Int)\n"
+            "    (h_body : result = MumeiLean.StdMathAbs.absSaturatingResult x) :\n"
+            "    (True) → (result ≥ 0) := by\n"
+            "  intro _h_req\n"
+            "  exact MumeiLean.StdMathAbs.abs_saturating_correct x result h_body\n"
+        )
+    return None
 
 
 def render_module(module_key: str, prefix: str, atoms: List[IngestedAtom]) -> str:

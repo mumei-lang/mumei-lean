@@ -266,6 +266,37 @@ def test_body_semantics_export_path_marks_verified_with_clean_lake_log(
     payload = json.loads(out_cert.read_text())
     atom = next(a for a in payload["atoms"] if a["name"] == "abs_saturating")
     assert atom["z3_check_result"] == "lean_verified"
+    assert atom["lean_metadata"]["proof_path"].endswith(
+        "Generated/Std/Math/Abs.lean"
+    )
+    assert atom["lean_metadata"]["lean_module"] == "Generated.Std.Math.Abs"
+    assert (
+        atom["lean_metadata"]["lean_theorem_name"]
+        == "Generated.Std.Math.Abs.abs_saturating_correct"
+    )
+    assert atom["lean_metadata"]["known_witness_used"] is False
+
+
+def test_candidate_status_accepts_generated_theorem_names():
+    atom = SimpleNamespace(
+        name="abs_saturating",
+        module_key="std/math/abs",
+        translator_version=bridge.TRANSLATOR_VERSION,
+        bridge_lemma_hash=bridge.BRIDGE_LEMMA_HASH,
+        manual_lemma_reason=None,
+        is_partial_translation=False,
+        requires_translation=SimpleNamespace(is_partial=False),
+        ensures_translation=SimpleNamespace(is_partial=False),
+        body_translation=None,
+    )
+
+    status = bridge._candidate_status(
+        atom,
+        ["Generated.Std.Math.Abs.abs_saturating_correct"],
+        [],
+    )
+
+    assert status == "lean_verified"
 
 
 def test_main_scan_unknown_returns_zero_when_dir_empty(tmp_path: Path):

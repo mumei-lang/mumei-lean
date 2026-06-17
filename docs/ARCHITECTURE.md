@@ -14,6 +14,8 @@ graph TD
     LP -->|".lean-cert.json"| MR["mumei resolver\n(verify_import_certificate)"]
     MR -->|"mark_verified()"| MV["mumei verification pipeline"]
     AG["mumei-agent\n(proliferate / forge)"] -->|"Z3 unknown atoms"| ML
+    NLAE["mumei-agent NLAEPipeline\n(P9-G)"] -->|"Loss Vector repair certificate"| ML
+    ML -->|"lean_verified export"| DEMO["mumei-demo\nEvaluation Loop"]
 ```
 
 `mumei-lean` is the box in the middle: it consumes per-module
@@ -32,6 +34,13 @@ attaches a `mumei-lean-bridge-harness/v1` contract to summary JSON and exported
 certificates so downstream demos and agents can inspect the acceptance path,
 artifact obligations, verifier gates, and failure taxonomy without reverse
 engineering bridge internals.
+
+In P9-G NLAE integration, this same bridge is the **Fidelity Checker**. The
+input is the repaired certificate produced after `mumei verify --emit
+loss-vector` and mumei-agent self-correction; the output is a `.lean-cert.json`
+whose relevant atoms are promoted to `lean_verified`. Live generated theorem
+paths are preferred when Lake builds them successfully, while known witnesses
+remain an explicit fallback with `known_witness_used = true`.
 
 ### Internal pipeline (mumei-lean side)
 

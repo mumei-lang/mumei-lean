@@ -94,4 +94,17 @@ theorem withdraw_amount_nonnegative_bound
     balance - amount ≤ balance ∧ balance - amount ≥ 0 := by
   omega
 
+theorem nlae_vault_withdraw_amount_nonnegative_bound
+    (balance amount : Int)
+    (hAmount : amount ≥ 0)
+    (hSufficient : balance ≥ amount) :
+    balance - amount ≤ balance ∧ balance - amount ≥ 0 :=
+  withdraw_amount_nonnegative_bound balance amount hAmount hSufficient
+
+theorem nlae_vault_no_negative_withdraw
+    (balance amount : Int)
+    (hAmount : amount ≥ 0) :
+    balance - amount ≤ balance := by
+  omega
+
 end MumeiLean.SmartContract

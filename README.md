@@ -178,10 +178,14 @@ PY
 ### Known witness attribution
 
 Generated theorem names such as `Generated.Std.Math.Abs.abs_saturating_correct`
-are attributed back to their committed Lean witness modules. For
-`abs_saturating`, the bridge records `lean_module = "MumeiLean.StdMathAbs"`,
-`lean_theorem_name = "abs_saturating_correct"`, and
-`known_witness_used = true` before promoting the atom to `lean_verified`.
+are attributed back to their originating atom before export. When the live
+generated module builds cleanly, `abs_saturating` records
+`lean_module = "Generated.Std.Math.Abs"`,
+`lean_theorem_name = "Generated.Std.Math.Abs.abs_saturating_correct"`, and
+`known_witness_used = false` before promotion to `lean_verified`. If the
+generated build fails but the committed witness module still validates, the
+bridge can fall back to `MumeiLean.StdMathAbs` metadata with
+`known_witness_used = true`.
 
 For dry-run translation or source inspection, generated files can still be
 written anywhere with `--no-build`:

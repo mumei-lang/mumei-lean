@@ -14,6 +14,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 BRIDGE = REPO_ROOT / "scripts" / "bridge.py"
+GENERATED_ABS = REPO_ROOT / "generated" / "Generated" / "Std" / "Math" / "Abs.lean"
 
 
 def _bridge_env() -> dict[str, str]:
@@ -56,41 +57,70 @@ def _assert_bridge_ok(proc: subprocess.CompletedProcess[str]) -> None:
     )
 
 
+def _cleanup_generated_abs() -> None:
+    GENERATED_ABS.unlink(missing_ok=True)
+    current = GENERATED_ABS.parent
+    generated_root = REPO_ROOT / "generated" / "Generated"
+    while current != generated_root and current.exists():
+        try:
+            current.rmdir()
+        except OSError:
+            break
+        current = current.parent
+
+
 @pytest.mark.lake_available
-def test_bridge_known_witness_abs_saturating(lake_available, tmp_path: Path):
+def test_lean_fallback_upgrades_unknown_to_lean_verified(lake_available, tmp_path: Path):
     src = (REPO_ROOT / "MumeiLean" / "StdMathAbs.lean").read_text()
     assert "theorem abs_saturating_correct" in src
 
     out_cert = tmp_path / "abs_saturating.lean-cert.json"
-    out_dir = tmp_path / "generated"
+    out_dir = REPO_ROOT / "generated"
     summary = tmp_path / "summary.json"
-    proc = _run_bridge(
-        "--cert",
-        str(FIXTURES / "abs_saturating.proof-cert.json"),
-        "--out-dir",
-        str(out_dir),
-        "--lean-cert-out",
-        str(out_cert),
-        "--summary-json",
-        str(summary),
-    )
+    _cleanup_generated_abs()
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "abs_saturating.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+            "--summary-json",
+            str(summary),
+        )
 
-    _assert_bridge_ok(proc)
-    payload = json.loads(out_cert.read_text())
-    assert payload["atoms"][0]["z3_check_result"] == "lean_verified"
-    assert (
-        payload["atoms"][0]["lean_metadata"]["proof_path"]
-        == "MumeiLean/StdMathAbs.lean"
-    )
-    assert payload["atoms"][0]["lean_metadata"]["known_witness_used"] is True
-    assert payload["atoms"][0]["lean_metadata"]["lean_module"] == "MumeiLean.StdMathAbs"
-    assert payload["all_verified"] is True
-    assert not (out_dir / "Generated" / "Std" / "Math" / "Abs.lean").exists()
-    summary_payload = json.loads(summary.read_text())
-    assert summary_payload["lean_fallback"]["proved"] >= 1
-    assert summary_payload["metrics"]["lean_successes"] > 0
-    assert summary_payload["metrics"]["by_atom"]["abs_saturating"]["status"] == "lean_verified"
-    assert summary_payload["metrics"]["by_atom"]["abs_saturating"]["known_witness_used"] is True
+        _assert_bridge_ok(proc)
+        assert GENERATED_ABS.exists()
+        generated_src = GENERATED_ABS.read_text()
+        assert "namespace Generated.Std.Math.Abs" in generated_src
+        assert "theorem abs_saturating_correct" in generated_src
+        payload = json.loads(out_cert.read_text())
+        assert payload["atoms"][0]["z3_check_result"] == "lean_verified"
+        assert payload["atoms"][0]["lean_metadata"]["proof_path"].endswith(
+            "generated/Generated/Std/Math/Abs.lean"
+        )
+        assert payload["atoms"][0]["lean_metadata"]["known_witness_used"] is False
+        assert payload["atoms"][0]["lean_metadata"]["lean_module"] == "Generated.Std.Math.Abs"
+        assert (
+            payload["atoms"][0]["lean_metadata"]["lean_theorem_name"]
+            == "Generated.Std.Math.Abs.abs_saturating_correct"
+        )
+        assert payload["all_verified"] is True
+        summary_payload = json.loads(summary.read_text())
+        assert summary_payload["lean_fallback"]["proved"] >= 1
+        assert summary_payload["details"][0]["lean_fallback"]["proved"] >= 1
+        assert summary_payload["metrics"]["lean_successes"] > 0
+        assert (
+            summary_payload["metrics"]["by_atom"]["abs_saturating"]["status"]
+            == "lean_verified"
+        )
+        assert (
+            summary_payload["metrics"]["by_atom"]["abs_saturating"]["known_witness_used"]
+            is False
+        )
+    finally:
+        _cleanup_generated_abs()
 
 
 def test_bridge_no_build_dry_run(tmp_path: Path):
@@ -141,15 +171,19 @@ def test_bridge_scan_unknown(tmp_path: Path):
 @pytest.mark.lake_available
 def test_bridge_escalation_bundle(lake_available, tmp_path: Path):
     out_cert = tmp_path / "abs_saturating.escalation.lean-cert.json"
-    proc = _run_bridge(
-        "--escalation-bundle",
-        str(FIXTURES / "abs_saturating.escalation-bundle.json"),
-        "--lean-cert-out",
-        str(out_cert),
-    )
+    _cleanup_generated_abs()
+    try:
+        proc = _run_bridge(
+            "--escalation-bundle",
+            str(FIXTURES / "abs_saturating.escalation-bundle.json"),
+            "--lean-cert-out",
+            str(out_cert),
+        )
 
-    _assert_bridge_ok(proc)
-    payload = json.loads(out_cert.read_text())
-    candidate = payload["candidates"][0]
-    assert candidate["name"] == "abs_saturating"
-    assert candidate["z3_check_result"] == "lean_verified"
+        _assert_bridge_ok(proc)
+        payload = json.loads(out_cert.read_text())
+        candidate = payload["candidates"][0]
+        assert candidate["name"] == "abs_saturating"
+        assert candidate["z3_check_result"] == "lean_verified"
+    finally:
+        _cleanup_generated_abs()

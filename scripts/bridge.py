@@ -41,6 +41,7 @@ try:
     from .export_cert import (
         _failed_theorem_attributions,
         _has_unattributable_failures,
+        _normalise_atom_names,
         BRIDGE_LEMMA_HASH,
         LEAN_VERIFIED,
         MANUAL_LEMMA_REQUIRED,
@@ -64,6 +65,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
     from export_cert import (  # type: ignore
         _failed_theorem_attributions,
         _has_unattributable_failures,
+        _normalise_atom_names,
         BRIDGE_LEMMA_HASH,
         LEAN_VERIFIED,
         MANUAL_LEMMA_REQUIRED,
@@ -117,6 +119,8 @@ def _candidate_metadata(
     known_witness_used: bool = False,
 ) -> dict:
     rel = module_to_path(atom.module_key, module_prefix)
+    lean_module = ".".join(rel.with_suffix("").parts)
+    lean_theorem_name = f"{lean_module}.{atom.name}_correct"
     diagnostics: List[str] = []
     if atom.escalation_reason:
         diagnostics.append(f"escalation_reason={atom.escalation_reason}")
@@ -142,6 +146,8 @@ def _candidate_metadata(
     metadata = {
         "status": status,
         "theorem_name": f"{atom.name}_correct",
+        "lean_module": lean_module,
+        "lean_theorem_name": lean_theorem_name,
         "translator_version": TRANSLATOR_VERSION,
         "bridge_lemma_hash": BRIDGE_LEMMA_HASH,
         "proof_path": str((out_dir / rel).as_posix()),
@@ -332,11 +338,13 @@ def _candidate_status(
     *,
     known_witness_proved: Optional[Set[AtomKey]] = None,
 ) -> str:
+    proved_set = _normalise_atom_names(proved)
+    failed_set = _normalise_atom_names(failed)
     if (
         known_witness_proved is not None
         and _atom_key(atom) in known_witness_proved
-        and atom.name in proved
-        and atom.name not in failed
+        and atom.name in proved_set
+        and atom.name not in failed_set
     ):
         return LEAN_VERIFIED
     if _has_structural_partial_translation(atom):
@@ -348,7 +356,7 @@ def _candidate_status(
         or atom.bridge_lemma_hash != BRIDGE_LEMMA_HASH
     ):
         return "stale_translator"
-    if atom.name in proved and atom.name not in failed:
+    if atom.name in proved_set and atom.name not in failed_set:
         return LEAN_VERIFIED
     return MANUAL_LEMMA_REQUIRED
 
@@ -534,6 +542,41 @@ def _aggregate_metrics(
                     {"group": grouping_name, "category": key, **bucket}
                 )
     return metrics
+
+
+def _summary_details(
+    payloads: List[Tuple[Path, dict]],
+    metadata_by_payload: List[Dict[str, dict]],
+    atoms_per_payload: List[List[IngestedAtom]],
+) -> List[dict]:
+    details: List[dict] = []
+    for (src_path, _payload), metadata, atoms in zip(
+        payloads,
+        metadata_by_payload,
+        atoms_per_payload,
+    ):
+        proved = sum(
+            1
+            for atom in atoms
+            if metadata.get(atom.name, {}).get("status") == LEAN_VERIFIED
+        )
+        known_witness_used = sum(
+            1
+            for atom in atoms
+            if metadata.get(atom.name, {}).get("known_witness_used")
+        )
+        details.append(
+            {
+                "source": str(src_path),
+                "candidate_count": len(atoms),
+                "lean_fallback": {
+                    "attempted": len(atoms),
+                    "proved": proved,
+                    "known_witness_used": known_witness_used,
+                },
+            }
+        )
+    return details
 
 
 def _run_lake_build(repo_dir: Path, log_path: Path) -> int:
@@ -788,6 +831,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                             "modules": [],
                             "ci_mode_fallback": False,
                             "harness_contract": harness_contract,
+                            "details": [],
                         },
                         indent=2,
                         ensure_ascii=False,
@@ -825,21 +869,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
 
     known_witness_proved: Set[AtomKey] = set()
-    if not args.no_build and not args.no_export:
-        known_witness_proved.update(
-            _verify_known_witnesses(
-                all_candidate_atoms,
-                args.repo_dir,
-                args.out_dir,
-            )
-        )
 
     all_atoms: List[IngestedAtom] = []
     for atoms, proof_atoms in zip(atoms_per_payload, proof_atoms_per_payload):
         local_proved: List[str] = []
         for atom in proof_atoms:
-            if _atom_key(atom) in known_witness_proved:
-                continue
             all_atoms.append(atom)
             local_proved.append(atom.name)
         for name in _known_witness_names(atoms, known_witness_proved):
@@ -884,6 +918,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             "proved": 0,
             "known_witness_used": len(known_witness_proved),
         },
+        "details": [],
     }
     if args.summary_json is not None:
         args.summary_json.parent.mkdir(parents=True, exist_ok=True)
@@ -914,6 +949,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             atoms_per_payload,
         )
         summary_payload["lean_fallback"]["proved"] = summary_payload["metrics"]["lean_successes"]
+        summary_payload["details"] = _summary_details(
+            payloads,
+            metadata_per_payload,
+            atoms_per_payload,
+        )
         if args.summary_json is not None:
             args.summary_json.write_text(
                 json.dumps(summary_payload, indent=2, ensure_ascii=False) + "\n"
@@ -1154,6 +1194,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     summary_payload["lean_fallback"]["proved"] = summary_payload["metrics"]["lean_successes"]
     summary_payload["lean_fallback"]["known_witness_used"] = len(known_witness_proved)
+    summary_payload["details"] = _summary_details(
+        payloads,
+        metadata_per_payload,
+        atoms_per_payload,
+    )
     if args.summary_json is not None:
         args.summary_json.write_text(
             json.dumps(summary_payload, indent=2, ensure_ascii=False) + "\n"

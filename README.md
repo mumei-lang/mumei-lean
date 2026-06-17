@@ -19,6 +19,11 @@ the typed Lean translator contract: `TranslatorIRMetadata`, binder mappings,
 bridge lemma hashes, and manual lemma reasons move through ingestion, Lean
 checking, and certificate export as auditable metadata.
 
+For P9-G NLAE integration, `mumei-lean` is the **Fidelity Checker**: it
+confirms that the reconstructed `.mm` obligation promoted by mumei-agent and
+mumei can be exported as a `lean_verified` certificate, including live generated
+theorem paths when they build successfully.
+
 > mumei's "fully automatic verification" philosophy is preserved. mumei-lean
 > only steps in for the slice of contracts Z3 cannot close on its own, and the
 > mumei compiler itself requires **zero changes** to consume the resulting
@@ -34,6 +39,8 @@ graph TD
     LP -->|".lean-cert.json\ntranslator_version + bridge_lemma_hash"| MR["mumei resolver\n(verify_import_certificate)"]
     MR -->|"mark_verified()"| MV["mumei verification pipeline"]
     AG["mumei-agent\n(proliferate / forge)"] -->|"Z3 unknown atoms"| ML
+    NLAE["mumei-agent NLAEPipeline\n(P9-G)"] -->|"Loss Vector repair certificate"| ML
+    ML -->|"lean_verified export"| DEMO["mumei-demo\nEvaluation Loop"]
 ```
 
 Full diagram and field-by-field schema in
@@ -158,6 +165,12 @@ python -m pytest \
     --run-integration \
     -k "lake_available"
 ```
+
+`tests/test_lean_bridge_e2e.py` now runs the live generated theorem path when
+Lake is available instead of being globally skipped. The `std_math_abs` fixture
+generates `generated/Generated/Std/Math/Abs.lean`, exports
+`Generated.Std.Math.Abs.abs_saturating_correct`, and records
+`z3_check_result = "lean_verified"` with `known_witness_used = false`.
 
 The narrow smoke command used by CI for the `std_math_abs` fixture is:
 

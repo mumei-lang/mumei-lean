@@ -491,6 +491,16 @@ def test_verify_known_witnesses_builds_domain_witness_modules(
             "std/contract/vault",
             "MumeiLean.SmartContract",
         ),
+        (
+            "nlae_vault_withdraw_amount_nonnegative_bound",
+            "examples/nlae_integration_demo",
+            "MumeiLean.SmartContract",
+        ),
+        (
+            "nlae_vault_no_negative_withdraw",
+            "examples/nlae_integration_demo",
+            "MumeiLean.SmartContract",
+        ),
         ("add_bounded", "std/math/patterns", "MumeiLean.Patterns"),
         ("transfer_preserves_sum", "std/math/patterns", "MumeiLean.Patterns"),
     ]

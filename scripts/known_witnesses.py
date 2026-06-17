@@ -56,6 +56,16 @@ KNOWN_LEAN_WITNESSES: Dict[str, Dict[str, str]] = {
         "module": "MumeiLean.SmartContract",
         "theorem": "withdraw_amount_nonnegative_bound",
     },
+    "nlae_vault_withdraw_amount_nonnegative_bound": {
+        "module_key": "examples/nlae_integration_demo",
+        "module": "MumeiLean.SmartContract",
+        "theorem": "nlae_vault_withdraw_amount_nonnegative_bound",
+    },
+    "nlae_vault_no_negative_withdraw": {
+        "module_key": "examples/nlae_integration_demo",
+        "module": "MumeiLean.SmartContract",
+        "theorem": "nlae_vault_no_negative_withdraw",
+    },
     "add_bounded": {
         "module_key": "std/math/patterns",
         "module": "MumeiLean.Patterns",

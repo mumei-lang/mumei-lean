@@ -831,6 +831,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                             "modules": [],
                             "ci_mode_fallback": False,
                             "harness_contract": harness_contract,
+                            "details": [],
                         },
                         indent=2,
                         ensure_ascii=False,

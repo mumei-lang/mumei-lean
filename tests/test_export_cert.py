@@ -179,6 +179,28 @@ def test_upgrade_certificate_does_not_promote_manual_metadata():
     assert atom["lean_metadata"]["status"] == "manual_lemma_required"
 
 
+def test_upgrade_certificate_preserves_sc_rtgs_escalation_metadata():
+    cert = _certificate([_atom("withdraw_guard")])
+    upgraded = upgrade_certificate(
+        cert=cert,
+        proved_atoms=["withdraw_guard"],
+        failed_atoms=[],
+        lean_version="x",
+        atom_metadata={
+            "withdraw_guard": {
+                "status": LEAN_VERIFIED,
+                "logic_fragment_tags": ["smart_contract"],
+            },
+        },
+    )
+    atom = upgraded["atoms"][0]
+
+    assert atom["unknown_obligation_domain"] == "smart_contract"
+    assert atom["escalation_reason"] == "sc"
+    assert atom["lean_metadata"]["unknown_obligation_domain"] == "smart_contract"
+    assert atom["lean_metadata"]["escalation_reason"] == "sc"
+
+
 def test_failed_theorem_names_picks_up_compile_errors():
     log = """\
 Generated/Std/Math.lean:12:0: theorem broken_correct

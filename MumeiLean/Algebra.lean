@@ -211,4 +211,21 @@ theorem mumei_group_comm_int (a b : Int) :
   unfold mumei_group_comm mumei_group_mul
   ring
 
+def mumei_conserved_sum (before debit credit after : Int) : Prop :=
+  after = before - debit + credit
+
+theorem rtgs_transfer_conserves_sum
+    (before debit credit : Int)
+    (hBalanced : debit = credit) :
+    mumei_conserved_sum before debit credit before := by
+  unfold mumei_conserved_sum
+  subst credit
+  omega
+
+theorem sc_subtraction_nonnegative
+    (balance amount : Int)
+    (hSufficient : amount ≤ balance) :
+    0 ≤ balance - amount := by
+  omega
+
 end MumeiLean.Algebra

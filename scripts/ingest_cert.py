@@ -92,6 +92,7 @@ class IngestedAtom:
     z3_result_class: str
     status: str
     escalation_reason: str
+    unknown_obligation_domain: str
     logic_fragment_tag: str
     logic_fragment_tags: List[str]
     proof_hash: str
@@ -163,6 +164,60 @@ def _iter_certificates(payload: Any) -> Iterable[tuple]:
         yield str(key), cert
 
 
+def _infer_unknown_obligation_domain(
+    *,
+    module_key: str,
+    atom_name: str,
+    tags: List[str],
+    requires: str,
+    ensures: str,
+) -> str:
+    haystack = " ".join(
+        [module_key, atom_name, requires, ensures, *tags]
+    ).lower()
+    if any(
+        marker in haystack
+        for marker in (
+            "smart_contract",
+            "smart-contract",
+            "vault",
+            "withdraw",
+            "reentrancy",
+            "sc_",
+        )
+    ):
+        return "smart_contract"
+    if any(
+        marker in haystack
+        for marker in (
+            "rtgs",
+            "settlement",
+            "settled",
+            "validated",
+            "balance_conservation",
+        )
+    ):
+        return "rtgs"
+    return ""
+
+
+def _attach_domain_to_translator_ir(
+    translator_ir: dict,
+    unknown_obligation_domain: str,
+) -> None:
+    if not unknown_obligation_domain:
+        return
+    rule = (
+        "smart_contract_lowering"
+        if unknown_obligation_domain == "smart_contract"
+        else "rtgs_settlement_lowering"
+    )
+    translator_ir["unknown_obligation_domain"] = unknown_obligation_domain
+    rules = translator_ir.setdefault("lowering_rules", [])
+    if isinstance(rules, list) and rule not in rules:
+        rules.append(rule)
+
+
 def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
     """Walk a certificate / bundle and return Lean escalation candidates."""
     atoms: List[IngestedAtom] = []
@@ -193,6 +248,26 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
             logic_fragment_tag = str(atom.get("logic_fragment_tag", "") or "")
             if logic_fragment_tag and not tags:
                 tags.append(logic_fragment_tag)
+            unknown_obligation_domain = str(
+                atom.get("unknown_obligation_domain", "") or ""
+            )
+            if unknown_obligation_domain not in {"smart_contract", "rtgs"}:
+                unknown_obligation_domain = _infer_unknown_obligation_domain(
+                    module_key=module_key,
+                    atom_name=str(atom.get("name", "atom")),
+                    tags=tags,
+                    requires=requires,
+                    ensures=ensures,
+                )
+            if unknown_obligation_domain and unknown_obligation_domain not in tags:
+                tags.append(unknown_obligation_domain)
+            escalation_reason = str(atom.get("escalation_reason", "") or "")
+            if not escalation_reason and unknown_obligation_domain:
+                escalation_reason = (
+                    "sc"
+                    if unknown_obligation_domain == "smart_contract"
+                    else "rtgs"
+                )
             requires_translation = _translate_expr(requires)
             ensures_translation = _translate_expr(ensures)
             body_translation = (
@@ -203,6 +278,10 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
                 requires_translation,
                 ensures_translation,
                 body_translation,
+            )
+            _attach_domain_to_translator_ir(
+                translator_ir,
+                unknown_obligation_domain,
             )
             manual_reason = atom.get("manual_lemma_reason")
             if not manual_reason:
@@ -230,7 +309,8 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
                         )
                     ),
                     status=str(atom.get("status", "unknown")),
-                    escalation_reason=str(atom.get("escalation_reason", "")),
+                    escalation_reason=escalation_reason,
+                    unknown_obligation_domain=unknown_obligation_domain,
                     logic_fragment_tag=logic_fragment_tag,
                     logic_fragment_tags=tags,
                     proof_hash=str(atom.get("proof_hash", "")),
@@ -510,6 +590,10 @@ def _translator_ir_metadata(atom: IngestedAtom) -> List[str]:
     sort = atom.translator_ir.get("sort") if isinstance(atom.translator_ir, dict) else None
     if sort:
         metadata.append(f"translator_ir_sort={sort}")
+    if atom.unknown_obligation_domain:
+        metadata.append(
+            f"unknown_obligation_domain={atom.unknown_obligation_domain}"
+        )
     span = atom.translator_ir.get("provenance_span") if isinstance(atom.translator_ir, dict) else None
     if isinstance(span, dict) and span.get("file"):
         metadata.append(

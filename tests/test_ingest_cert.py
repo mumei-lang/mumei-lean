@@ -531,6 +531,32 @@ def test_render_theorem_lowers_unknown_obligation_as_manual():
     assert "unknown_obligation_lowering" in str(atom.translator_ir)
 
 
+def test_collect_unknown_atoms_prioritizes_sc_and_rtgs_domains():
+    cert = _make_certificate(
+        "settlement.mm",
+        [
+            _make_atom(
+                "withdraw_preserves_other_balance",
+                requires="balance >= amount",
+                ensures="result >= 0",
+            ),
+            _make_atom(
+                "trace_balance_conservation",
+                requires="rtgs_validated(state)",
+                ensures="rtgs_settled(next_state)",
+            ),
+        ],
+    )
+    atoms = collect_unknown_atoms(cert)
+
+    assert atoms[0].unknown_obligation_domain == "smart_contract"
+    assert atoms[0].escalation_reason == "sc"
+    assert "smart_contract_lowering" in atoms[0].translator_ir["lowering_rules"]
+    assert atoms[1].unknown_obligation_domain == "rtgs"
+    assert atoms[1].escalation_reason == "rtgs"
+    assert "rtgs_settlement_lowering" in atoms[1].translator_ir["lowering_rules"]
+
+
 def test_main_writes_files(tmp_path: Path):
     from ingest_cert import main
 

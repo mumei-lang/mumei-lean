@@ -33,6 +33,7 @@ structure AtomCertificateData where
   requires          : String
   ensures           : String
   escalationReason  : String
+  unknownObligationDomain : String
   logicFragmentTags : List String
   dependencies      : List String
   effects           : List String
@@ -109,6 +110,7 @@ def parseAtomCertificate (j : Json) : Except String AtomCertificateData := do
     requires       := getStrOr j "requires"      "",
     ensures        := getStrOr j "ensures"       "",
     escalationReason := getStrOr j "escalation_reason" "",
+    unknownObligationDomain := getStrOr j "unknown_obligation_domain" "",
     logicFragmentTags := getStrArrOr j "logic_fragment_tags",
     dependencies   := getStrArrOr j "dependencies",
     effects        := getStrArrOr j "effects",

@@ -437,8 +437,39 @@ def test_higher_order_predicate_call_types_predicate_binder():
     assert result.is_partial is False
     assert result.translator_ir is not None
     binder_payload = result.translator_ir.to_dict()["binders"]
-    assert {"mumei_name": "P", "lean_name": "P", "mumei_type": "predicate<i64>", "lean_type": "Int → Prop", "role": "free"} in binder_payload
+    assert {
+        "mumei_name": "P",
+        "lean_name": "P",
+        "mumei_type": "predicate<i64>",
+        "lean_type": "Int → Prop",
+        "role": "free",
+    } in binder_payload
     assert "higher_order_predicate_lowering" in result.translator_ir.lowering_rules
+
+
+def test_sc_and_rtgs_calls_record_domain_lowering():
+    sc = translate_contract("sc_withdraw_allowed(balance, amount)")
+    assert (
+        sc.lean_expr
+        == "(MumeiLean.AdvancedPatterns.sc_withdraw_allowed balance amount)"
+    )
+    assert sc.is_partial is False
+    assert sc.translator_ir is not None
+    assert "smart_contract_lowering" in sc.translator_ir.lowering_rules
+    assert "mumei_smart_contract_bridge" in sc.translator_ir.requires_bridge_lemmas
+
+    rtgs = translate_contract(
+        "rtgs_balance_conserved(before, debit, credit, after)"
+    )
+    assert (
+        rtgs.lean_expr
+        == "(MumeiLean.AdvancedPatterns.rtgs_balance_conserved "
+        "before debit credit after)"
+    )
+    assert rtgs.is_partial is False
+    assert rtgs.translator_ir is not None
+    assert "rtgs_settlement_lowering" in rtgs.translator_ir.lowering_rules
+    assert "mumei_rtgs_settlement_bridge" in rtgs.translator_ir.requires_bridge_lemmas
 
 
 def test_nested_quantifier_with_finite_field_and_group_metadata():

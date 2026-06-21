@@ -45,6 +45,7 @@ def atomToJson (a : AtomCertificateData) : Json :=
     ("requires",        Json.str a.requires),
     ("ensures",         Json.str a.ensures),
     ("escalation_reason", Json.str a.escalationReason),
+    ("unknown_obligation_domain", Json.str a.unknownObligationDomain),
     ("logic_fragment_tags", Json.arr (a.logicFragmentTags.map Json.str).toArray),
     ("dependencies",    Json.arr (a.dependencies.map Json.str).toArray),
     ("effects",         Json.arr (a.effects.map Json.str).toArray),

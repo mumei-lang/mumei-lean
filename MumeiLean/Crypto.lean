@@ -165,4 +165,23 @@ theorem encrypt_key_changes_ciphertext (plaintext k₁ k₂ nonce : Int)
     encrypt plaintext k₁ nonce ≠ encrypt plaintext k₂ nonce := by
   unfold encrypt; omega
 
+def domainSeparatedHash (domain payload salt : Int) : Int :=
+  hash (payload + domain) salt
+
+theorem domain_separated_hash_same_inputs
+    (d₁ d₂ p₁ p₂ s₁ s₂ : Int)
+    (hd : d₁ = d₂) (hp : p₁ = p₂) (hs : s₁ = s₂) :
+    domainSeparatedHash d₁ p₁ s₁ = domainSeparatedHash d₂ p₂ s₂ := by
+  simp [domainSeparatedHash, hd, hp, hs]
+
+theorem rtgs_receipt_hash_stable (payload salt : Int) :
+    domainSeparatedHash 82 payload salt =
+      domainSeparatedHash 82 payload salt := by
+  rfl
+
+theorem sc_receipt_hash_stable (payload salt : Int) :
+    domainSeparatedHash 83 payload salt =
+      domainSeparatedHash 83 payload salt := by
+  rfl
+
 end MumeiLean.Crypto

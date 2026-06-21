@@ -162,6 +162,7 @@ v4 surface:
 | Finite field | `ff_add(a,b,p)`, `ff_sub`, `ff_mul`, `ff_neg`, `ff_pow`, `ff_inv`, `ff_div`, `ff_in_field(a,p)`, `is_prime(p)`, `mod_eq(a,b,p)` (→ `MumeiLean.Algebra.*`) |
 | Group theory | `group_mul(a,b)`, `group_inv(a)`, `group_pow(a,n)`, `group_identity()` (→ `MumeiLean.Algebra.*`) |
 | Crypto      | `hash(message,salt)`, `signature_verify(sig,msg,key,n)`, `encrypt(plain,key,nonce)`, `decrypt(cipher,key,nonce)` (→ `MumeiLean.Crypto.*`) |
+| SC / RTGS   | `sc_reentrancy_guard`, `sc_balance_preserved`, `sc_withdraw_allowed`, `sc_no_negative_balance`, `rtgs_validated`, `rtgs_settled`, `rtgs_balance_conserved`, `rtgs_trace_safe` (→ `MumeiLean.AdvancedPatterns.*`) |
 | Higher-order predicates | `holds(P, x)` (→ `P x`, with `P : Int → Prop`) |
 
 Anything else is forwarded verbatim and the theorem is marked with
@@ -237,11 +238,15 @@ The v4 translator exposes explicit lowering entry points:
 * `translate_group_theory()` maps group helper calls to mathlib4 group laws.
 
 TranslatorIR records `finite_field_lowering`, `group_theory_lowering`,
-`crypto_primitive_lowering`, `higher_order_predicate_lowering`, and
+`crypto_primitive_lowering`, `smart_contract_lowering`,
+`rtgs_settlement_lowering`, `higher_order_predicate_lowering`, and
 `inductive_definition_lowering` metadata. These route Z3 `unknown` obligations
 to `MumeiLean.Algebra`, `MumeiLean.Crypto`, and
 `MumeiLean.AdvancedPatterns`, which is the intended path for reaching the
-≥70% Lean escalation success target on quantified algebraic/crypto contracts.
+≥70% Lean escalation success target on quantified algebraic, crypto, SC, and
+RTGS contracts. The certificate path preserves `unknown_obligation_domain`
+metadata for SC / RTGS candidates so downstream tooling can prioritize those
+manual-lemma queues before generic unknowns.
 
 The Python bridge (`scripts/bridge.py`) is still the production
 entry point; the Lean modules above mirror the same logic so

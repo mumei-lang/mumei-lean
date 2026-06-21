@@ -321,6 +321,12 @@ def _metadata_for_atom(
     metadata.setdefault("bridge_lemma_hash", BRIDGE_LEMMA_HASH)
     metadata.setdefault("proof_path", "")
     metadata.setdefault("diagnostics", [])
+    if atom.get("z3_result_class"):
+        metadata.setdefault("z3_result_class", atom.get("z3_result_class"))
+    if atom.get("escalation_reason"):
+        metadata.setdefault("escalation_reason", atom.get("escalation_reason"))
+    if atom.get("logic_fragment_tags"):
+        metadata.setdefault("logic_fragment_tags", atom.get("logic_fragment_tags"))
     if atom.get("manual_lemma_reason"):
         metadata.setdefault("manual_lemma_reason", atom.get("manual_lemma_reason"))
     metadata["status"] = status

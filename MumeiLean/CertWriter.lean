@@ -38,11 +38,14 @@ def atomToJson (a : AtomCertificateData) : Json :=
   Json.mkObj [
     ("name",            Json.str a.name),
     ("z3_check_result", Json.str a.z3CheckResult),
+    ("z3_result_class", Json.str a.z3ResultClass),
     ("status",          Json.str a.status),
     ("content_hash",    Json.str a.contentHash),
     ("proof_hash",      Json.str a.proofHash),
     ("requires",        Json.str a.requires),
     ("ensures",         Json.str a.ensures),
+    ("escalation_reason", Json.str a.escalationReason),
+    ("logic_fragment_tags", Json.arr (a.logicFragmentTags.map Json.str).toArray),
     ("dependencies",    Json.arr (a.dependencies.map Json.str).toArray),
     ("effects",         Json.arr (a.effects.map Json.str).toArray),
   ]
@@ -63,6 +66,7 @@ def applyResult
   | some (_, .verified) =>
     { a with
         z3CheckResult := ProofResult.verified.toZ3CheckResult,
+        z3ResultClass := ProofResult.verified.toZ3CheckResult,
         status        := ProofResult.verified.toStatus }
   | _ => a
 

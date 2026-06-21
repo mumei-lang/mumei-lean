@@ -87,6 +87,22 @@ def test_collect_unknown_atoms_filters_by_z3_check_result():
     assert [a.name for a in atoms] == ["a", "c"]
 
 
+def test_collect_unknown_atoms_accepts_unknown_status_class():
+    cert = _make_certificate(
+        "math.mm",
+        [
+            {
+                **_make_atom("class_unknown", z3="timeout", status="pending"),
+                "z3_result_class": "unknown",
+            },
+            _make_atom("status_unknown", z3="timeout", status="unknown"),
+            _make_atom("sat", z3="sat", status="failed"),
+        ],
+    )
+    atoms = collect_unknown_atoms(cert)
+    assert [a.name for a in atoms] == ["class_unknown", "status_unknown"]
+
+
 def test_collect_unknown_atoms_handles_escalation_bundle():
     bundle = {
         "version": "1.0",
@@ -494,6 +510,25 @@ def test_render_theorem_types_string_predicate_identifiers_as_string():
     assert "(url : String)" in rendered
     assert "(url : Int)" not in rendered
     assert "TODO: unproven" not in rendered
+
+
+def test_render_theorem_lowers_unknown_obligation_as_manual():
+    cert = _make_certificate(
+        "math.mm",
+        [
+            _make_atom(
+                "unknown_guard",
+                requires="unknown_obligation(x)",
+                ensures="result >= 0",
+            )
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+
+    assert "MumeiLean.AdvancedPatterns.mumei_unknown_obligation x" in rendered
+    assert "manual_lemma_reason=unknown_obligation_requires_manual_lemma" in rendered
+    assert "unknown_obligation_lowering" in str(atom.translator_ir)
 
 
 def test_main_writes_files(tmp_path: Path):

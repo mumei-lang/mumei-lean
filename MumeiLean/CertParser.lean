@@ -26,11 +26,14 @@ by the bridge). -/
 structure AtomCertificateData where
   name              : String
   z3CheckResult     : String
+  z3ResultClass     : String
   status            : String
   contentHash       : String
   proofHash         : String
   requires          : String
   ensures           : String
+  escalationReason  : String
+  logicFragmentTags : List String
   dependencies      : List String
   effects           : List String
   deriving Repr, Inhabited
@@ -99,11 +102,14 @@ def parseAtomCertificate (j : Json) : Except String AtomCertificateData := do
   return {
     name,
     z3CheckResult,
+    z3ResultClass  := getStrOr j "z3_result_class" z3CheckResult,
     status         := getStrOr j "status"        "unknown",
     contentHash    := getStrOr j "content_hash"  "",
     proofHash      := getStrOr j "proof_hash"    "",
     requires       := getStrOr j "requires"      "",
     ensures        := getStrOr j "ensures"       "",
+    escalationReason := getStrOr j "escalation_reason" "",
+    logicFragmentTags := getStrArrOr j "logic_fragment_tags",
     dependencies   := getStrArrOr j "dependencies",
     effects        := getStrArrOr j "effects",
   }
@@ -113,8 +119,9 @@ def parseAtomCertificate (j : Json) : Except String AtomCertificateData := do
 
 The implementation tolerates:
 
-* missing optional fields (`status`, `content_hash`, `proof_hash`,
-  `requires`, `ensures`, `dependencies`, `effects`,
+* missing optional fields (`status`, `z3_result_class`, `content_hash`,
+  `proof_hash`, `requires`, `ensures`, `escalation_reason`,
+  `logic_fragment_tags`, `dependencies`, `effects`,
   `package_name`, `package_version`) by defaulting them to neutral
   values, matching the behaviour of the Python ingester
   (`scripts/ingest_cert.py`).

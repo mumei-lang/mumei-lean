@@ -129,6 +129,23 @@ theorem ff_eq_refl (a p : Int) :
   unfold mumei_ff_eq
   rfl
 
+theorem ff_eq_symm (a b p : Int) :
+    mumei_ff_eq a b p → mumei_ff_eq b a p := by
+  unfold mumei_ff_eq
+  intro h
+  exact h.symm
+
+theorem ff_eq_trans (a b c p : Int) :
+    mumei_ff_eq a b p → mumei_ff_eq b c p → mumei_ff_eq a c p := by
+  unfold mumei_ff_eq
+  intro hab hbc
+  exact hab.trans hbc
+
+theorem ff_one_in_field (p : Int) (hp : 1 < p) :
+    mumei_ff_in_field (mumei_ff_one p) p := by
+  unfold mumei_ff_in_field mumei_ff_one
+  omega
+
 -- commutativity of field add
 theorem ff_add_comm (a b p : Int) :
     mumei_ff_add a b p = mumei_ff_add b a p := by

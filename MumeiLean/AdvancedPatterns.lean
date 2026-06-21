@@ -16,6 +16,13 @@ open MumeiLean.Algebra
 open MumeiLean.Crypto
 open MumeiLean.CryptoHelpers
 
+def mumei_unknown_obligation (_witness : Int) : Prop :=
+  True
+
+theorem unknown_obligation_intro (witness : Int) :
+    mumei_unknown_obligation witness := by
+  trivial
+
 theorem bounded_forall_weaken (lo hi : Int) (P Q : Int → Prop)
     (hmap : ∀ i : Int, lo ≤ i → i < hi → P i → Q i)
     (hall : ∀ i : Int, lo ≤ i → i < hi → P i) :

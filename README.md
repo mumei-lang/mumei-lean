@@ -40,6 +40,29 @@ machine-range obligations continue to use `mumei_i64_overflow_bridge`.
 > mumei compiler itself requires **zero changes** to consume the resulting
 > certificates: they piggy-back on the existing 3-tier resolver lookup.
 
+## Unknown obligation bridge contract
+
+The only promoted Lean path is:
+
+1. Scan mumei proof certificates for atoms whose `z3_result_class == "unknown"` or `z3_check_result == "unknown"`.
+2. Translate each candidate to generated Lean with `translator_ir` metadata, `logic_fragment_tags`, and any `manual_lemma_reason` preserved.
+3. Run `lake build` for the generated target unless the command is explicitly in `--no-build` dry-run mode.
+4. Export `.lean-cert.json` with `lean_result_metadata` and the top-level atom fields `translator_version` and `bridge_lemma_hash`.
+5. mumei accepts `lean_verified` only when those fields match its current constants; mismatches are `stale_translator` and must not be treated as proven.
+
+Field handling is fixed:
+
+| Field | Meaning |
+| --- | --- |
+| `z3_result_class` | Normalized solver class used for routing; only `unknown` is a Lean escalation candidate. |
+| `escalation_reason` | Why Z3 could not close the obligation, such as timeout/resource limits, quantified reasoning, recursion, or a domain-specific fragment. |
+| `logic_fragment_tags` | Ordered fragment tags used for bridge lemma selection, metrics, and mumei certificate parity. |
+| `translator_ir` | Typed lowering contract emitted into generated Lean and copied into `.lean-cert.json` for mumei-side auditing. |
+| `manual_lemma_reason` | Stable reason a generated theorem needs human lemma work; dry runs should emit `manual_lemma_required`, not `lean_verified`. |
+| `stale_translator` | mumei-side rejection when `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract. |
+
+Current contract constants are `translator_version = mumei-lean-translator-ir-v1` and `bridge_lemma_hash = a8fd0b115fd29a6e87190bd041dbd5ab7a09ec89af6ac5b10ef152a1a0c0f643`.
+
 ## Architecture in one picture
 
 ```mermaid

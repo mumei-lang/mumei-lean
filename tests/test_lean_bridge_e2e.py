@@ -138,7 +138,19 @@ def test_bridge_no_build_dry_run(tmp_path: Path):
 
     _assert_bridge_ok(proc)
     payload = json.loads(out_cert.read_text())
-    assert payload["atoms"][0]["z3_check_result"] != "lean_verified"
+    atom = payload["atoms"][0]
+    metadata = atom["lean_result_metadata"]
+    assert atom["z3_check_result"] != "lean_verified"
+    assert metadata["status"] == "manual_lemma_required"
+    assert metadata["z3_result_class"] == "unknown"
+    assert metadata["translator_ir"]["sort"] == "contract_obligation"
+    assert metadata["logic_fragment_tags"] == []
+    assert metadata["manual_lemma_reason"] is None
+    assert metadata["translator_version"] == "mumei-lean-translator-ir-v1"
+    assert (
+        metadata["bridge_lemma_hash"]
+        == "a8fd0b115fd29a6e87190bd041dbd5ab7a09ec89af6ac5b10ef152a1a0c0f643"
+    )
     assert payload["all_verified"] is False
 
 

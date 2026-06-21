@@ -290,6 +290,7 @@ def _atom_proved(
     failed: Iterable[str],
     proved: Iterable[str],
     known_witness_override: Iterable[str] = (),
+    metadata: Optional[dict] = None,
 ) -> bool:
     """Return True iff ``atom`` was successfully proved on the Lean side.
 
@@ -302,6 +303,14 @@ def _atom_proved(
         return True
     if name not in proved:
         return False
+    if isinstance(metadata, dict):
+        status = str(metadata.get("status", ""))
+        if metadata.get("manual_lemma_reason") or status in {
+            MANUAL_LEMMA_REQUIRED,
+            "partial_translation",
+            "stale_translator",
+        }:
+            return False
     if not _translator_contract_current(atom):
         return False
     if atom.get("manual_lemma_reason"):
@@ -321,6 +330,12 @@ def _metadata_for_atom(
     metadata.setdefault("bridge_lemma_hash", BRIDGE_LEMMA_HASH)
     metadata.setdefault("proof_path", "")
     metadata.setdefault("diagnostics", [])
+    if atom.get("z3_result_class"):
+        metadata.setdefault("z3_result_class", atom.get("z3_result_class"))
+    if atom.get("escalation_reason"):
+        metadata.setdefault("escalation_reason", atom.get("escalation_reason"))
+    if atom.get("logic_fragment_tags"):
+        metadata.setdefault("logic_fragment_tags", atom.get("logic_fragment_tags"))
     if atom.get("manual_lemma_reason"):
         metadata.setdefault("manual_lemma_reason", atom.get("manual_lemma_reason"))
     metadata["status"] = status
@@ -342,13 +357,14 @@ def _upgrade_atom_list(
         if not isinstance(atom, dict):
             continue
         name = atom.get("name")
+        metadata = (atom_metadata or {}).get(str(name))
         proved = _atom_proved(
             atom,
             failed_set,
             proved_set,
             known_witness_override,
+            metadata,
         )
-        metadata = (atom_metadata or {}).get(str(name))
         if proved:
             atom["z3_check_result"] = LEAN_VERIFIED
             atom["status"] = "verified"

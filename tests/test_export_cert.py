@@ -157,6 +157,28 @@ def test_upgrade_certificate_can_attach_harness_contract():
     assert upgraded["harness_contract"] == harness_contract
 
 
+def test_upgrade_certificate_does_not_promote_manual_metadata():
+    cert = _certificate([_atom("unknown_placeholder")])
+    upgraded = upgrade_certificate(
+        cert=cert,
+        proved_atoms=["unknown_placeholder"],
+        failed_atoms=[],
+        lean_version="x",
+        atom_metadata={
+            "unknown_placeholder": {
+                "status": "manual_lemma_required",
+                "manual_lemma_reason": (
+                    "unknown_obligation_requires_manual_lemma"
+                ),
+            },
+        },
+    )
+    atom = upgraded["atoms"][0]
+    assert atom["z3_check_result"] == "unknown"
+    assert atom["status"] == "unknown"
+    assert atom["lean_metadata"]["status"] == "manual_lemma_required"
+
+
 def test_failed_theorem_names_picks_up_compile_errors():
     log = """\
 Generated/Std/Math.lean:12:0: theorem broken_correct

@@ -134,6 +134,16 @@ theorem kdf_deterministic (key info len : Int) :
 theorem hmac_deterministic (key message : Int) :
     hmac key message = hmac key message := by rfl
 
+theorem hmac_same_inputs (k₁ k₂ m₁ m₂ : Int)
+    (hk : k₁ = k₂) (hm : m₁ = m₂) :
+    hmac k₁ m₁ = hmac k₂ m₂ := by
+  simp [hk, hm]
+
+theorem kdf_same_inputs (k₁ k₂ i₁ i₂ l₁ l₂ : Int)
+    (hk : k₁ = k₂) (hi : i₁ = i₂) (hl : l₁ = l₂) :
+    kdf k₁ i₁ l₁ = kdf k₂ i₂ l₂ := by
+  simp [hk, hi, hl]
+
 -- Commitment binding property pattern
 theorem commitment_binding_pattern (v₁ v₂ r : Int)
     (h : commitment_hash v₁ r = commitment_hash v₂ r → v₁ = v₂) :

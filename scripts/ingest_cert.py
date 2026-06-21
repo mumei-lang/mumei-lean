@@ -170,8 +170,14 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
         for atom in cert.get("atoms", []):
             if not isinstance(atom, dict):
                 continue
+            z3_check_result = atom.get("z3_check_result")
             is_candidate = (
-                atom.get("z3_check_result") == "unknown"
+                z3_check_result == "unknown"
+                or atom.get("z3_result_class") == "unknown"
+                or (
+                    atom.get("status") == "unknown"
+                    and z3_check_result not in {"unsat", "sat", "lean_verified"}
+                )
                 or atom.get("escalation_reason")
             )
             if not is_candidate:

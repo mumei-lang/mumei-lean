@@ -66,6 +66,7 @@ _RESERVED_IDENTS: Set[str] = {
     "mod", "pow", "phi",
     "hash", "signature_verify", "encrypt", "decrypt",
     "holds",
+    "unknown", "unknown_obligation",
     "ff_add", "ff_sub", "ff_mul", "ff_neg", "ff_pow", "ff_inv", "ff_div",
     "ff_in_field", "is_prime", "mod_eq", "group_mul", "group_inv",
     "group_pow", "group_identity",
@@ -113,6 +114,8 @@ _KNOWN_FUNCTIONS = {
     "encrypt": "MumeiLean.Crypto.encrypt",
     "decrypt": "MumeiLean.Crypto.decrypt",
     "holds": "holds",
+    "unknown": "MumeiLean.AdvancedPatterns.mumei_unknown_obligation",
+    "unknown_obligation": "MumeiLean.AdvancedPatterns.mumei_unknown_obligation",
     "ff_add": "MumeiLean.Algebra.mumei_ff_add",
     "ff_sub": "MumeiLean.Algebra.mumei_ff_sub",
     "ff_mul": "MumeiLean.Algebra.mumei_ff_mul",
@@ -159,6 +162,8 @@ _KNOWN_FUNCTION_ARITY = {
     "encrypt": 3,
     "decrypt": 3,
     "holds": 2,
+    "unknown": 1,
+    "unknown_obligation": 1,
     "ff_add": 3,
     "ff_sub": 3,
     "ff_mul": 3,
@@ -195,6 +200,7 @@ _FINITE_FIELD_FUNCTIONS = {
 _GROUP_FUNCTIONS = {"group_mul", "group_inv", "group_pow", "group_identity", "group_order", "group_comm"}
 _CRYPTO_FUNCTIONS = {"hash", "signature_verify", "encrypt", "decrypt", "kdf", "hmac", "commitment_hash", "zk_verify"}
 _HIGHER_ORDER_PREDICATE_FUNCTIONS = {"holds"}
+_UNKNOWN_OBLIGATION_FUNCTIONS = {"unknown", "unknown_obligation"}
 _SCALAR_CALL_FUNCTIONS = (
     set(_KNOWN_FUNCTIONS)
     - _STRING_FUNCTIONS
@@ -340,6 +346,7 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "quantifier_skolemize_lowering",
     "implication_lowering",
     "let_binding_lowering",
+    "unknown_obligation_lowering",
 }
 
 _FORMAL_SPEC_TYPE_MAPPINGS: Dict[str, str] = {
@@ -465,6 +472,8 @@ def _unsupported_reasons(source: str, tokens: List[tuple], is_partial: bool) -> 
         reasons.append("regex_semantics_require_manual_lemma")
     if any(kind == "KW" and text == "match" for kind, text in tokens):
         reasons.append("match_or_inductive_translation_requires_manual_lemma")
+    if any(kind == "ID" and text in _UNKNOWN_OBLIGATION_FUNCTIONS for kind, text in tokens):
+        reasons.append("unknown_obligation_requires_manual_lemma")
     for idx, (kind, text) in enumerate(tokens):
         if kind == "ID" and idx + 1 < len(tokens) and tokens[idx + 1] == ("OP", "("):
             if text not in _KNOWN_FUNCTIONS and not _is_predicate_call_name(text):
@@ -490,6 +499,8 @@ def _lowering_rules(tokens: List[tuple], array_ids: List[str], string_ids: List[
         rules.extend(["group_theory_lowering", "mathlib4_bridge"])
     if any(kind == "ID" and text in _CRYPTO_FUNCTIONS for kind, text in tokens):
         rules.extend(["crypto_primitive_lowering", "mathlib4_bridge"])
+    if any(kind == "ID" and text in _UNKNOWN_OBLIGATION_FUNCTIONS for kind, text in tokens):
+        rules.extend(["unknown_obligation_lowering", "mathlib4_bridge"])
     if any(kind == "ID" and text in _HIGHER_ORDER_PREDICATE_FUNCTIONS for kind, text in tokens) or any(
         kind == "ID" and _is_predicate_call_name(text) for kind, text in tokens
     ):
@@ -556,6 +567,11 @@ def _build_semantic_gap_notes(
             "crypto_primitive_lowering: hash/signature/encryption primitives "
             "are routed through MumeiLean.Crypto proof patterns."
         )
+    if any(kind == "ID" and text in _UNKNOWN_OBLIGATION_FUNCTIONS for kind, text in tokens):
+        notes.append(
+            "unknown_obligation_lowering: explicit unknown obligations compile "
+            "through MumeiLean.AdvancedPatterns but require a manual Lean lemma."
+        )
     if any(kind == "ID" and text in _HIGHER_ORDER_PREDICATE_FUNCTIONS for kind, text in tokens):
         notes.append(
             "higher_order_predicate_lowering: predicate parameters are typed "
@@ -592,6 +608,8 @@ def _bridge_lemmas_for_rules(lowering_rules: List[str]) -> List[str]:
         bridge_lemmas.append("mumei_group_theory_bridge")
     if "crypto_primitive_lowering" in lowering_rules:
         bridge_lemmas.append("mumei_crypto_primitive_bridge")
+    if "unknown_obligation_lowering" in lowering_rules:
+        bridge_lemmas.append("mumei_unknown_obligation_bridge")
     if "higher_order_predicate_lowering" in lowering_rules:
         bridge_lemmas.append("mumei_higher_order_predicate_bridge")
     if "inductive_definition_lowering" in lowering_rules:
@@ -621,6 +639,8 @@ def _proof_trace_hints_for_rules(lowering_rules: List[str]) -> List[str]:
         hints.append("rewrite with group associativity, identity, and inverse lemmas")
     if "crypto_primitive_lowering" in lowering_rules:
         hints.append("apply hash/signature/encryption pattern lemma matching the primitive")
+    if "unknown_obligation_lowering" in lowering_rules:
+        hints.append("replace the unknown obligation placeholder with a named manual lemma")
     if "higher_order_predicate_lowering" in lowering_rules:
         hints.append("instantiate predicate hypotheses before arithmetic simplification")
     if "inductive_definition_lowering" in lowering_rules:

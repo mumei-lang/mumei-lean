@@ -14,3 +14,10 @@
 ### P9 completion
 
 P9-D/E/F/G の完了により、NLAE integration milestone は実装済み。
+
+## Lean fallback unknown-obligation bridge — In progress
+
+- `scripts/ingest_cert.py` now treats `z3_result_class == "unknown"` and `status == "unknown"` as Lean escalation candidates, not only raw `z3_check_result == "unknown"`.
+- `scripts/expr_translator.py` lowers explicit `unknown_obligation(x)` placeholders into `MumeiLean.AdvancedPatterns.mumei_unknown_obligation x` and marks them with `unknown_obligation_requires_manual_lemma`, so generated Lean stays traceable without falsely promoting unresolved obligations.
+- `scripts/export_cert.py`, `MumeiLean/CertParser.lean`, and `MumeiLean/CertWriter.lean` preserve unknown-escalation metadata (`z3_result_class`, `escalation_reason`, `logic_fragment_tags`) through parse/write paths.
+- `MumeiLean/AdvancedPatterns.lean`, `Algebra.lean`, and `Crypto.lean` carry the reusable witness surface for unknown obligation triage: placeholder obligations, finite-field equality helpers, and deterministic crypto-input patterns.

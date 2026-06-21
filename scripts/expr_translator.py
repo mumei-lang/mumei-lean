@@ -238,7 +238,7 @@ _SCALAR_CALL_FUNCTIONS = (
 )
 
 TRANSLATOR_VERSION = "mumei-lean-translator-ir-v1"
-BRIDGE_LEMMA_HASH = "d8d270d6429a3e31c608dc109876df4ec99ee1243796430775a5b0ef18b5ac24"
+BRIDGE_LEMMA_HASH = "a8fd0b115fd29a6e87190bd041dbd5ab7a09ec89af6ac5b10ef152a1a0c0f643"
 
 
 @dataclass
@@ -642,6 +642,7 @@ def _bridge_lemmas_for_rules(lowering_rules: List[str]) -> List[str]:
         bridge_lemmas.append("mumei_i64_overflow_bridge")
     if "array_bounds_bridge" in lowering_rules:
         bridge_lemmas.append("mumei_array_bounds_bridge")
+        bridge_lemmas.append("mumei_array_get_bridge")
     if "string_regex_bridge" in lowering_rules:
         bridge_lemmas.append("mumei_regex_bridge")
     if "refinement_predicate_lowering" in lowering_rules:

@@ -402,7 +402,7 @@ emitted in `TranslatorIR.lowering_rules`.
 |---|---|---|
 | `type_system_mapping` | Any typed binder is emitted. | §1 |
 | `contract_lowering` | Any `requires` / `ensures` expression is translated. | §4 |
-| `array_bounds_bridge` | Array/list access or array-typed binder appears. | §1, §4, §5.2 |
+| `array_bounds_bridge` | Array/list access or array-typed binder appears; `requires_bridge_lemmas` must include both `mumei_array_bounds_bridge` and `mumei_array_get_bridge`. | §1, §3, §4, §5.2 |
 | `string_regex_bridge` | String predicate or regex bridge obligation appears. | §1, §4, §5.3 |
 | `refinement_predicate_lowering` | Refinement predicate or quantifier predicate preservation is required. | §3, §5.5, §6 |
 | `integer_overflow_bridge` | Integer arithmetic needs explicit machine-range assumptions. | §1, §2, §5.1 |
@@ -413,7 +413,7 @@ emitted in `TranslatorIR.lowering_rules`.
 A translator implementation is compliant iff:
 
 1. Every emitted `lowering_rules` entry is listed in this catalog.
-2. Every `TranslatorIRBinder` satisfies the type mapping in §1.
+2. Every `TranslatorIRBinder` satisfies the type mapping in §1, including the `mumei_type` values documented before bridge emission.
 3. Unsupported constructs are not silently accepted; they are marked with
    `manual_lemma_reason` and surfaced as warnings or generated theorem TODOs.
 

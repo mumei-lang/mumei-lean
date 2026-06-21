@@ -49,7 +49,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/export_cert.py
 LEAN_CERT_SCHEMA_VERSION = "1.0-lean"
 LEAN_VERIFIED = "lean_verified"
 TRANSLATOR_VERSION = "mumei-lean-translator-ir-v1"
-BRIDGE_LEMMA_HASH = "d8d270d6429a3e31c608dc109876df4ec99ee1243796430775a5b0ef18b5ac24"
+BRIDGE_LEMMA_HASH = "a8fd0b115fd29a6e87190bd041dbd5ab7a09ec89af6ac5b10ef152a1a0c0f643"
 MANUAL_LEMMA_REQUIRED = "manual_lemma_required"
 
 # Lake's ``sorry`` warning lines look like::

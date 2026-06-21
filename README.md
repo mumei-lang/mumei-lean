@@ -26,6 +26,15 @@ theorem paths when they build successfully.
 
 Cross-project vocabulary follows `mumei-lang/mumei/docs/CROSS_PROJECT_ROADMAP.md`: `harness_contract`, `intent_fidelity`, `artifact_paths`, `budget_policy_fingerprint`, and `lean_verified` are the canonical field names. Lean fallback documentation in this repo and `mumei-agent/docs/ROADMAP.md` must describe the same contract.
 
+Translator contract updates are spec-first: every new
+`TranslatorIRBinder.mumei_type`, `TranslatorIR.lowering_rules` entry, or bridge
+lemma name must be documented in `docs/LEAN_TRANSLATOR_SPEC.md` before the
+Python bridge emits it. `lean_verified` means a theorem built cleanly with the
+current `translator_version` and `bridge_lemma_hash`; `stale_translator` means
+that version/hash no longer matches. Array lowering now records both
+`mumei_array_bounds_bridge` and `mumei_array_get_bridge`, while integer
+machine-range obligations continue to use `mumei_i64_overflow_bridge`.
+
 > mumei's "fully automatic verification" philosophy is preserved. mumei-lean
 > only steps in for the slice of contracts Z3 cannot close on its own, and the
 > mumei compiler itself requires **zero changes** to consume the resulting

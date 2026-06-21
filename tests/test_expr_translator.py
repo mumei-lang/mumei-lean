@@ -672,6 +672,7 @@ def test_translator_ir_compliance_accepts_formal_spec_mappings():
     assert "array_bounds_bridge" in result.translator_ir.lowering_rules
     assert "refinement_predicate_lowering" in result.translator_ir.lowering_rules
     assert "mumei_array_bounds_bridge" in result.translator_ir.requires_bridge_lemmas
+    assert "mumei_array_get_bridge" in result.translator_ir.requires_bridge_lemmas
     assert any(
         note.startswith("array_bounds_bridge:")
         for note in result.translator_ir.semantic_gap_notes

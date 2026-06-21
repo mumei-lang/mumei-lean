@@ -156,7 +156,7 @@ v4 surface:
 | Conditionals | `if cond then a else b`                                       |
 | Match       | `match x { 0 => a, 1 => b, _ => c }` (→ Lean `match x with ...`) |
 | Quantifier  | `forall(i, lo, hi, body)`, `exists(i, lo, hi, body)`, `forall x: body`, `exists(x, body)` (→ Lean `∀` / `∃`) |
-| Arrays      | `arr[i]` (→ `arr.get! i.toNat`)                                |
+| Arrays      | `arr[i]` (→ guarded `mumei_array_get arr i h`, with `arr.get! i.toNat` only as the partial fallback) |
 | Calls       | `len(x)` (→ `mumei_len x`), `abs(x)` (→ `mumei_abs x`), `min(a, b)`, `max(a, b)`, `old(x)` (→ `old_x`) |
 | Strings     | `starts_with(s, prefix)` (→ `mumei_starts_with s prefix`), `ends_with(s, suffix)` (→ `mumei_ends_with s suffix`), `not_contains(s, sub)` (→ `mumei_not_contains s sub`) |
 | Finite field | `ff_add(a,b,p)`, `ff_sub`, `ff_mul`, `ff_neg`, `ff_pow`, `ff_inv`, `ff_div`, `ff_in_field(a,p)`, `is_prime(p)`, `mod_eq(a,b,p)` (→ `MumeiLean.Algebra.*`) |
@@ -170,6 +170,13 @@ Anything else is forwarded verbatim and the theorem is marked with
 known calls, `forall(..)`, and compact `match { ... }` arms are part of
 the supported surface; bare commas elsewhere still mark the expression
 partial.
+
+Bridge-rule metadata is incremental and spec-first. Array access emits the
+documented `array_bounds_bridge` rule and records both
+`mumei_array_bounds_bridge` and `mumei_array_get_bridge`; integer arithmetic
+continues to record `mumei_i64_overflow_bridge`. A certificate can be exported
+as `lean_verified` only when `translator_version` and `bridge_lemma_hash` match
+the current bridge; otherwise it remains `stale_translator`.
 
 ### `len(x)` semantics
 

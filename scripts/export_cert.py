@@ -290,6 +290,7 @@ def _atom_proved(
     failed: Iterable[str],
     proved: Iterable[str],
     known_witness_override: Iterable[str] = (),
+    metadata: Optional[dict] = None,
 ) -> bool:
     """Return True iff ``atom`` was successfully proved on the Lean side.
 
@@ -302,6 +303,14 @@ def _atom_proved(
         return True
     if name not in proved:
         return False
+    if isinstance(metadata, dict):
+        status = str(metadata.get("status", ""))
+        if metadata.get("manual_lemma_reason") or status in {
+            MANUAL_LEMMA_REQUIRED,
+            "partial_translation",
+            "stale_translator",
+        }:
+            return False
     if not _translator_contract_current(atom):
         return False
     if atom.get("manual_lemma_reason"):
@@ -348,13 +357,14 @@ def _upgrade_atom_list(
         if not isinstance(atom, dict):
             continue
         name = atom.get("name")
+        metadata = (atom_metadata or {}).get(str(name))
         proved = _atom_proved(
             atom,
             failed_set,
             proved_set,
             known_witness_override,
+            metadata,
         )
-        metadata = (atom_metadata or {}).get(str(name))
         if proved:
             atom["z3_check_result"] = LEAN_VERIFIED
             atom["status"] = "verified"

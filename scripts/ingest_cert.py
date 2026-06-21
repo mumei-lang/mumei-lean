@@ -180,7 +180,6 @@ def _infer_unknown_obligation_domain(
         for marker in (
             "smart_contract",
             "smart-contract",
-            "contract",
             "vault",
             "withdraw",
             "reentrancy",
@@ -249,15 +248,26 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
             logic_fragment_tag = str(atom.get("logic_fragment_tag", "") or "")
             if logic_fragment_tag and not tags:
                 tags.append(logic_fragment_tag)
-            unknown_obligation_domain = _infer_unknown_obligation_domain(
-                module_key=module_key,
-                atom_name=str(atom.get("name", "atom")),
-                tags=tags,
-                requires=requires,
-                ensures=ensures,
+            unknown_obligation_domain = str(
+                atom.get("unknown_obligation_domain", "") or ""
             )
+            if unknown_obligation_domain not in {"smart_contract", "rtgs"}:
+                unknown_obligation_domain = _infer_unknown_obligation_domain(
+                    module_key=module_key,
+                    atom_name=str(atom.get("name", "atom")),
+                    tags=tags,
+                    requires=requires,
+                    ensures=ensures,
+                )
             if unknown_obligation_domain and unknown_obligation_domain not in tags:
                 tags.append(unknown_obligation_domain)
+            escalation_reason = str(atom.get("escalation_reason", "") or "")
+            if not escalation_reason and unknown_obligation_domain:
+                escalation_reason = (
+                    "sc"
+                    if unknown_obligation_domain == "smart_contract"
+                    else "rtgs"
+                )
             requires_translation = _translate_expr(requires)
             ensures_translation = _translate_expr(ensures)
             body_translation = (
@@ -299,7 +309,7 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
                         )
                     ),
                     status=str(atom.get("status", "unknown")),
-                    escalation_reason=str(atom.get("escalation_reason", "")),
+                    escalation_reason=escalation_reason,
                     unknown_obligation_domain=unknown_obligation_domain,
                     logic_fragment_tag=logic_fragment_tag,
                     logic_fragment_tags=tags,

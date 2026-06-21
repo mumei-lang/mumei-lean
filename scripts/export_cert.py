@@ -350,6 +350,11 @@ def _metadata_for_atom(
             metadata.setdefault("unknown_obligation_domain", "smart_contract")
         elif "rtgs" in tags:
             metadata.setdefault("unknown_obligation_domain", "rtgs")
+    if not metadata.get("escalation_reason"):
+        if metadata.get("unknown_obligation_domain") == "smart_contract":
+            metadata["escalation_reason"] = "sc"
+        elif metadata.get("unknown_obligation_domain") == "rtgs":
+            metadata["escalation_reason"] = "rtgs"
     if atom.get("manual_lemma_reason"):
         metadata.setdefault("manual_lemma_reason", atom.get("manual_lemma_reason"))
     metadata["status"] = status
@@ -395,6 +400,8 @@ def _upgrade_atom_list(
                 atom["unknown_obligation_domain"] = metadata[
                     "unknown_obligation_domain"
                 ]
+            if metadata.get("escalation_reason"):
+                atom["escalation_reason"] = metadata["escalation_reason"]
             upgraded_any = True
         elif metadata is not None:
             status = str(metadata.get("status", MANUAL_LEMMA_REQUIRED))
@@ -411,6 +418,8 @@ def _upgrade_atom_list(
                 atom["unknown_obligation_domain"] = metadata[
                     "unknown_obligation_domain"
                 ]
+            if metadata.get("escalation_reason"):
+                atom["escalation_reason"] = metadata["escalation_reason"]
     return upgraded_any
 
 

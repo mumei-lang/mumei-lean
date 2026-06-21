@@ -24,6 +24,8 @@ confirms that the reconstructed `.mm` obligation promoted by mumei-agent and
 mumei can be exported as a `lean_verified` certificate, including live generated
 theorem paths when they build successfully.
 
+Cross-project vocabulary follows `mumei-lang/mumei/docs/CROSS_PROJECT_ROADMAP.md`: `harness_contract`, `intent_fidelity`, `artifact_paths`, `budget_policy_fingerprint`, and `lean_verified` are the canonical field names. Lean fallback documentation in this repo and `mumei-agent/docs/ROADMAP.md` must describe the same contract.
+
 > mumei's "fully automatic verification" philosophy is preserved. mumei-lean
 > only steps in for the slice of contracts Z3 cannot close on its own, and the
 > mumei compiler itself requires **zero changes** to consume the resulting
@@ -188,17 +190,13 @@ assert atom["z3_check_result"] == "lean_verified", atom
 PY
 ```
 
-### Known witness attribution
+### Lean fallback contract
 
-Generated theorem names such as `Generated.Std.Math.Abs.abs_saturating_correct`
-are attributed back to their originating atom before export. When the live
-generated module builds cleanly, `abs_saturating` records
-`lean_module = "Generated.Std.Math.Abs"`,
-`lean_theorem_name = "Generated.Std.Math.Abs.abs_saturating_correct"`, and
-`known_witness_used = false` before promotion to `lean_verified`. If the
-generated build fails but the committed witness module still validates, the
-bridge can fall back to `MumeiLean.StdMathAbs` metadata with
-`known_witness_used = true`.
+The `std_math_abs` path has one contract shared with mumei-agent docs:
+
+1. Live-generated theorem path: `Generated.Std.Math.Abs.abs_saturating_correct` in `generated/Generated/Std/Math/Abs.lean`. When this module builds cleanly, `abs_saturating` records `lean_module = "Generated.Std.Math.Abs"`, `lean_theorem_name = "Generated.Std.Math.Abs.abs_saturating_correct"`, `known_witness_used = false`, and may be promoted to `lean_verified`.
+2. Known-witness fallback: if generated theorem attribution cannot be used but the committed witness still validates, the bridge records `lean_module = "MumeiLean.StdMathAbs"`, `known_witness_used = true`, and preserves the fallback as explicit metadata rather than pretending the live-generated path passed.
+3. Failure classification is stable: `lake_missing` means Lake/toolchain is unavailable; `partial_translation` means the translator could not emit a complete proof obligation; `stale_translator` means `translator_version` or `bridge_lemma_hash` no longer matches the current contract. None of these may be exported as `lean_verified`.
 
 For dry-run translation or source inspection, generated files can still be
 written anywhere with `--no-build`:

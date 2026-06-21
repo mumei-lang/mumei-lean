@@ -6,6 +6,20 @@ Mumei obligations that Z3 returns as `unknown`. It narrows the broader
 contract that callers can use to validate inputs, generated Lean, `lake build`,
 `.lean-cert.json`, and summary JSON outputs.
 
+The cross-project roadmap is the sole upper roadmap. This contract uses the canonical field names `harness_contract`, `intent_fidelity`, `artifact_paths`, `budget_policy_fingerprint`, and `lean_verified` without aliases.
+
+## Lean fallback contract
+
+The standard abs fixture is the reference path for fallback semantics:
+
+| Case | Required metadata | Export rule |
+| --- | --- | --- |
+| Live generated theorem succeeds | `lean_module = "Generated.Std.Math.Abs"`, `lean_theorem_name = "Generated.Std.Math.Abs.abs_saturating_correct"`, `known_witness_used = false` | Atom may become `lean_verified`. |
+| Known witness fallback succeeds | `lean_module = "MumeiLean.StdMathAbs"`, `known_witness_used = true`, fallback reason retained | Atom may be exported only with explicit fallback attribution. |
+| `lake_missing` | Lake/toolchain unavailable | No atom becomes `lean_verified`; retry after toolchain setup. |
+| `partial_translation` | Translator emitted incomplete obligation or body semantics | No atom becomes `lean_verified`; fix translator or add manual lemma. |
+| `stale_translator` | `translator_version` or `bridge_lemma_hash` mismatch | No atom becomes `lean_verified`; regenerate with current bridge. |
+
 ## Scope
 
 Covered entrypoints:

@@ -336,6 +336,20 @@ def _metadata_for_atom(
         metadata.setdefault("escalation_reason", atom.get("escalation_reason"))
     if atom.get("logic_fragment_tags"):
         metadata.setdefault("logic_fragment_tags", atom.get("logic_fragment_tags"))
+    if atom.get("unknown_obligation_domain"):
+        metadata.setdefault(
+            "unknown_obligation_domain",
+            atom.get("unknown_obligation_domain"),
+        )
+    elif isinstance(metadata.get("logic_fragment_tags"), list):
+        tags = {
+            str(tag)
+            for tag in metadata.get("logic_fragment_tags", [])
+        }
+        if "smart_contract" in tags:
+            metadata.setdefault("unknown_obligation_domain", "smart_contract")
+        elif "rtgs" in tags:
+            metadata.setdefault("unknown_obligation_domain", "rtgs")
     if atom.get("manual_lemma_reason"):
         metadata.setdefault("manual_lemma_reason", atom.get("manual_lemma_reason"))
     metadata["status"] = status
@@ -377,6 +391,10 @@ def _upgrade_atom_list(
             )
             atom["lean_metadata"] = metadata
             atom["lean_result_metadata"] = metadata
+            if metadata.get("unknown_obligation_domain"):
+                atom["unknown_obligation_domain"] = metadata[
+                    "unknown_obligation_domain"
+                ]
             upgraded_any = True
         elif metadata is not None:
             status = str(metadata.get("status", MANUAL_LEMMA_REQUIRED))
@@ -389,6 +407,10 @@ def _upgrade_atom_list(
             )
             atom["lean_metadata"] = metadata
             atom["lean_result_metadata"] = metadata
+            if metadata.get("unknown_obligation_domain"):
+                atom["unknown_obligation_domain"] = metadata[
+                    "unknown_obligation_domain"
+                ]
     return upgraded_any
 
 

@@ -15,8 +15,9 @@ subset:
   ``arr[i]`` access, and known calls:
   ``len``, ``abs``, ``min``, ``max``, ``old``, ``starts_with``, ``ends_with``,
   ``contains``, ``not_contains``, ``sum``, ``count``, ``mod``, ``pow``, ``phi``,
-  finite-field helpers, group-theory helpers, crypto helpers, and higher-order
-  predicate calls through ``holds(P, x)``
+  finite-field helpers, group-theory helpers, crypto helpers,
+  smart-contract / RTGS obligation helpers, and higher-order predicate calls
+  through ``holds(P, x)``
 
 Anything outside this subset is preserved verbatim and emitted as a
 Lean fragment that almost certainly will not type-check; the generated
@@ -74,6 +75,9 @@ _RESERVED_IDENTS: Set[str] = {
     "implies",
     "kdf", "hmac", "commitment_hash", "zk_verify",
     "ff_zero", "ff_one", "ff_eq", "group_order", "group_comm",
+    "sc_reentrancy_guard", "sc_balance_preserved", "sc_withdraw_allowed",
+    "sc_no_negative_balance", "rtgs_validated", "rtgs_settled",
+    "rtgs_balance_conserved", "rtgs_trace_safe",
     "i64", "u64", "f64", "bool", "string", "str", "int", "nat", "field",
     "predicate",
     # Lean keywords we never want to over-bind even if the contract uses
@@ -139,6 +143,14 @@ _KNOWN_FUNCTIONS = {
     "ff_eq": "MumeiLean.Algebra.mumei_ff_eq",
     "group_order": "MumeiLean.Algebra.mumei_group_order",
     "group_comm": "MumeiLean.Algebra.mumei_group_comm",
+    "sc_reentrancy_guard": "MumeiLean.AdvancedPatterns.sc_reentrancy_guard",
+    "sc_balance_preserved": "MumeiLean.AdvancedPatterns.sc_balance_preserved",
+    "sc_withdraw_allowed": "MumeiLean.AdvancedPatterns.sc_withdraw_allowed",
+    "sc_no_negative_balance": "MumeiLean.AdvancedPatterns.sc_no_negative_balance",
+    "rtgs_validated": "MumeiLean.AdvancedPatterns.rtgs_validated",
+    "rtgs_settled": "MumeiLean.AdvancedPatterns.rtgs_settled",
+    "rtgs_balance_conserved": "MumeiLean.AdvancedPatterns.rtgs_balance_conserved",
+    "rtgs_trace_safe": "MumeiLean.AdvancedPatterns.rtgs_trace_safe",
     "implies": "implies",
 }
 
@@ -187,6 +199,14 @@ _KNOWN_FUNCTION_ARITY = {
     "ff_eq": 3,
     "group_order": 1,
     "group_comm": 2,
+    "sc_reentrancy_guard": 2,
+    "sc_balance_preserved": 2,
+    "sc_withdraw_allowed": 2,
+    "sc_no_negative_balance": 1,
+    "rtgs_validated": 1,
+    "rtgs_settled": 1,
+    "rtgs_balance_conserved": 4,
+    "rtgs_trace_safe": 2,
     "implies": 2,
 }
 
@@ -199,6 +219,14 @@ _FINITE_FIELD_FUNCTIONS = {
 }
 _GROUP_FUNCTIONS = {"group_mul", "group_inv", "group_pow", "group_identity", "group_order", "group_comm"}
 _CRYPTO_FUNCTIONS = {"hash", "signature_verify", "encrypt", "decrypt", "kdf", "hmac", "commitment_hash", "zk_verify"}
+_SMART_CONTRACT_FUNCTIONS = {
+    "sc_reentrancy_guard", "sc_balance_preserved",
+    "sc_withdraw_allowed", "sc_no_negative_balance",
+}
+_RTGS_FUNCTIONS = {
+    "rtgs_validated", "rtgs_settled",
+    "rtgs_balance_conserved", "rtgs_trace_safe",
+}
 _HIGHER_ORDER_PREDICATE_FUNCTIONS = {"holds"}
 _UNKNOWN_OBLIGATION_FUNCTIONS = {"unknown", "unknown_obligation"}
 _SCALAR_CALL_FUNCTIONS = (
@@ -347,6 +375,8 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "implication_lowering",
     "let_binding_lowering",
     "unknown_obligation_lowering",
+    "smart_contract_lowering",
+    "rtgs_settlement_lowering",
 }
 
 _FORMAL_SPEC_TYPE_MAPPINGS: Dict[str, str] = {
@@ -499,6 +529,10 @@ def _lowering_rules(tokens: List[tuple], array_ids: List[str], string_ids: List[
         rules.extend(["group_theory_lowering", "mathlib4_bridge"])
     if any(kind == "ID" and text in _CRYPTO_FUNCTIONS for kind, text in tokens):
         rules.extend(["crypto_primitive_lowering", "mathlib4_bridge"])
+    if any(kind == "ID" and text in _SMART_CONTRACT_FUNCTIONS for kind, text in tokens):
+        rules.extend(["smart_contract_lowering", "mathlib4_bridge"])
+    if any(kind == "ID" and text in _RTGS_FUNCTIONS for kind, text in tokens):
+        rules.extend(["rtgs_settlement_lowering", "mathlib4_bridge"])
     if any(kind == "ID" and text in _UNKNOWN_OBLIGATION_FUNCTIONS for kind, text in tokens):
         rules.extend(["unknown_obligation_lowering", "mathlib4_bridge"])
     if any(kind == "ID" and text in _HIGHER_ORDER_PREDICATE_FUNCTIONS for kind, text in tokens) or any(
@@ -567,6 +601,16 @@ def _build_semantic_gap_notes(
             "crypto_primitive_lowering: hash/signature/encryption primitives "
             "are routed through MumeiLean.Crypto proof patterns."
         )
+    if any(kind == "ID" and text in _SMART_CONTRACT_FUNCTIONS for kind, text in tokens):
+        notes.append(
+            "smart_contract_lowering: SC obligations are routed through "
+            "MumeiLean.AdvancedPatterns smart-contract receptacles."
+        )
+    if any(kind == "ID" and text in _RTGS_FUNCTIONS for kind, text in tokens):
+        notes.append(
+            "rtgs_settlement_lowering: RTGS obligations are routed through "
+            "MumeiLean.AdvancedPatterns settlement receptacles."
+        )
     if any(kind == "ID" and text in _UNKNOWN_OBLIGATION_FUNCTIONS for kind, text in tokens):
         notes.append(
             "unknown_obligation_lowering: explicit unknown obligations compile "
@@ -608,6 +652,10 @@ def _bridge_lemmas_for_rules(lowering_rules: List[str]) -> List[str]:
         bridge_lemmas.append("mumei_group_theory_bridge")
     if "crypto_primitive_lowering" in lowering_rules:
         bridge_lemmas.append("mumei_crypto_primitive_bridge")
+    if "smart_contract_lowering" in lowering_rules:
+        bridge_lemmas.append("mumei_smart_contract_bridge")
+    if "rtgs_settlement_lowering" in lowering_rules:
+        bridge_lemmas.append("mumei_rtgs_settlement_bridge")
     if "unknown_obligation_lowering" in lowering_rules:
         bridge_lemmas.append("mumei_unknown_obligation_bridge")
     if "higher_order_predicate_lowering" in lowering_rules:
@@ -631,6 +679,10 @@ def _proof_trace_hints_for_rules(lowering_rules: List[str]) -> List[str]:
         hints.append("preserve i < arr.length evidence before guarded List access")
     if "string_regex_bridge" in lowering_rules:
         hints.append("route regex/string obligations through explicit bridge assumptions")
+    if "smart_contract_lowering" in lowering_rules:
+        hints.append("discharge SC obligations with guard-state and balance lemmas")
+    if "rtgs_settlement_lowering" in lowering_rules:
+        hints.append("discharge RTGS obligations with validation-before-settlement and conservation lemmas")
     if "refinement_predicate_lowering" in lowering_rules:
         hints.append("carry subtype predicate witnesses through quantifier lowering")
     if "finite_field_lowering" in lowering_rules:

@@ -19,9 +19,55 @@ open MumeiLean.CryptoHelpers
 def mumei_unknown_obligation (_witness : Int) : Prop :=
   True
 
+def sc_reentrancy_guard (locked phase : Int) : Prop :=
+  locked = 1 → phase ≠ 0
+
+def sc_balance_preserved (before after : Int) : Prop :=
+  after = before
+
+def sc_withdraw_allowed (balance amount : Int) : Prop :=
+  0 ≤ amount ∧ amount ≤ balance
+
+def sc_no_negative_balance (balance : Int) : Prop :=
+  0 ≤ balance
+
+def rtgs_validated (state : Int) : Prop :=
+  1 ≤ state
+
+def rtgs_settled (state : Int) : Prop :=
+  state = 2
+
+def rtgs_balance_conserved (before debit credit after : Int) : Prop :=
+  mumei_conserved_sum before debit credit after
+
+def rtgs_trace_safe (validated settled : Int) : Prop :=
+  settled = 1 → validated = 1
+
 theorem unknown_obligation_intro (witness : Int) :
     mumei_unknown_obligation witness := by
   trivial
+
+theorem sc_withdraw_allowed_intro (balance amount : Int)
+    (hAmount : 0 ≤ amount) (hBalance : amount ≤ balance) :
+    sc_withdraw_allowed balance amount := by
+  exact ⟨hAmount, hBalance⟩
+
+theorem sc_no_negative_after_withdraw (balance amount : Int)
+    (hAllowed : sc_withdraw_allowed balance amount) :
+    sc_no_negative_balance (balance - amount) := by
+  unfold sc_withdraw_allowed sc_no_negative_balance at *
+  omega
+
+theorem rtgs_balance_conserved_refl (before amount : Int) :
+    rtgs_balance_conserved before amount amount before := by
+  unfold rtgs_balance_conserved
+  exact rtgs_transfer_conserves_sum before amount amount rfl
+
+theorem rtgs_trace_safe_intro (validated : Int) :
+    rtgs_trace_safe validated 0 := by
+  unfold rtgs_trace_safe
+  intro h
+  omega
 
 theorem bounded_forall_weaken (lo hi : Int) (P Q : Int → Prop)
     (hmap : ∀ i : Int, lo ≤ i → i < hi → P i → Q i)

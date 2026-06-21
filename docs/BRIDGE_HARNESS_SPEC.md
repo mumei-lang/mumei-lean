@@ -9,6 +9,8 @@ For the artifact-level contract covering `.proof-cert.json`, generated Lean,
 `lake build`, `.lean-cert.json`, and summary JSON, see
 [`LEAN_HARNESS_CONTRACT.md`](LEAN_HARNESS_CONTRACT.md).
 
+Vocabulary is inherited from the cross-project roadmap: `harness_contract`, `intent_fidelity`, `artifact_paths`, `budget_policy_fingerprint`, and `lean_verified` are the only canonical field names.
+
 ## Scope
 
 Covered entrypoints:
@@ -55,6 +57,7 @@ Runtime owners:
 - Location: `--out-dir`, default `generated/`.
 - One generated file per module key.
 - Each proof-capable atom gets a theorem named `<atom>_correct`.
+- For `std/math_abs`, the live theorem path is `generated/Generated/Std/Math/Abs.lean` with theorem `Generated.Std.Math.Abs.abs_saturating_correct`.
 - Partial translations and manual lemma candidates remain visible in metadata
   but do not become false automatic proofs.
 
@@ -95,6 +98,7 @@ Runtime owners:
 | `stale_translator` | `translator_version` or `bridge_lemma_hash` mismatch | keep unresolved; regenerate with current bridge |
 | `lean_proof_unresolved` | theorem-level Lean failure, `sorry`, or unattributed proof failure | keep unresolved and attach diagnostics |
 | `lake_missing` | `lake` absent from `PATH` | no atoms proven; caller may retry after toolchain setup |
+| `known_witness_fallback` | generated path cannot be promoted but a committed witness such as `MumeiLean.StdMathAbs` validates | export explicit `known_witness_used = true` metadata; never mark the live path as passed |
 | `ci_mode_fallback` | CI build failure under `--ci-mode` | preserve generated artifacts and skip export |
 | `no_unknown_atoms` | scan found no candidates | write deterministic empty summary |
 

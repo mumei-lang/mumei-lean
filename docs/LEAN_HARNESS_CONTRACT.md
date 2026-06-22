@@ -17,7 +17,7 @@ The only promoted Lean path is:
 2. Translate each candidate to generated Lean with `translator_ir` metadata, `logic_fragment_tags`, and any `manual_lemma_reason` preserved.
 3. Run `lake build` for the generated target unless the command is explicitly in `--no-build` dry-run mode.
 4. Export `.lean-cert.json` with `lean_result_metadata` and the top-level atom fields `translator_version` and `bridge_lemma_hash`.
-5. mumei accepts `lean_verified` only when those fields match its current constants; mismatches are `stale_translator` and must not be treated as proven.
+5. mumei accepts `lean_verified` only when both the source atom and `lean_result_metadata` match the current `translator_version` and `bridge_lemma_hash`; any mismatch is `stale_translator` and must not be treated as proven.
 
 Field handling is fixed:
 

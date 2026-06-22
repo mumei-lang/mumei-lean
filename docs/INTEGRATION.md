@@ -8,7 +8,7 @@
 
 The only promoted Lean path is:
 
-1. Scan mumei proof certificates for atoms whose `z3_result_class == "unknown"` or `z3_check_result == "unknown"`.
+1. Scan mumei proof certificates for atoms whose `z3_result_class == "unknown"` or `z3_check_result == "unknown"`; `status == "unknown"` or an `escalation_reason` alone is not a Lean candidate.
 2. Translate each candidate to generated Lean with `translator_ir` metadata, `logic_fragment_tags`, and any `manual_lemma_reason` preserved.
 3. Run `lake build` for the generated target unless the command is explicitly in `--no-build` dry-run mode.
 4. Export `.lean-cert.json` with `lean_result_metadata` and the top-level atom fields `translator_version` and `bridge_lemma_hash`.

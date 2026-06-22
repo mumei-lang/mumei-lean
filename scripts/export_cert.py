@@ -263,6 +263,24 @@ def _translator_contract_current(atom: dict) -> bool:
     )
 
 
+def _lean_result_contract_current(metadata: Optional[dict]) -> bool:
+    if metadata is None:
+        return True
+    translator_version = metadata.get("translator_version", TRANSLATOR_VERSION)
+    bridge_lemma_hash = metadata.get("bridge_lemma_hash", BRIDGE_LEMMA_HASH)
+    return (
+        translator_version == TRANSLATOR_VERSION
+        and bridge_lemma_hash == BRIDGE_LEMMA_HASH
+    )
+
+
+def _unknown_lean_candidate(atom: dict) -> bool:
+    return (
+        atom.get("z3_check_result") == "unknown"
+        or atom.get("z3_result_class") == "unknown"
+    )
+
+
 def _normalise_atom_names(names: Iterable[str]) -> set:
     out: set = set()
     for name in names:
@@ -299,11 +317,12 @@ def _atom_proved(
     left unchanged (returns False).
     """
     name = atom.get("name")
-    if name in known_witness_override:
-        return True
-    if name not in proved:
+    known_witness = name in known_witness_override
+    if not known_witness and name not in proved:
         return False
-    if isinstance(metadata, dict):
+    if not _unknown_lean_candidate(atom):
+        return False
+    if isinstance(metadata, dict) and not known_witness:
         status = str(metadata.get("status", ""))
         if metadata.get("manual_lemma_reason") or status in {
             MANUAL_LEMMA_REQUIRED,
@@ -313,9 +332,11 @@ def _atom_proved(
             return False
     if not _translator_contract_current(atom):
         return False
-    if atom.get("manual_lemma_reason"):
+    if not _lean_result_contract_current(metadata):
         return False
-    return name not in failed
+    if atom.get("manual_lemma_reason") and not known_witness:
+        return False
+    return known_witness or name not in failed
 
 
 def _metadata_for_atom(
@@ -403,9 +424,11 @@ def _upgrade_atom_list(
             if metadata.get("escalation_reason"):
                 atom["escalation_reason"] = metadata["escalation_reason"]
             upgraded_any = True
-        elif metadata is not None:
+        elif metadata is not None and _unknown_lean_candidate(atom):
             status = str(metadata.get("status", MANUAL_LEMMA_REQUIRED))
-            if not _translator_contract_current(atom):
+            if not _translator_contract_current(atom) or not _lean_result_contract_current(
+                metadata
+            ):
                 status = "stale_translator"
             metadata = _metadata_for_atom(
                 atom,

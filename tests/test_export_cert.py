@@ -5,7 +5,9 @@ import json
 from pathlib import Path
 
 from export_cert import (
+    BRIDGE_LEMMA_HASH,
     LEAN_VERIFIED,
+    TRANSLATOR_VERSION,
     _failed_theorem_attributions,
     _failed_theorem_names,
     _has_unattributable_failures,
@@ -94,6 +96,22 @@ def test_upgrade_certificate_known_witness_override_marks_atom_verified():
     assert atom["lean_metadata"]["proof_path"] == "MumeiLean/StdMathAbs.lean"
 
 
+def test_upgrade_certificate_known_witness_override_requires_unknown_candidate():
+    cert = _certificate([_atom("abs_saturating", z3="unsat")])
+
+    upgraded = upgrade_certificate(
+        cert=cert,
+        proved_atoms=[],
+        failed_atoms=[],
+        lean_version="leanprover/lean4:v4.15.0",
+        known_witness_override=["abs_saturating"],
+    )
+
+    atom = upgraded["atoms"][0]
+    assert atom["z3_check_result"] == "unsat"
+    assert "lean_metadata" not in atom
+
+
 def test_upgrade_certificate_promotes_generated_known_witness_attribution():
     cert = _certificate([_atom("abs_saturating")])
     upgraded = upgrade_certificate(
@@ -177,6 +195,53 @@ def test_upgrade_certificate_does_not_promote_manual_metadata():
     assert atom["z3_check_result"] == "unknown"
     assert atom["status"] == "unknown"
     assert atom["lean_metadata"]["status"] == "manual_lemma_required"
+
+
+def test_upgrade_certificate_only_promotes_unknown_candidates():
+    cert = _certificate([_atom("closed", z3="unsat")])
+
+    upgraded = upgrade_certificate(
+        cert=cert,
+        proved_atoms=["closed"],
+        failed_atoms=[],
+        lean_version="x",
+        atom_metadata={"closed": {"status": LEAN_VERIFIED}},
+    )
+
+    atom = upgraded["atoms"][0]
+    assert atom["z3_check_result"] == "unsat"
+    assert "lean_metadata" not in atom
+
+
+def test_upgrade_certificate_marks_stale_translator_metadata_unproven():
+    cert = _certificate(
+        [
+            {
+                **_atom("stale"),
+                "translator_version": TRANSLATOR_VERSION,
+                "bridge_lemma_hash": BRIDGE_LEMMA_HASH,
+            }
+        ]
+    )
+
+    upgraded = upgrade_certificate(
+        cert=cert,
+        proved_atoms=["stale"],
+        failed_atoms=[],
+        lean_version="x",
+        atom_metadata={
+            "stale": {
+                "status": LEAN_VERIFIED,
+                "translator_version": "old-translator",
+                "bridge_lemma_hash": BRIDGE_LEMMA_HASH,
+            }
+        },
+    )
+
+    atom = upgraded["atoms"][0]
+    assert atom["z3_check_result"] == "unknown"
+    assert atom["lean_result_metadata"]["status"] == "stale_translator"
+    assert atom["lean_result_metadata"]["translator_version"] == "old-translator"
 
 
 def test_upgrade_certificate_preserves_sc_rtgs_escalation_metadata():

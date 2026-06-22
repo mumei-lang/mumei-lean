@@ -14,7 +14,7 @@ graph TD
     LP -->|".lean-cert.json"| MR["mumei resolver\n(verify_import_certificate)"]
     MR -->|"mark_verified()"| MV["mumei verification pipeline"]
     AG["mumei-agent\n(proliferate / forge)"] -->|"Z3 unknown atoms"| ML
-    NLAE["mumei-agent NLAEPipeline\n(P9-G)"] -->|"Loss Vector repair certificate"| ML
+    NLAE["mumei-agent NLAEPipeline\n(P9-G)"] -->|"unknown obligations only"| ML
     ML -->|"lean_verified export"| DEMO["mumei-demo\nEvaluation Loop"]
 ```
 
@@ -41,6 +41,17 @@ loss-vector` and mumei-agent self-correction; the output is a `.lean-cert.json`
 whose relevant atoms are promoted to `lean_verified`. Live generated theorem
 paths are preferred when Lake builds them successfully, while known witnesses
 remain an explicit fallback with `known_witness_used = true`.
+
+## Unknown-only bridge acceptance
+
+The bridge is a complement for Z3 `unknown` obligations only. A candidate can be promoted to `lean_verified` when all of these hold:
+
+1. The source atom was routed from `z3_result_class == "unknown"` or `z3_check_result == "unknown"`.
+2. Generated Lean builds successfully without unresolved manual-lemma placeholders.
+3. The exported atom and `lean_result_metadata` both carry the current `translator_version`.
+4. The exported atom and `lean_result_metadata` both carry the current `bridge_lemma_hash`.
+
+If either `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract, the failure condition is `stale_translator`. `sat`, `unsat`, parser failures, audit/spec issues, and ordinary mumei-agent findings are never upgraded by this bridge.
 
 ### Internal pipeline (mumei-lean side)
 

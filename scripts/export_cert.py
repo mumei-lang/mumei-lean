@@ -317,11 +317,12 @@ def _atom_proved(
     left unchanged (returns False).
     """
     name = atom.get("name")
-    if name in known_witness_override:
-        return True
-    if name not in proved:
+    known_witness = name in known_witness_override
+    if not known_witness and name not in proved:
         return False
-    if isinstance(metadata, dict):
+    if not _unknown_lean_candidate(atom):
+        return False
+    if isinstance(metadata, dict) and not known_witness:
         status = str(metadata.get("status", ""))
         if metadata.get("manual_lemma_reason") or status in {
             MANUAL_LEMMA_REQUIRED,
@@ -333,11 +334,9 @@ def _atom_proved(
         return False
     if not _lean_result_contract_current(metadata):
         return False
-    if not _unknown_lean_candidate(atom):
+    if atom.get("manual_lemma_reason") and not known_witness:
         return False
-    if atom.get("manual_lemma_reason"):
-        return False
-    return name not in failed
+    return known_witness or name not in failed
 
 
 def _metadata_for_atom(

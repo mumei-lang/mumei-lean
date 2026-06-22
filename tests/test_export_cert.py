@@ -96,6 +96,22 @@ def test_upgrade_certificate_known_witness_override_marks_atom_verified():
     assert atom["lean_metadata"]["proof_path"] == "MumeiLean/StdMathAbs.lean"
 
 
+def test_upgrade_certificate_known_witness_override_requires_unknown_candidate():
+    cert = _certificate([_atom("abs_saturating", z3="unsat")])
+
+    upgraded = upgrade_certificate(
+        cert=cert,
+        proved_atoms=[],
+        failed_atoms=[],
+        lean_version="leanprover/lean4:v4.15.0",
+        known_witness_override=["abs_saturating"],
+    )
+
+    atom = upgraded["atoms"][0]
+    assert atom["z3_check_result"] == "unsat"
+    assert "lean_metadata" not in atom
+
+
 def test_upgrade_certificate_promotes_generated_known_witness_attribution():
     cert = _certificate([_atom("abs_saturating")])
     upgraded = upgrade_certificate(

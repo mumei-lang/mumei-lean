@@ -229,11 +229,6 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
             is_candidate = (
                 z3_check_result == "unknown"
                 or atom.get("z3_result_class") == "unknown"
-                or (
-                    atom.get("status") == "unknown"
-                    and z3_check_result not in {"unsat", "sat", "lean_verified"}
-                )
-                or atom.get("escalation_reason")
             )
             if not is_candidate:
                 continue

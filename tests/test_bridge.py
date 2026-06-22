@@ -129,6 +129,39 @@ def test_main_dry_run_writes_generated_files(tmp_path: Path):
     assert (out_dir / "Gen" / "Std" / "Math.lean").exists()
 
 
+def test_main_dry_run_generates_theorems_for_unknown_only(tmp_path: Path):
+    cert_path = tmp_path / "cert.json"
+    cert_path.write_text(
+        json.dumps(
+            _cert(
+                "std/math.mm",
+                [
+                    _atom("open_obligation", z3="unknown"),
+                    _atom("closed_obligation", z3="unsat"),
+                ],
+            )
+        )
+    )
+    out_dir = tmp_path / "generated"
+
+    rc = main(
+        [
+            "--cert",
+            str(cert_path),
+            "--out-dir",
+            str(out_dir),
+            "--module-prefix",
+            "Gen",
+            "--no-build",
+        ]
+    )
+
+    assert rc == 0
+    text = (out_dir / "Gen" / "Std" / "Math.lean").read_text(encoding="utf-8")
+    assert "open_obligation_correct" in text
+    assert "closed_obligation_correct" not in text
+
+
 def test_main_dry_run_with_pilot_fixture(tmp_path: Path):
     """PR 3: end-to-end pilot of forall(..) + arr[i] translation.
 

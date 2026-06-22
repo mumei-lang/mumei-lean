@@ -1,5 +1,11 @@
 # mumei-lean Roadmap
 
+## Cross-project bridge contract
+
+`mumei-lang/mumei/docs/CROSS_PROJECT_ROADMAP.md` owns the global V1 order. For this repo, the V1 rule is narrow: `mumei-lean` expands only the Z3 `unknown` complement path after V1-A/V1-B/V1-C/V1-D produce obligations that the SMT layer cannot close. It is not a general fallback for audit/spec/code findings.
+
+Promotion to `lean_verified` requires a successful Lean build plus matching `translator_version` and `bridge_lemma_hash` in both the exported atom and `lean_result_metadata`; mismatches are `stale_translator`. PRs that update this roadmap should review the cross-project roadmap in the same diff and record relevant bridge regression commands from `tests/`.
+
 ## P9-G: Ecosystem Integration — ✅ Implemented
 
 `mumei-lang/mumei-lean` は P9-G NLAE pipeline の Fidelity Checker を担当する。

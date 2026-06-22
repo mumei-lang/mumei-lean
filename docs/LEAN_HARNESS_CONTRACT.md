@@ -32,6 +32,17 @@ Field handling is fixed:
 
 Current contract constants are `translator_version = mumei-lean-translator-ir-v1` and `bridge_lemma_hash = a8fd0b115fd29a6e87190bd041dbd5ab7a09ec89af6ac5b10ef152a1a0c0f643`.
 
+## Bridge acceptance invariant
+
+The bridge is a complement for Z3 `unknown` obligations only. A candidate can be promoted to `lean_verified` when all of these hold:
+
+1. The source atom was routed from `z3_result_class == "unknown"` or `z3_check_result == "unknown"`.
+2. Generated Lean builds successfully without unresolved manual-lemma placeholders.
+3. The exported atom and `lean_result_metadata` both carry the current `translator_version`.
+4. The exported atom and `lean_result_metadata` both carry the current `bridge_lemma_hash`.
+
+If either `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract, the failure condition is `stale_translator`. `sat`, `unsat`, parser failures, audit/spec issues, and ordinary mumei-agent findings are never upgraded by this bridge.
+
 ## Lean fallback contract
 
 The standard abs fixture is the reference path for fallback semantics:

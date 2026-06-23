@@ -86,6 +86,13 @@ def _load_cert(path: Path) -> dict:
     return json.loads(path.read_text())
 
 
+def _is_unknown_lean_candidate(atom: dict) -> bool:
+    return (
+        atom.get("z3_check_result") == "unknown"
+        or atom.get("z3_result_class") == "unknown"
+    )
+
+
 def _scan_unknown_certs(std_certs_dir: Path) -> List[Tuple[Path, dict]]:
     """Return a list of ``(path, certificate_dict)`` for each per-module
     cert under ``std_certs_dir`` that contains at least one ``unknown``
@@ -103,7 +110,7 @@ def _scan_unknown_certs(std_certs_dir: Path) -> List[Tuple[Path, dict]]:
         if not isinstance(atoms, list):
             continue
         if any(
-            isinstance(a, dict) and a.get("z3_check_result") == "unknown"
+            isinstance(a, dict) and _is_unknown_lean_candidate(a)
             for a in atoms
         ):
             found.append((path, payload))

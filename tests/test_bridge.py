@@ -60,11 +60,41 @@ def test_scan_unknown_certs_finds_only_unknown(tmp_path: Path):
     (certs_dir / "ok.json").write_text(
         json.dumps(_cert("std/ok.mm", [_atom("a", z3="unsat")]))
     )
+    (certs_dir / "status_only.json").write_text(
+        json.dumps(
+            _cert(
+                "std/status_only.mm",
+                [
+                    {
+                        **_atom("status_only", z3="unsat"),
+                        "status": "unknown",
+                        "escalation_reason": "manual_review_requested",
+                    }
+                ],
+            )
+        )
+    )
     (certs_dir / "todo.json").write_text(
         json.dumps(_cert("std/todo.mm", [_atom("b", z3="unknown")]))
     )
+    (certs_dir / "class_unknown.json").write_text(
+        json.dumps(
+            _cert(
+                "std/class_unknown.mm",
+                [
+                    {
+                        **_atom("class_unknown", z3="unsat"),
+                        "z3_result_class": "unknown",
+                    }
+                ],
+            )
+        )
+    )
     found = _scan_unknown_certs(certs_dir)
-    assert [p.name for p, _ in found] == ["todo.json"]
+    assert [p.name for p, _ in found] == [
+        "class_unknown.json",
+        "todo.json",
+    ]
 
 
 def test_select_proof_strategy_uses_translator_ir_lowering_rules():
@@ -330,6 +360,81 @@ def test_candidate_status_accepts_generated_theorem_names():
     )
 
     assert status == "lean_verified"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("translator_version", "stale-translator-version"),
+        ("bridge_lemma_hash", "stale-bridge-lemma-hash"),
+    ],
+)
+def test_stale_source_contract_is_not_lean_verified(
+    tmp_path: Path,
+    field: str,
+    value: str,
+):
+    cert_path = tmp_path / "cert.json"
+    cert_path.write_text(
+        json.dumps(
+            _cert(
+                "std/math.mm",
+                [
+                    {
+                        **_atom("inc", z3="unknown"),
+                        field: value,
+                    }
+                ],
+            )
+        )
+    )
+    out_cert = tmp_path / "out.lean-cert.json"
+
+    rc = main(
+        [
+            "--cert", str(cert_path),
+            "--out-dir", str(tmp_path / "generated"),
+            "--module-prefix", "Generated",
+            "--lean-cert-out", str(out_cert),
+            "--no-build",
+        ]
+    )
+
+    assert rc == 0
+    payload = json.loads(out_cert.read_text())
+    atom = payload["atoms"][0]
+    assert atom["z3_check_result"] == "unknown"
+    assert atom["lean_metadata"]["status"] == "stale_translator"
+    assert atom["lean_result_metadata"]["status"] == "stale_translator"
+
+
+def test_stale_lean_result_contract_is_not_lean_verified(
+    tmp_path: Path,
+    monkeypatch,
+):
+    cert_path = tmp_path / "cert.json"
+    cert_path.write_text(
+        json.dumps(_cert("std/math.mm", [_atom("inc", z3="unknown")]))
+    )
+    out_cert = tmp_path / "out.lean-cert.json"
+    monkeypatch.setattr(bridge, "TRANSLATOR_VERSION", "stale-translator-version")
+
+    rc = main(
+        [
+            "--cert", str(cert_path),
+            "--out-dir", str(tmp_path / "generated"),
+            "--module-prefix", "Generated",
+            "--lean-cert-out", str(out_cert),
+            "--no-build",
+        ]
+    )
+
+    assert rc == 0
+    payload = json.loads(out_cert.read_text())
+    atom = payload["atoms"][0]
+    assert atom["z3_check_result"] == "unknown"
+    assert atom["lean_metadata"]["status"] == "stale_translator"
+    assert atom["lean_metadata"]["translator_version"] == "stale-translator-version"
 
 
 def test_main_scan_unknown_returns_zero_when_dir_empty(tmp_path: Path):

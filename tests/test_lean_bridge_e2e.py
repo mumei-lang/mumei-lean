@@ -197,5 +197,6 @@ def test_bridge_escalation_bundle(lake_available, tmp_path: Path):
         candidate = payload["candidates"][0]
         assert candidate["name"] == "abs_saturating"
         assert candidate["z3_check_result"] == "lean_verified"
+        assert candidate["lean_metadata"]["known_witness_used"] is False
     finally:
         _cleanup_generated_abs()

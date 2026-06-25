@@ -280,9 +280,10 @@ def test_main_dry_run_with_body_semantics_fixture(tmp_path: Path):
     )
     assert rc == 0
     text = (out_dir / "Generated" / "Std" / "Math" / "Abs.lean").read_text()
-    assert "known_witness_used=true" in text
-    assert "h_body : result = MumeiLean.StdMathAbs.absSaturatingResult x" in text
-    assert "exact MumeiLean.StdMathAbs.abs_saturating_correct" in text
+    assert "known_witness_used=true" not in text
+    assert "h_body : result = absSaturatingResult x" in text
+    assert "def absSaturatingResult (x : Int) : Int :=" in text
+    assert "exact MumeiLean.StdMathAbs.abs_saturating_correct" not in text
     assert "sorry" not in text
 
 
@@ -309,6 +310,10 @@ def test_body_semantics_bridge_e2e_exports_lean_verified(tmp_path: Path):
     atom = next(a for a in payload["atoms"] if a["name"] == "abs_saturating")
     assert atom["z3_check_result"] == "lean_verified"
     assert atom["status"] == "verified"
+    assert atom["lean_metadata"]["lean_theorem_name"] == (
+        "Generated.Std.Math.Abs.abs_saturating_correct"
+    )
+    assert atom["lean_metadata"]["known_witness_used"] is False
 
 
 def test_body_semantics_export_path_marks_verified_with_clean_lake_log(

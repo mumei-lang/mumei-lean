@@ -227,7 +227,7 @@ def test_render_theorem_injects_body_semantics_for_simple_body():
     assert "sorry" not in rendered
 
 
-def test_render_theorem_delegates_known_abs_witness():
+def test_render_theorem_prefers_generated_body_semantics_for_known_abs_witness():
     cert = _make_certificate(
         "std/math/abs.mm",
         [
@@ -241,10 +241,30 @@ def test_render_theorem_delegates_known_abs_witness():
     )
     [atom] = collect_unknown_atoms(cert)
     rendered = render_theorem(atom)
+    assert "known_witness_used=true" not in rendered
+    assert "def absSaturatingResult (x : Int) : Int :=" in rendered
+    assert "(h_body : result = absSaturatingResult x)" in rendered
+    assert "exact MumeiLean.StdMathAbs.abs_saturating_correct" not in rendered
+    assert "mumei_arith_deep" in rendered
+    assert "sorry" not in rendered
+
+
+def test_render_theorem_keeps_known_abs_witness_without_body_semantics():
+    cert = _make_certificate(
+        "std/math/abs.mm",
+        [
+            _make_atom(
+                "abs_saturating",
+                requires="true",
+                ensures="result >= 0",
+            )
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
     assert "known_witness_used=true" in rendered
     assert "MumeiLean.StdMathAbs.absSaturatingResult" in rendered
     assert "exact MumeiLean.StdMathAbs.abs_saturating_correct" in rendered
-    assert "mumei_arith" not in rendered
     assert "sorry" not in rendered
 
 

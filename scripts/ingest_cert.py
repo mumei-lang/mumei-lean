@@ -602,10 +602,6 @@ def _translator_ir_metadata(atom: IngestedAtom) -> List[str]:
 
 def render_theorem(atom: IngestedAtom) -> str:
     """Render a single Lean ``theorem`` declaration for ``atom``."""
-    known_delegate = _render_known_witness_delegate(atom)
-    if known_delegate is not None:
-        return known_delegate
-
     req = atom.requires_translation
     ens = atom.ensures_translation
     body_tr = atom.body_translation
@@ -668,6 +664,10 @@ def render_theorem(atom: IngestedAtom) -> str:
         and bool(body_tr.lean_expr.strip())
         and not contains_identifier(atom.body_expr, "result")
     )
+    if not use_body_semantics:
+        known_delegate = _render_known_witness_delegate(atom)
+        if known_delegate is not None:
+            return known_delegate
     result_type_override = _body_result_type(atom.body_expr, body_tr) if use_body_semantics else None
 
     scalar_params: List[str] = [

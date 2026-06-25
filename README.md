@@ -50,6 +50,12 @@ The only promoted Lean path is:
 4. Export `.lean-cert.json` with `lean_result_metadata` and the top-level atom fields `translator_version` and `bridge_lemma_hash`.
 5. mumei accepts `lean_verified` only when those fields match its current constants; mismatches are `stale_translator` and must not be treated as proven.
 
+The standard live generated theorem path is `std/math/abs.mm::abs_saturating`:
+`scripts/ingest_cert.py` lowers the saturating i64 body semantics into
+`generated/Generated/Std/Math/Abs.lean`, Lake builds
+`Generated.Std.Math.Abs.abs_saturating_correct`, and export records
+`known_witness_used = false`.
+
 Field handling is fixed:
 
 | Field | Meaning |

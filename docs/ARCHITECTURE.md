@@ -41,6 +41,10 @@ loss-vector` and mumei-agent self-correction; the output is a `.lean-cert.json`
 whose relevant atoms are promoted to `lean_verified`. Live generated theorem
 paths are preferred when Lake builds them successfully, while known witnesses
 remain an explicit fallback with `known_witness_used = true`.
+The reference live path is
+`Generated.Std.Math.Abs.abs_saturating_correct`, emitted from
+`std/math/abs.mm::abs_saturating` body semantics and exported with
+`known_witness_used = false`.
 
 ## Unknown-only bridge acceptance
 

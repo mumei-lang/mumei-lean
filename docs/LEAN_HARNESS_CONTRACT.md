@@ -55,6 +55,10 @@ The standard abs fixture is the reference path for fallback semantics:
 | `partial_translation` | Translator emitted incomplete obligation or body semantics | No atom becomes `lean_verified`; fix translator or add manual lemma. |
 | `stale_translator` | `translator_version` or `bridge_lemma_hash` mismatch | No atom becomes `lean_verified`; regenerate with current bridge. |
 
+`abs_saturating` is the canonical live case: the generated theorem is emitted
+from i64::MIN saturation, non-negative, and negative branches, not from the
+hand-written `MumeiLean.StdMathAbs` witness.
+
 ## Scope
 
 Covered entrypoints:

@@ -24,7 +24,7 @@ confirms that the reconstructed `.mm` obligation promoted by mumei-agent and
 mumei can be exported as a `lean_verified` certificate, including live generated
 theorem paths when they build successfully.
 
-Cross-project vocabulary follows `mumei-lang/mumei/docs/CROSS_PROJECT_ROADMAP.md`: `harness_contract`, `intent_fidelity`, `artifact_paths`, `budget_policy_fingerprint`, and `lean_verified` are the canonical field names. Lean fallback documentation in this repo and `mumei-agent/docs/ROADMAP.md` must describe the same contract.
+Cross-project vocabulary follows `mumei-lang/mumei/docs/CROSS_PROJECT_ROADMAP.md`: `harness_contract`, `intent_fidelity`, `artifact_paths`, `budget_policy_fingerprint`, and `lean_verified` are the canonical field names. Lean fallback documentation in this repo and `mumei-agent/docs/ROADMAP.md` must describe the same contract. The docs-sync contract is pinned by `tests/test_contract_vocabulary.py` so `lean_verified`, `stale_translator`, `translator_version`, and `bridge_lemma_hash` do not drift.
 
 Translator contract updates are spec-first: every new
 `TranslatorIRBinder.mumei_type`, `TranslatorIR.lowering_rules` entry, or bridge

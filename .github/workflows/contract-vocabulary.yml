@@ -1,0 +1,31 @@
+name: Contract Vocabulary
+
+on:
+  pull_request:
+    paths:
+      - 'README.md'
+      - 'docs/LEAN_HARNESS_CONTRACT.md'
+      - 'docs/INTEGRATION.md'
+      - 'tests/test_contract_vocabulary.py'
+      - '.github/workflows/contract-vocabulary.yml'
+  workflow_dispatch:
+
+jobs:
+  contract-vocabulary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pytest
+        run: python -m pip install pytest
+
+      - name: Check Lean harness docs contract
+        env:
+          MUMEI_LEAN_SKIP_LIVE: '1'
+          PYTHONPATH: scripts
+        run: python -m pytest tests/test_contract_vocabulary.py -q

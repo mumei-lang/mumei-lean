@@ -328,7 +328,59 @@ def _string_dict(value: object) -> dict[str, str]:
 def _translator_ir_payload(atom: dict, *fallbacks: Optional[TranslationResult]) -> dict:
     raw_ir = atom.get("translator_ir")
     if isinstance(raw_ir, dict):
-        return raw_ir
+        result = dict(raw_ir)
+        result.setdefault("binders", [])
+        result.setdefault("lowering_rules", [])
+        result.setdefault("semantic_gap_notes", [])
+        result.setdefault("proof_trace_hints", [])
+        result.setdefault("requires_bridge_lemmas", [])
+        if "theorem_goal" not in result:
+            result["theorem_goal"] = ""
+        if "provenance_span" not in result:
+            result["provenance_span"] = {"file": "", "line": 0, "col": 0, "len": 0}
+
+        seen_binders = {
+            (
+                str(binder.get("mumei_name", "")),
+                str(binder.get("lean_name", "")),
+            )
+            for binder in result.get("binders", [])
+            if isinstance(binder, dict)
+        }
+        for fallback in fallbacks:
+            if fallback is None or fallback.translator_ir is None:
+                continue
+            payload = fallback.translator_ir.to_dict()
+            if not result.get("theorem_goal"):
+                result["theorem_goal"] = str(payload.get("theorem_goal") or "")
+            for binder in payload.get("binders", []):
+                if not isinstance(binder, dict):
+                    continue
+                key = (
+                    str(binder.get("mumei_name", "")),
+                    str(binder.get("lean_name", "")),
+                )
+                if key in seen_binders:
+                    continue
+                seen_binders.add(key)
+                result["binders"].append(binder)
+            for list_field in (
+                "lowering_rules",
+                "semantic_gap_notes",
+                "proof_trace_hints",
+                "requires_bridge_lemmas",
+            ):
+                target = result.setdefault(list_field, [])
+                if not isinstance(target, list):
+                    target = []
+                    result[list_field] = target
+                for item in payload.get(list_field, []):
+                    item_text = str(item)
+                    if item_text not in target:
+                        target.append(item_text)
+            if payload.get("manual_lemma_reason") and not result.get("manual_lemma_reason"):
+                result["manual_lemma_reason"] = str(payload["manual_lemma_reason"])
+        return result
     binders: List[dict] = []
     lowering_rules: List[str] = []
     manual_reason: Optional[str] = None

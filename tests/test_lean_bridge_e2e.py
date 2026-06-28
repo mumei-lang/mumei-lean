@@ -18,6 +18,9 @@ GENERATED_ABS = REPO_ROOT / "generated" / "Generated" / "Std" / "Math" / "Abs.le
 GENERATED_PATTERNS = (
     REPO_ROOT / "generated" / "Generated" / "Std" / "Math" / "Patterns.lean"
 )
+GENERATED_CRYPTO_PRIMITIVES = (
+    REPO_ROOT / "generated" / "Generated" / "Std" / "Crypto" / "Primitives.lean"
+)
 
 
 def _bridge_env() -> dict[str, str]:
@@ -78,6 +81,10 @@ def _cleanup_generated_abs() -> None:
 
 def _cleanup_generated_patterns() -> None:
     _cleanup_generated_file(GENERATED_PATTERNS)
+
+
+def _cleanup_generated_crypto_primitives() -> None:
+    _cleanup_generated_file(GENERATED_CRYPTO_PRIMITIVES)
 
 
 @pytest.mark.lake_available
@@ -167,6 +174,37 @@ def test_bounded_mul_body_semantics_upgrades_unknown_to_lean_verified(
         )
     finally:
         _cleanup_generated_patterns()
+
+
+@pytest.mark.lake_available
+def test_crypto_constant_time_eq_upgrades_unknown_to_lean_verified(
+    lake_available, tmp_path: Path
+):
+    out_cert = tmp_path / "std_crypto_primitives.lean-cert.json"
+    out_dir = REPO_ROOT / "generated"
+    _cleanup_generated_crypto_primitives()
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "std_crypto_primitives_constant_time_eq.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+
+        _assert_bridge_ok(proc)
+        assert GENERATED_CRYPTO_PRIMITIVES.exists()
+        payload = json.loads(out_cert.read_text())
+        atom = next(a for a in payload["atoms"] if a["name"] == "constant_time_eq_flag")
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["status"] == "verified"
+        assert atom["lean_metadata"]["known_witness_used"] is False
+        assert atom["lean_metadata"]["lean_theorem_name"] == (
+            "Generated.Std.Crypto.Primitives.constant_time_eq_flag_correct"
+        )
+    finally:
+        _cleanup_generated_crypto_primitives()
 
 
 def test_bridge_no_build_dry_run(tmp_path: Path):

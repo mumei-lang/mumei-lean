@@ -2029,6 +2029,63 @@ def _merge_identifiers(groups: list[list[str]]) -> list[str]:
 
 
 def _known_body_pattern(source: str) -> Optional[TranslationResult]:
+    braced_if = re.fullmatch(
+        r"if\s+([^{}]+?)\s*\{\s*([^{}]+?)\s*\}\s*else\s*\{\s*([^{}]+?)\s*\}",
+        source,
+        re.DOTALL,
+    )
+    if braced_if:
+        cond_src, then_src, else_src = braced_if.groups()
+        cond = translate_contract(cond_src.strip())
+        then_branch = translate_body(then_src.strip())
+        else_branch = translate_body(else_src.strip())
+        identifiers = _merge_identifiers(
+            [cond.identifiers, then_branch.identifiers, else_branch.identifiers]
+        )
+        array_ids = _merge_identifiers(
+            [
+                cond.array_identifiers,
+                then_branch.array_identifiers,
+                else_branch.array_identifiers,
+            ]
+        )
+        string_ids = _merge_identifiers(
+            [
+                cond.string_identifiers,
+                then_branch.string_identifiers,
+                else_branch.string_identifiers,
+            ]
+        )
+        predicate_ids = _merge_identifiers(
+            [
+                cond.predicate_identifiers,
+                then_branch.predicate_identifiers,
+                else_branch.predicate_identifiers,
+            ]
+        )
+        predicate_arities: Dict[str, int] = {}
+        for result in (cond, then_branch, else_branch):
+            for name, arity in result.predicate_arities.items():
+                predicate_arities[name] = max(predicate_arities.get(name, 1), arity)
+        lowered = TranslationResult(
+            lean_expr=(
+                f"if {cond.lean_expr} then {then_branch.lean_expr} "
+                f"else {else_branch.lean_expr}"
+            ),
+            identifiers=identifiers,
+            is_trivial=False,
+            is_partial=(
+                cond.is_partial
+                or then_branch.is_partial
+                or else_branch.is_partial
+            ),
+            array_identifiers=array_ids,
+            string_identifiers=string_ids,
+            predicate_identifiers=predicate_ids,
+            predicate_arities=predicate_arities,
+        )
+        return _attach_translator_ir(source, lowered)
+
     conditional_abs = re.fullmatch(
         rf"if\s+({_IDENT_PATTERN})\s*>=\s*0\s+then\s+\1\s+else\s+(?:-\s*\1|0\s*-\s*\1)",
         source,

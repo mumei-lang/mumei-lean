@@ -61,6 +61,11 @@ The standard live generated theorem paths are:
   `Generated.Std.Math.Patterns.bounded_mul_with_overflow_check_correct`; Lake
   proves the nonlinear postcondition conjunction through mathlib-backed
   generated automation and export records `known_witness_used = false`.
+- `std/crypto/primitives.mm::constant_time_eq_flag`: braced conditional
+  `body_expr` lowering emits
+  `Generated.Std.Crypto.Primitives.constant_time_eq_flag_correct`; Lake proves
+  the deterministic 0/1 crypto-input witness with `known_witness_used = false`
+  and no bridge lemma hash change.
 
 Field handling is fixed:
 

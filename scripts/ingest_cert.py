@@ -466,6 +466,34 @@ def _atom_result_name(atom_name: str) -> str:
     return parts[0] + "".join(part[:1].upper() + part[1:] for part in parts[1:]) + "Result"
 
 
+def _finite_field_zero_eq_proof(
+    atom: IngestedAtom,
+    result_name: str,
+    binder_mapping: dict[str, str],
+) -> Optional[str]:
+    body_match = re.fullmatch(
+        r"ff_zero\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)",
+        atom.body_expr.strip(),
+    )
+    if body_match is None:
+        return None
+    p_name = body_match.group(1)
+    zero_eq = re.fullmatch(
+        rf"ff_eq\s*\(\s*result\s*,\s*0\s*,\s*{re.escape(p_name)}\s*\)",
+        atom.raw_ensures.strip(),
+    )
+    if zero_eq is None:
+        return None
+    mapped_p = binder_mapping.get(p_name, p_name)
+    return (
+        "  rw [h_body]\n"
+        f"  unfold {result_name}\n"
+        "  intro _hp\n"
+        "  simpa [MumeiLean.Algebra.mumei_ff_zero] using "
+        f"MumeiLean.Algebra.ff_eq_refl 0 {mapped_p}"
+    )
+
+
 _LEAN_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
@@ -818,7 +846,14 @@ def render_theorem(atom: IngestedAtom) -> str:
     # ``omega`` / ``linarith`` / ``norm_num`` / ``simp`` cascade). Any
     # obligation this cannot close is left as a Lean build failure so
     # ``scripts/export_cert.py`` can attribute it to the owning atom.
-    if use_body_semantics:
+    finite_field_body = (
+        _finite_field_zero_eq_proof(atom, result_name, binder_mapping)
+        if use_body_semantics
+        else None
+    )
+    if finite_field_body is not None:
+        body = finite_field_body
+    elif use_body_semantics:
         body = f"  rw [h_body]\n  unfold {result_name}\n  mumei_arith_deep"
     else:
         body = "  mumei_arith"

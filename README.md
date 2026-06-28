@@ -66,6 +66,11 @@ The standard live generated theorem paths are:
   `Generated.Std.Crypto.Primitives.constant_time_eq_flag_correct`; Lake proves
   the deterministic 0/1 crypto-input witness with `known_witness_used = false`
   and no bridge lemma hash change.
+- `std/algebra/finite_field.mm::ff_zero_eq_zero`: finite-field `ff_zero(p)`
+  body lowering emits
+  `Generated.Std.Algebra.Finite_field.ff_zero_eq_zero_correct`; Lake proves
+  the equality witness through `MumeiLean.Algebra.ff_eq_refl` with
+  `known_witness_used = false` and no bridge lemma hash change.
 
 Field handling is fixed:
 
@@ -229,9 +234,11 @@ python -m pytest \
 ```
 
 `tests/test_lean_bridge_e2e.py` now runs the live generated theorem paths when
-Lake is available instead of being globally skipped. The `std_math_abs` fixture
-generates `generated/Generated/Std/Math/Abs.lean`, while the bounded-multiplication
-fixture generates `generated/Generated/Std/Math/Patterns.lean`; both export
+Lake is available instead of being globally skipped. The fixtures generate
+`generated/Generated/Std/Math/Abs.lean`,
+`generated/Generated/Std/Math/Patterns.lean`,
+`generated/Generated/Std/Crypto/Primitives.lean`, and
+`generated/Generated/Std/Algebra/Finite_field.lean`; all export
 `z3_check_result = "lean_verified"` with `known_witness_used = false`.
 
 The narrow smoke command used by CI for the `std_math_abs` fixture is:
@@ -255,11 +262,15 @@ PY
 The live-generated paths share one contract with mumei-agent docs:
 
 1. Live-generated theorem paths: `Generated.Std.Math.Abs.abs_saturating_correct`
-   in `generated/Generated/Std/Math/Abs.lean` and
+   in `generated/Generated/Std/Math/Abs.lean`,
    `Generated.Std.Math.Patterns.bounded_mul_with_overflow_check_correct` in
-   `generated/Generated/Std/Math/Patterns.lean`. When these modules build
-   cleanly, their atoms record `known_witness_used = false` and may be promoted
-   to `lean_verified`.
+   `generated/Generated/Std/Math/Patterns.lean`,
+   `Generated.Std.Crypto.Primitives.constant_time_eq_flag_correct` in
+   `generated/Generated/Std/Crypto/Primitives.lean`, and
+   `Generated.Std.Algebra.Finite_field.ff_zero_eq_zero_correct` in
+   `generated/Generated/Std/Algebra/Finite_field.lean`. When these modules
+   build cleanly, their atoms record `known_witness_used = false` and may be
+   promoted to `lean_verified`.
 2. Known-witness fallback: if generated theorem attribution cannot be used but
    the committed witness still validates, the bridge records
    `lean_module = "MumeiLean.StdMathAbs"`, `known_witness_used = true`, and

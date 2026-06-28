@@ -2139,6 +2139,21 @@ def _known_body_pattern(source: str) -> Optional[TranslationResult]:
             string_identifiers=[],
         )
 
+    finite_field_zero = re.fullmatch(
+        rf"ff_zero\s*\(\s*({_IDENT_PATTERN})\s*\)",
+        source,
+    )
+    if finite_field_zero:
+        p_name = finite_field_zero.group(1)
+        return TranslationResult(
+            lean_expr=f"MumeiLean.Algebra.mumei_ff_zero {p_name}",
+            identifiers=[p_name],
+            is_trivial=False,
+            is_partial=False,
+            array_identifiers=[],
+            string_identifiers=[],
+        )
+
     return None
 
 

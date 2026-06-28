@@ -1,0 +1,47 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-06-28T00:00:00Z",
+  "mumei_version": "0.6.0",
+  "z3_version": "Z3 version 4.8.12 - 64 bit",
+  "file": "std/algebra/finite_field.mm",
+  "atoms": [
+    {
+      "name": "ff_zero_eq_zero",
+      "z3_check_result": "unknown",
+      "content_hash": "fixture-ff-zero-eq-zero",
+      "status": "unknown",
+      "spec_validation_result": {"status": "satisfiable", "is_satisfiable": true},
+      "proof_hash": "fixture-proof-ff-zero-eq-zero",
+      "dependencies": [],
+      "effects": [],
+      "requires": "p > 0",
+      "ensures": "ff_eq(result, 0, p)",
+      "z3_result_class": "unknown",
+      "logic_fragment_tag": "finite_field",
+      "logic_fragment_tags": ["finite_field"],
+      "translator_version": "mumei-lean-translator-ir-v1",
+      "binder_mapping": {"p": "p", "result": "result"},
+      "bridge_lemma_hash": "a8fd0b115fd29a6e87190bd041dbd5ab7a09ec89af6ac5b10ef152a1a0c0f643",
+      "translator_ir": {
+        "sort": "contract_obligation",
+        "binders": [
+          {"mumei_name": "p", "lean_name": "p", "mumei_type": "i64", "lean_type": "Int", "role": "param"},
+          {"mumei_name": "result", "lean_name": "result", "mumei_type": "i64", "lean_type": "Int", "role": "result"}
+        ],
+        "theorem_goal": "(p > 0) -> ff_eq(result, 0, p)",
+        "provenance_span": {"file": "std/algebra/finite_field.mm", "line": 6, "col": 1, "len": 4},
+        "lowering_rules": ["contract_lowering", "finite_field_lowering", "mathlib4_bridge", "type_system_mapping"],
+        "semantic_gap_notes": ["finite_field_lowering: GF(p)-style helpers are lowered through MumeiLean.Algebra helpers."],
+        "proof_trace_hints": ["try finite-field equality helpers before falling back to manual proof"],
+        "requires_bridge_lemmas": ["mumei_finite_field_bridge"]
+      },
+      "symbol_provenance": [],
+      "solver_process_metadata": {"timeout_ms": 10000, "cancel_reason": null},
+      "escalation_reason": "finite_field",
+      "body_expr": "ff_zero(p)",
+      "body_summary": "finite-field zero equality witness"
+    }
+  ],
+  "certificate_hash": "fixture-std-algebra-finite-field-ff-zero-eq-zero",
+  "all_verified": false
+}

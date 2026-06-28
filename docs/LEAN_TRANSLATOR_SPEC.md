@@ -288,6 +288,31 @@ known-witness override. This covers the live crypto path
 `std/crypto/primitives.mm::constant_time_eq_flag` with
 `known_witness_used=false`.
 
+### 5.10 Finite-field equality body semantics
+
+Finite-field equality witnesses may carry a complete body expression such as:
+
+```text
+ff_zero(p)
+```
+
+For the live algebra path, the translator lowers that expression to a
+theorem-local result definition through `MumeiLean.Algebra`:
+
+```lean
+def ffZeroEqZeroResult (p : Int) : Int :=
+  MumeiLean.Algebra.mumei_ff_zero p
+```
+
+The generated obligation keeps the source `requires` / `ensures` contract and
+the body equality hypothesis
+`h_body : result = ffZeroEqZeroResult p`. A finite-field equality obligation of
+the form `ff_eq(result, 0, p)` is discharged live with the existing
+`MumeiLean.Algebra.ff_eq_refl` helper after unfolding `mumei_ff_zero`; it must
+not use a known-witness override. This covers the live algebra path
+`std/algebra/finite_field.mm::ff_zero_eq_zero` with
+`known_witness_used=false`.
+
 ## 6. Loop invariant and recursion encoding
 
 Mumei loop invariants are encoded as Lean propositions over explicit integer

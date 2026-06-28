@@ -336,6 +336,33 @@ def test_main_dry_run_with_crypto_body_semantics_fixture(tmp_path: Path):
     assert "sorry" not in text
 
 
+def test_main_dry_run_with_finite_field_body_semantics_fixture(tmp_path: Path):
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "std_algebra_finite_field_ff_zero_eq_zero.proof-cert.json"
+    )
+    out_dir = tmp_path / "generated"
+    rc = main(
+        [
+            "--cert", str(fixture),
+            "--out-dir", str(out_dir),
+            "--module-prefix", "Generated",
+            "--no-build",
+        ]
+    )
+    assert rc == 0
+    text = (
+        out_dir / "Generated" / "Std" / "Algebra" / "Finite_field.lean"
+    ).read_text()
+    assert "known_witness_used=true" not in text
+    assert "def ffZeroEqZeroResult" in text
+    assert "MumeiLean.Algebra.mumei_ff_zero p" in text
+    assert "h_body : result = ffZeroEqZeroResult p" in text
+    assert "MumeiLean.Algebra.ff_eq_refl 0 p" in text
+    assert "sorry" not in text
+
+
 @pytest.mark.skipif(not _have_lake(),
                     reason="lake not on PATH; skipping live bridge E2E")
 @pytest.mark.skipif(os.environ.get("MUMEI_LEAN_SKIP_LIVE") == "1",

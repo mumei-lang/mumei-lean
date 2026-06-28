@@ -252,6 +252,18 @@ same as Lean's dependent `List.get`.
 - **Lean 4**: mathlib4 group support through helper lemmas.
 - **Lowering Rule**: `group_theory_lowering`, `mathlib4_bridge`.
 
+### 5.8 Body-semantics nonlinear conjunctions
+
+When a proof certificate carries a complete `body_expr`, the translator may
+emit a Lean `def <atom>Result ...` plus a theorem hypothesis
+`h_body : result = <atom>Result ...`. For nonlinear arithmetic obligations whose
+postcondition is a conjunction, the generated theorem remains a live generated
+path: it unfolds the body definition, splits the conjunction structurally, and
+uses mathlib-backed nonlinear arithmetic automation (`nlinarith`) to discharge
+each conjunct. This keeps atoms such as
+`std/math/patterns.mm::bounded_mul_with_overflow_check` on the generated theorem
+path rather than a known-witness override.
+
 ## 6. Loop invariant and recursion encoding
 
 Mumei loop invariants are encoded as Lean propositions over explicit integer

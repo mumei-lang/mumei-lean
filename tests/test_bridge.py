@@ -287,6 +287,30 @@ def test_main_dry_run_with_body_semantics_fixture(tmp_path: Path):
     assert "sorry" not in text
 
 
+def test_main_dry_run_with_bounded_mul_body_semantics_fixture(tmp_path: Path):
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "std_math_patterns_bounded_mul.proof-cert.json"
+    )
+    out_dir = tmp_path / "generated"
+    rc = main(
+        [
+            "--cert", str(fixture),
+            "--out-dir", str(out_dir),
+            "--module-prefix", "Generated",
+            "--no-build",
+        ]
+    )
+    assert rc == 0
+    text = (out_dir / "Generated" / "Std" / "Math" / "Patterns.lean").read_text()
+    assert "known_witness_used=true" not in text
+    assert "def boundedMulWithOverflowCheckResult" in text
+    assert "h_body : result = boundedMulWithOverflowCheckResult a b limit" in text
+    assert "mumei_arith_deep" in text
+    assert "sorry" not in text
+
+
 @pytest.mark.skipif(not _have_lake(),
                     reason="lake not on PATH; skipping live bridge E2E")
 @pytest.mark.skipif(os.environ.get("MUMEI_LEAN_SKIP_LIVE") == "1",

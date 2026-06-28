@@ -50,11 +50,17 @@ The only promoted Lean path is:
 4. Export `.lean-cert.json` with `lean_result_metadata` and the top-level atom fields `translator_version` and `bridge_lemma_hash`.
 5. mumei accepts `lean_verified` only when those fields match its current constants; mismatches are `stale_translator` and must not be treated as proven.
 
-The standard live generated theorem path is `std/math/abs.mm::abs_saturating`:
-`scripts/ingest_cert.py` lowers the saturating i64 body semantics into
-`generated/Generated/Std/Math/Abs.lean`, Lake builds
-`Generated.Std.Math.Abs.abs_saturating_correct`, and export records
-`known_witness_used = false`.
+The standard live generated theorem paths are:
+
+- `std/math/abs.mm::abs_saturating`: `scripts/ingest_cert.py` lowers the
+  saturating i64 body semantics into `generated/Generated/Std/Math/Abs.lean`,
+  Lake builds `Generated.Std.Math.Abs.abs_saturating_correct`, and export
+  records `known_witness_used = false`.
+- `std/math/patterns.mm::bounded_mul_with_overflow_check`: complete
+  `body_expr` lowering emits
+  `Generated.Std.Math.Patterns.bounded_mul_with_overflow_check_correct`; Lake
+  proves the nonlinear postcondition conjunction through mathlib-backed
+  generated automation and export records `known_witness_used = false`.
 
 Field handling is fixed:
 
@@ -217,10 +223,10 @@ python -m pytest \
     -k "lake_available"
 ```
 
-`tests/test_lean_bridge_e2e.py` now runs the live generated theorem path when
+`tests/test_lean_bridge_e2e.py` now runs the live generated theorem paths when
 Lake is available instead of being globally skipped. The `std_math_abs` fixture
-generates `generated/Generated/Std/Math/Abs.lean`, exports
-`Generated.Std.Math.Abs.abs_saturating_correct`, and records
+generates `generated/Generated/Std/Math/Abs.lean`, while the bounded-multiplication
+fixture generates `generated/Generated/Std/Math/Patterns.lean`; both export
 `z3_check_result = "lean_verified"` with `known_witness_used = false`.
 
 The narrow smoke command used by CI for the `std_math_abs` fixture is:
@@ -241,11 +247,24 @@ PY
 
 ### Lean fallback contract
 
-The `std_math_abs` path has one contract shared with mumei-agent docs:
+The live-generated paths share one contract with mumei-agent docs:
 
-1. Live-generated theorem path: `Generated.Std.Math.Abs.abs_saturating_correct` in `generated/Generated/Std/Math/Abs.lean`. When this module builds cleanly, `abs_saturating` records `lean_module = "Generated.Std.Math.Abs"`, `lean_theorem_name = "Generated.Std.Math.Abs.abs_saturating_correct"`, `known_witness_used = false`, and may be promoted to `lean_verified`.
-2. Known-witness fallback: if generated theorem attribution cannot be used but the committed witness still validates, the bridge records `lean_module = "MumeiLean.StdMathAbs"`, `known_witness_used = true`, and preserves the fallback as explicit metadata rather than pretending the live-generated path passed.
-3. Failure classification is stable: `lake_missing` means Lake/toolchain is unavailable; `partial_translation` means the translator could not emit a complete proof obligation; `stale_translator` means `translator_version` or `bridge_lemma_hash` no longer matches the current contract. None of these may be exported as `lean_verified`.
+1. Live-generated theorem paths: `Generated.Std.Math.Abs.abs_saturating_correct`
+   in `generated/Generated/Std/Math/Abs.lean` and
+   `Generated.Std.Math.Patterns.bounded_mul_with_overflow_check_correct` in
+   `generated/Generated/Std/Math/Patterns.lean`. When these modules build
+   cleanly, their atoms record `known_witness_used = false` and may be promoted
+   to `lean_verified`.
+2. Known-witness fallback: if generated theorem attribution cannot be used but
+   the committed witness still validates, the bridge records
+   `lean_module = "MumeiLean.StdMathAbs"`, `known_witness_used = true`, and
+   preserves the fallback as explicit metadata rather than pretending the
+   live-generated path passed.
+3. Failure classification is stable: `lake_missing` means Lake/toolchain is
+   unavailable; `partial_translation` means the translator could not emit a
+   complete proof obligation; `stale_translator` means `translator_version` or
+   `bridge_lemma_hash` no longer matches the current contract. None of these may
+   be exported as `lean_verified`.
 
 For dry-run translation or source inspection, generated files can still be
 written anywhere with `--no-build`:

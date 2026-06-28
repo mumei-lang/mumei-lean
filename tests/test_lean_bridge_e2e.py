@@ -15,6 +15,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 BRIDGE = REPO_ROOT / "scripts" / "bridge.py"
 GENERATED_ABS = REPO_ROOT / "generated" / "Generated" / "Std" / "Math" / "Abs.lean"
+GENERATED_PATTERNS = (
+    REPO_ROOT / "generated" / "Generated" / "Std" / "Math" / "Patterns.lean"
+)
 
 
 def _bridge_env() -> dict[str, str]:
@@ -57,9 +60,9 @@ def _assert_bridge_ok(proc: subprocess.CompletedProcess[str]) -> None:
     )
 
 
-def _cleanup_generated_abs() -> None:
-    GENERATED_ABS.unlink(missing_ok=True)
-    current = GENERATED_ABS.parent
+def _cleanup_generated_file(path: Path) -> None:
+    path.unlink(missing_ok=True)
+    current = path.parent
     generated_root = REPO_ROOT / "generated" / "Generated"
     while current != generated_root and current.exists():
         try:
@@ -67,6 +70,14 @@ def _cleanup_generated_abs() -> None:
         except OSError:
             break
         current = current.parent
+
+
+def _cleanup_generated_abs() -> None:
+    _cleanup_generated_file(GENERATED_ABS)
+
+
+def _cleanup_generated_patterns() -> None:
+    _cleanup_generated_file(GENERATED_PATTERNS)
 
 
 @pytest.mark.lake_available
@@ -121,6 +132,41 @@ def test_lean_fallback_upgrades_unknown_to_lean_verified(lake_available, tmp_pat
         )
     finally:
         _cleanup_generated_abs()
+
+
+@pytest.mark.lake_available
+def test_bounded_mul_body_semantics_upgrades_unknown_to_lean_verified(
+    lake_available, tmp_path: Path
+):
+    out_cert = tmp_path / "std_math_patterns.lean-cert.json"
+    out_dir = REPO_ROOT / "generated"
+    _cleanup_generated_patterns()
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "std_math_patterns_bounded_mul.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+
+        _assert_bridge_ok(proc)
+        assert GENERATED_PATTERNS.exists()
+        payload = json.loads(out_cert.read_text())
+        atom = next(
+            a for a in payload["atoms"]
+            if a["name"] == "bounded_mul_with_overflow_check"
+        )
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["status"] == "verified"
+        assert atom["lean_metadata"]["known_witness_used"] is False
+        assert atom["lean_metadata"]["lean_theorem_name"] == (
+            "Generated.Std.Math.Patterns."
+            "bounded_mul_with_overflow_check_correct"
+        )
+    finally:
+        _cleanup_generated_patterns()
 
 
 def test_bridge_no_build_dry_run(tmp_path: Path):

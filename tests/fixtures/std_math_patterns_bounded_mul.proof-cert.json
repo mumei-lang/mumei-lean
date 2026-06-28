@@ -1,0 +1,103 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-06-28T00:00:00Z",
+  "mumei_version": "0.6.0",
+  "z3_version": "Z3 version 4.8.12 - 64 bit",
+  "file": "std/math/patterns.mm",
+  "atoms": [
+    {
+      "name": "bounded_mul_with_overflow_check",
+      "z3_check_result": "unknown",
+      "content_hash": "fixture-bounded-mul",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true
+      },
+      "proof_hash": "fixture-proof-bounded-mul",
+      "dependencies": [],
+      "effects": [],
+      "requires": "a >= 0 && b >= 0 && limit >= 0 && a <= limit && b <= limit && a * b <= limit",
+      "ensures": "result >= 0 && result <= limit && result == a * b",
+      "z3_result_class": "unknown",
+      "escalation_reason": "nonlinear_arithmetic",
+      "logic_fragment_tag": "nonlinear_arithmetic",
+      "logic_fragment_tags": [
+        "nonlinear_arithmetic"
+      ],
+      "translator_version": "mumei-lean-translator-ir-v1",
+      "binder_mapping": {
+        "limit": "limit",
+        "result": "result",
+        "a": "a",
+        "b": "b"
+      },
+      "bridge_lemma_hash": "a8fd0b115fd29a6e87190bd041dbd5ab7a09ec89af6ac5b10ef152a1a0c0f643",
+      "translator_ir": {
+        "sort": "contract_obligation",
+        "binders": [
+          {
+            "mumei_name": "a",
+            "lean_name": "a",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "b",
+            "lean_name": "b",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "limit",
+            "lean_name": "limit",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(a >= 0 && b >= 0 && limit >= 0 && a <= limit && b <= limit && a * b <= limit) -> (result >= 0 && result <= limit && result == a * b)",
+        "provenance_span": {
+          "file": "std/math/patterns.mm",
+          "line": 8,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "integer_overflow_bridge",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [
+          "integer_overflow_bridge: Mumei uses 2's complement wrap semantics, Lean 4 Int is unbounded. Bridge lemma required for overflow behavior."
+        ],
+        "proof_trace_hints": [
+          "assert mumei_i64_in_range hypotheses before applying arithmetic lemmas"
+        ],
+        "requires_bridge_lemmas": [
+          "mumei_i64_overflow_bridge",
+          "mumei_i64_add_overflow_bridge",
+          "mumei_div_by_zero_bridge"
+        ]
+      },
+      "symbol_provenance": [],
+      "solver_process_metadata": {
+        "timeout_ms": 10000,
+        "cancel_reason": null
+      },
+      "body_summary": "bounded multiplication guarded by limit",
+      "body_expr": "a * b"
+    }
+  ],
+  "certificate_hash": "6d40ef398fcb23464c828955f8cd3aea613912a03de3470707f35f061d276042",
+  "all_verified": false
+}

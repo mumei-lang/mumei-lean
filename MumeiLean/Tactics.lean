@@ -61,10 +61,12 @@ macro "mumei_arith_deep" : tactic =>
      | omega
      | linarith
      | nlinarith
+     | (repeat' constructor <;> first | positivity | nlinarith | ring)
      | norm_num
      | ring_nf
      | decide
      | (simp; omega)
+     | (simp; repeat' constructor <;> first | positivity | nlinarith | ring)
      | (split <;> omega)
      | (cases ‹_›; omega)
      | (rcases ‹_› with ⟨_, _⟩; omega)))

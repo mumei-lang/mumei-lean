@@ -21,9 +21,10 @@ Promotion to `lean_verified` requires a successful Lean build plus matching `tra
 
 P9-D/E/F/G の完了により、NLAE integration milestone は実装済み。
 
-## Lean fallback unknown-obligation bridge — In progress
+## Lean fallback unknown-obligation bridge — Implemented
 
 - `scripts/ingest_cert.py` now treats only `z3_result_class == "unknown"` or raw `z3_check_result == "unknown"` as Lean escalation candidates; `status == "unknown"` or `escalation_reason` alone is not enough.
 - `scripts/expr_translator.py` lowers explicit `unknown_obligation(x)` placeholders into `MumeiLean.AdvancedPatterns.mumei_unknown_obligation x` and marks them with `unknown_obligation_requires_manual_lemma`, so generated Lean stays traceable without falsely promoting unresolved obligations.
 - `scripts/export_cert.py`, `MumeiLean/CertParser.lean`, and `MumeiLean/CertWriter.lean` preserve unknown-escalation metadata (`z3_result_class`, `escalation_reason`, `logic_fragment_tags`) through parse/write paths.
 - `MumeiLean/AdvancedPatterns.lean`, `Algebra.lean`, and `Crypto.lean` carry the reusable witness surface for unknown obligation triage: placeholder obligations, finite-field equality helpers, and deterministic crypto-input patterns.
+- Live generated theorem coverage now includes both `std/math/abs.mm::abs_saturating` and `std/math/patterns.mm::bounded_mul_with_overflow_check`. The bounded-multiplication path uses complete `body_expr` lowering plus mathlib-backed nonlinear arithmetic splitting and upgrades to `lean_verified` with `known_witness_used = false` after Lake succeeds.

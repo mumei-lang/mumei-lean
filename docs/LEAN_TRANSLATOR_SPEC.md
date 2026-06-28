@@ -296,6 +296,10 @@ Finite-field equality witnesses may carry a complete body expression such as:
 ff_zero(p)
 ```
 
+Certificates emitted by `mumei verify --proof-cert` may preserve the source
+body braces (`{ ff_zero(p) }`); the bridge strips those braces before matching
+the finite-field body pattern.
+
 For the live algebra path, the translator lowers that expression to a
 theorem-local result definition through `MumeiLean.Algebra`:
 

@@ -8,38 +8,110 @@
     {
       "name": "ff_zero_eq_zero",
       "z3_check_result": "unknown",
-      "content_hash": "fixture-ff-zero-eq-zero",
+      "content_hash": "94bcd1e066e03483954f54684006f287907f3250a6760fb3ab68ae3a005094cf",
       "status": "unknown",
-      "spec_validation_result": {"status": "satisfiable", "is_satisfiable": true},
-      "proof_hash": "fixture-proof-ff-zero-eq-zero",
-      "dependencies": [],
+      "spec_validation_result": {
+        "status": "unknown_fragment",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "std/algebra/finite_field.mm"
+        },
+        "traceability_hash": "7edf84415bbf273912ae2dabe5ff7d712ad4b033696c638fa4065c8d96f5aaed",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 0,
+        "checked_refinements": 0,
+        "ensures_implication_checks": 0,
+        "diagnostics": [
+          "finite_field helpers are checked by the Lean bridge after Z3 unknown routing"
+        ]
+      },
+      "proof_hash": "6762bf34ae32c64a598f8adb4e9764ef2bdf2141a13089a37adcfb7a662bbf76",
+      "dependencies": [
+        "ff_zero"
+      ],
       "effects": [],
       "requires": "p > 0",
       "ensures": "ff_eq(result, 0, p)",
+      "body_expr": "{ ff_zero(p) }",
+      "body_summary": "{ ff_zero(p) }",
       "z3_result_class": "unknown",
+      "escalation_reason": "z3_unknown",
       "logic_fragment_tag": "finite_field",
-      "logic_fragment_tags": ["finite_field"],
+      "logic_fragment_tags": [
+        "finite_field"
+      ],
       "translator_version": "mumei-lean-translator-ir-v1",
-      "binder_mapping": {"p": "p", "result": "result"},
+      "binder_mapping": {
+        "result": "result",
+        "p": "p"
+      },
       "bridge_lemma_hash": "a8fd0b115fd29a6e87190bd041dbd5ab7a09ec89af6ac5b10ef152a1a0c0f643",
       "translator_ir": {
         "sort": "contract_obligation",
         "binders": [
-          {"mumei_name": "p", "lean_name": "p", "mumei_type": "i64", "lean_type": "Int", "role": "param"},
-          {"mumei_name": "result", "lean_name": "result", "mumei_type": "i64", "lean_type": "Int", "role": "result"}
+          {
+            "mumei_name": "p",
+            "lean_name": "p",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "result"
+          }
         ],
-        "theorem_goal": "(p > 0) -> ff_eq(result, 0, p)",
-        "provenance_span": {"file": "std/algebra/finite_field.mm", "line": 6, "col": 1, "len": 4},
-        "lowering_rules": ["contract_lowering", "finite_field_lowering", "mathlib4_bridge", "type_system_mapping"],
-        "semantic_gap_notes": ["finite_field_lowering: GF(p)-style helpers are lowered through MumeiLean.Algebra helpers."],
-        "proof_trace_hints": ["try finite-field equality helpers before falling back to manual proof"],
-        "requires_bridge_lemmas": ["mumei_finite_field_bridge"]
+        "theorem_goal": "(p > 0) -> (ff_eq(result, 0, p))",
+        "provenance_span": {
+          "file": "std/algebra/finite_field.mm",
+          "line": 6,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "finite_field_lowering",
+          "mathlib4_bridge",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [
+          "finite_field_lowering: GF(p)-style helpers are lowered through MumeiLean.Algebra helpers."
+        ],
+        "proof_trace_hints": [
+          "try finite-field equality helpers before falling back to manual proof"
+        ],
+        "requires_bridge_lemmas": [
+          "mumei_finite_field_bridge"
+        ]
       },
-      "symbol_provenance": [],
-      "solver_process_metadata": {"timeout_ms": 10000, "cancel_reason": null},
-      "escalation_reason": "finite_field",
-      "body_expr": "ff_zero(p)",
-      "body_summary": "finite-field zero equality witness"
+      "symbol_provenance": [
+        {
+          "symbol_name": "ff_eq",
+          "source": "uninterpreted_function",
+          "location": null
+        },
+        {
+          "symbol_name": "ff_zero",
+          "source": "uninterpreted_function",
+          "location": null
+        }
+      ],
+      "solver_process_metadata": {
+        "task_id": null,
+        "cache_key": "b30d8aa1593715e84c69774bc1bbc1a262baee814d8b0973ae7969fca7e81549",
+        "generation_id": "",
+        "solver_config_fingerprint": "4eb8092c0cb08dd4c8d6494173a480c7fae3ce88feef61311d32f80092aad8dc",
+        "timeout_ms": 10000,
+        "cancel_reason": null,
+        "process_start_time": "",
+        "process_end_time": "2026-06-28T17:26:55Z",
+        "process_exit_time": ""
+      }
     }
   ],
   "certificate_hash": "fixture-std-algebra-finite-field-ff-zero-eq-zero",

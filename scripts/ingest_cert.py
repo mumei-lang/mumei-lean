@@ -471,9 +471,13 @@ def _finite_field_zero_eq_proof(
     result_name: str,
     binder_mapping: dict[str, str],
 ) -> Optional[str]:
+    body_expr = atom.body_expr.strip()
+    braced_body = re.fullmatch(r"\{\s*(.*?)\s*\}", body_expr, re.DOTALL)
+    if braced_body is not None:
+        body_expr = braced_body.group(1).strip()
     body_match = re.fullmatch(
         r"ff_zero\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)",
-        atom.body_expr.strip(),
+        body_expr,
     )
     if body_match is None:
         return None

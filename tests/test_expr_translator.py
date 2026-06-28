@@ -505,6 +505,13 @@ def test_translate_body_handles_conditionals_and_arithmetic():
     assert result.is_partial is False
 
 
+def test_translate_body_handles_mumei_braced_if_else():
+    result = translate_body("if left == right { 1 } else { 0 }")
+    assert result.lean_expr == "if left = right then 1 else 0"
+    assert result.identifiers == ["left", "right"]
+    assert result.is_partial is False
+
+
 def test_translate_body_handles_list_string_and_quantifier_expressions():
     list_result = translate_body("[x, y, 3]")
     assert list_result.lean_expr == "[x, y, 3]"

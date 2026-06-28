@@ -1,0 +1,103 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-06-28T00:00:00Z",
+  "mumei_version": "0.6.0",
+  "z3_version": "Z3 version 4.8.12 - 64 bit",
+  "file": "std/crypto/primitives.mm",
+  "atoms": [
+    {
+      "name": "constant_time_eq_flag",
+      "z3_check_result": "unknown",
+      "content_hash": "fixture-constant-time-eq-flag",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "std/crypto/primitives.mm"
+        },
+        "traceability_hash": "7bad1282a82fd90637fb410b735896d08e09506e84984cf73b0192d667f256fb",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 1,
+        "checked_refinements": 0,
+        "ensures_implication_checks": 0,
+        "diagnostics": []
+      },
+      "proof_hash": "fixture-proof-constant-time-eq-flag",
+      "dependencies": [],
+      "effects": [],
+      "requires": "left >= 0 && right >= 0",
+      "ensures": "result == 0 || result == 1",
+      "z3_result_class": "unknown",
+      "logic_fragment_tag": "crypto_input_pattern",
+      "logic_fragment_tags": [
+        "crypto_input_pattern"
+      ],
+      "translator_version": "mumei-lean-translator-ir-v1",
+      "binder_mapping": {
+        "right": "right",
+        "result": "result",
+        "left": "left"
+      },
+      "bridge_lemma_hash": "a8fd0b115fd29a6e87190bd041dbd5ab7a09ec89af6ac5b10ef152a1a0c0f643",
+      "translator_ir": {
+        "sort": "contract_obligation",
+        "binders": [
+          {
+            "mumei_name": "left",
+            "lean_name": "left",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "right",
+            "lean_name": "right",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(left >= 0 && right >= 0) -> (result == 0 || result == 1)",
+        "provenance_span": {
+          "file": "std/crypto/primitives.mm",
+          "line": 27,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [],
+        "proof_trace_hints": [],
+        "requires_bridge_lemmas": []
+      },
+      "symbol_provenance": [],
+      "solver_process_metadata": {
+        "task_id": null,
+        "cache_key": "65cac5679036cc0a4bea4395c1ca17eea445b17d65c9a35745337d0bddf804ec",
+        "generation_id": "",
+        "solver_config_fingerprint": "4eb8092c0cb08dd4c8d6494173a480c7fae3ce88feef61311d32f80092aad8dc",
+        "timeout_ms": 10000,
+        "cancel_reason": null,
+        "process_start_time": "",
+        "process_end_time": "2026-06-28T16:00:49Z"
+      },
+      "escalation_reason": "crypto_input_pattern",
+      "body_expr": "if left == right { 1 } else { 0 }",
+      "body_summary": "constant-time equality flag over deterministic crypto inputs"
+    }
+  ],
+  "certificate_hash": "fixture-std-crypto-primitives-constant-time-eq",
+  "all_verified": false
+}

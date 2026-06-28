@@ -264,6 +264,30 @@ each conjunct. This keeps atoms such as
 `std/math/patterns.mm::bounded_mul_with_overflow_check` on the generated theorem
 path rather than a known-witness override.
 
+### 5.9 Crypto deterministic-input body semantics
+
+Crypto/finite-field witnesses that return deterministic flags may carry a
+complete Mumei braced conditional body:
+
+```text
+if left == right { 1 } else { 0 }
+```
+
+The translator lowers this body to a Lean theorem-local result definition:
+
+```lean
+def constantTimeEqFlagResult (left right : Int) : Int :=
+  if left = right then 1 else 0
+```
+
+The generated obligation still uses the source `requires` / `ensures` contract
+and a body equality hypothesis
+`h_body : result = constantTimeEqFlagResult left right`; it is discharged by the
+same live body-semantics path (`mumei_arith_deep`) and must not use a
+known-witness override. This covers the live crypto path
+`std/crypto/primitives.mm::constant_time_eq_flag` with
+`known_witness_used=false`.
+
 ## 6. Loop invariant and recursion encoding
 
 Mumei loop invariants are encoded as Lean propositions over explicit integer

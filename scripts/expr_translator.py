@@ -238,7 +238,7 @@ _SCALAR_CALL_FUNCTIONS = (
 )
 
 TRANSLATOR_VERSION = "mumei-lean-translator-ir-v1"
-BRIDGE_LEMMA_HASH = "a8fd0b115fd29a6e87190bd041dbd5ab7a09ec89af6ac5b10ef152a1a0c0f643"
+BRIDGE_LEMMA_HASH = "5f6faccb722e66782f2b11da66c2a9588c6d346bde2f8c4a163ddfceeac32522"
 
 
 @dataclass
@@ -377,6 +377,7 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "unknown_obligation_lowering",
     "smart_contract_lowering",
     "rtgs_settlement_lowering",
+    "sort_ascending_bridge",
 }
 
 _FORMAL_SPEC_TYPE_MAPPINGS: Dict[str, str] = {

@@ -49,7 +49,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/export_cert.py
 LEAN_CERT_SCHEMA_VERSION = "1.0-lean"
 LEAN_VERIFIED = "lean_verified"
 TRANSLATOR_VERSION = "mumei-lean-translator-ir-v1"
-BRIDGE_LEMMA_HASH = "a8fd0b115fd29a6e87190bd041dbd5ab7a09ec89af6ac5b10ef152a1a0c0f643"
+BRIDGE_LEMMA_HASH = "5f6faccb722e66782f2b11da66c2a9588c6d346bde2f8c4a163ddfceeac32522"
 MANUAL_LEMMA_REQUIRED = "manual_lemma_required"
 
 # Lake's ``sorry`` warning lines look like::
@@ -275,9 +275,13 @@ def _lean_result_contract_current(metadata: Optional[dict]) -> bool:
 
 
 def _unknown_lean_candidate(atom: dict) -> bool:
+    z3_check = atom.get("z3_check_result", "")
+    escalation = atom.get("escalation_reason", "") or ""
     return (
-        atom.get("z3_check_result") == "unknown"
+        z3_check == "unknown"
         or atom.get("z3_result_class") == "unknown"
+        or z3_check == "spurious_candidate"
+        or escalation == "spurious_candidate"
     )
 
 

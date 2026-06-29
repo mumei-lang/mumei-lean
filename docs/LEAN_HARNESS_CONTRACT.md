@@ -30,13 +30,13 @@ Field handling is fixed:
 | `manual_lemma_reason` | Stable reason a generated theorem needs human lemma work; dry runs should emit `manual_lemma_required`, not `lean_verified`. |
 | `stale_translator` | mumei-side rejection when `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract. |
 
-Current contract constants are `translator_version = mumei-lean-translator-ir-v1` and `bridge_lemma_hash = a8fd0b115fd29a6e87190bd041dbd5ab7a09ec89af6ac5b10ef152a1a0c0f643`.
+Current contract constants are `translator_version = mumei-lean-translator-ir-v1` and `bridge_lemma_hash = 5f6faccb722e66782f2b11da66c2a9588c6d346bde2f8c4a163ddfceeac32522`.
 
 ## Bridge acceptance invariant
 
 The bridge is a complement for Z3 `unknown` obligations only. A candidate can be promoted to `lean_verified` when all of these hold:
 
-1. The source atom was routed from `z3_result_class == "unknown"` or `z3_check_result == "unknown"`.
+1. The source atom was routed from `z3_result_class == "unknown"`, `z3_check_result == "unknown"`, or `escalation_reason == "spurious_candidate"`.
 2. Generated Lean builds successfully without unresolved manual-lemma placeholders.
 3. The exported atom and `lean_result_metadata` both carry the current `translator_version`.
 4. The exported atom and `lean_result_metadata` both carry the current `bridge_lemma_hash`.

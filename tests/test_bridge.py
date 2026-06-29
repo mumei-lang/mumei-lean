@@ -1138,3 +1138,31 @@ def test_main_unattributed_failure_applies_to_every_payload(
         assert all(
             a["z3_check_result"] == "unknown" for a in cert_out["atoms"]
         ), name
+
+
+def test_sort_ascending_ingest_generates_bridge_theorem(tmp_path: Path):
+    """Sort ascending atom (spurious_candidate) is ingested and rendered
+    via MumeiLean.Sort.insertion_sort_ascending_bridge."""
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "std_list_sort_ascending.proof-cert.json"
+    )
+    out_dir = tmp_path / "generated"
+    rc = main(
+        [
+            "--cert", str(fixture),
+            "--out-dir", str(out_dir),
+            "--module-prefix", "Generated",
+            "--no-build",
+        ]
+    )
+    assert rc == 0
+    lean_file = out_dir / "Generated" / "Std" / "List.lean"
+    assert lean_file.exists()
+    text = lean_file.read_text()
+    assert "theorem verified_insertion_sort_ascending_correct" in text
+    assert "MumeiLean.Sort.insertion_sort_ascending_bridge" in text
+    assert "List.insertionSort" in text
+    assert "known_witness_used=true" not in text
+    assert "sorry" not in text

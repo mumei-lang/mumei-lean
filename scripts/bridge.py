@@ -87,9 +87,13 @@ def _load_cert(path: Path) -> dict:
 
 
 def _is_unknown_lean_candidate(atom: dict) -> bool:
+    z3_check = atom.get("z3_check_result", "")
+    escalation = atom.get("escalation_reason", "") or ""
     return (
-        atom.get("z3_check_result") == "unknown"
+        z3_check == "unknown"
         or atom.get("z3_result_class") == "unknown"
+        or z3_check == "spurious_candidate"
+        or escalation == "spurious_candidate"
     )
 
 
@@ -150,6 +154,7 @@ def _candidate_metadata(
         )
     proof_strategy = select_proof_strategy(atom)
     mathlib_imports = resolve_mathlib_imports(atom)
+    manual_reason = atom.manual_lemma_reason if not getattr(atom, "has_custom_bridge_proof", False) else None
     metadata = {
         "status": status,
         "theorem_name": f"{atom.name}_correct",
@@ -164,7 +169,7 @@ def _candidate_metadata(
         "logic_fragment_tags": atom.logic_fragment_tags,
         "z3_result_class": atom.z3_result_class,
         "translator_ir": atom.translator_ir,
-        "manual_lemma_reason": atom.manual_lemma_reason,
+        "manual_lemma_reason": manual_reason,
         "proof_strategy": proof_strategy,
         "mathlib_imports": mathlib_imports,
         "known_witness_used": known_witness_used,
@@ -208,6 +213,8 @@ def _format_top_constraints(constraints: List[dict], top_n: int) -> str:
 
 
 def _has_structural_partial_translation(atom: IngestedAtom) -> bool:
+    if getattr(atom, "has_custom_bridge_proof", False):
+        return False
     body_partial = (
         atom.body_translation is not None and atom.body_translation.is_partial
     )
@@ -356,7 +363,7 @@ def _candidate_status(
         return LEAN_VERIFIED
     if _has_structural_partial_translation(atom):
         return "partial_translation"
-    if atom.manual_lemma_reason:
+    if atom.manual_lemma_reason and not getattr(atom, "has_custom_bridge_proof", False):
         return MANUAL_LEMMA_REQUIRED
     if (
         atom.translator_version != TRANSLATOR_VERSION

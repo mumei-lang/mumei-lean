@@ -103,7 +103,23 @@ class IngestedAtom:
     translator_ir: dict
 
     @property
+    def has_custom_bridge_proof(self) -> bool:
+        """True when a dedicated bridge-lemma generator handles this atom.
+
+        Custom bridge proofs bypass the body-semantics / contract-only
+        rendering entirely, so ``is_partial_translation`` should return
+        ``False`` even when the body or ensures translation is partial.
+        """
+        if "insertion_sort_ascending" in self.name:
+            ensures = self.raw_ensures.strip()
+            if "arr[i] <= arr[i + 1]" in ensures or "arr[i] <= arr[i+1]" in ensures:
+                return True
+        return False
+
+    @property
     def is_partial_translation(self) -> bool:
+        if self.has_custom_bridge_proof:
+            return False
         body_partial = (
             self.body_translation.is_partial if self.body_translation else False
         )
@@ -226,9 +242,12 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
             if not isinstance(atom, dict):
                 continue
             z3_check_result = atom.get("z3_check_result")
+            escalation_reason = atom.get("escalation_reason", "") or ""
             is_candidate = (
                 z3_check_result == "unknown"
                 or atom.get("z3_result_class") == "unknown"
+                or z3_check_result == "spurious_candidate"
+                or escalation_reason == "spurious_candidate"
             )
             if not is_candidate:
                 continue
@@ -498,6 +517,57 @@ def _finite_field_zero_eq_proof(
     )
 
 
+def _sort_ascending_proof(atom: IngestedAtom) -> Optional[str]:
+    """Detect the insertion sort ascending atom and generate a bridge-lemma proof.
+
+    Matches atoms whose name ends with ``insertion_sort_ascending`` and whose
+    ``ensures`` includes a ``forall(..., arr[i] <= arr[i + 1])`` quantifier.
+    Delegates the proof to ``MumeiLean.Sort.insertion_sort_ascending_bridge``.
+
+    See LEAN_TRANSLATOR_SPEC.md section 5.11.
+    """
+    if "insertion_sort_ascending" not in atom.name:
+        return None
+    ensures = atom.raw_ensures.strip()
+    if "arr[i] <= arr[i + 1]" not in ensures and "arr[i] <= arr[i+1]" not in ensures:
+        return None
+
+    metadata = [f"z3_check_result={atom.z3_check_result}"]
+    if atom.z3_result_class:
+        metadata.append(f"z3_result_class={atom.z3_result_class}")
+    metadata.extend(_translator_ir_metadata(atom))
+    if atom.escalation_reason:
+        metadata.append(f"escalation_reason={atom.escalation_reason}")
+    if atom.logic_fragment_tags:
+        metadata.append("logic_fragments=" + ",".join(atom.logic_fragment_tags))
+
+    traceability_comments: List[str] = []
+    if atom.escalation_reason:
+        traceability_comments.append(
+            f"-- mumei_escalation_reason: {atom.escalation_reason}"
+        )
+    if atom.logic_fragment_tags:
+        traceability_comments.append(
+            "-- mumei_logic_fragment_tags: " + ",".join(atom.logic_fragment_tags)
+        )
+    if atom.z3_result_class:
+        traceability_comments.append(f"-- mumei_z3_result_class: {atom.z3_result_class}")
+    traceability_block = "\n".join(traceability_comments)
+    if traceability_block:
+        traceability_block += "\n"
+
+    return (
+        traceability_block
+        + f"/-- Auto-generated from mumei atom `{atom.name}` "
+        f"({' ; '.join(metadata)}). -/\n"
+        f"theorem {atom.name}_correct (n : Int) (arr : List Int)\n"
+        f"    (h_req : n ≥ 0) :\n"
+        f"    let sorted := List.insertionSort (· ≤ ·) arr\n"
+        f"    sorted.length = arr.length ∧ List.Sorted (· ≤ ·) sorted := by\n"
+        f"  exact MumeiLean.Sort.insertion_sort_ascending_bridge arr\n"
+    )
+
+
 _LEAN_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
@@ -686,6 +756,10 @@ def _translator_ir_metadata(atom: IngestedAtom) -> List[str]:
 
 def render_theorem(atom: IngestedAtom) -> str:
     """Render a single Lean ``theorem`` declaration for ``atom``."""
+    sort_proof = _sort_ascending_proof(atom)
+    if sort_proof is not None:
+        return sort_proof
+
     req = atom.requires_translation
     ens = atom.ensures_translation
     body_tr = atom.body_translation

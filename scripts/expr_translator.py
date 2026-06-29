@@ -377,6 +377,7 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "unknown_obligation_lowering",
     "smart_contract_lowering",
     "rtgs_settlement_lowering",
+    "sort_ascending_bridge",
 }
 
 _FORMAL_SPEC_TYPE_MAPPINGS: Dict[str, str] = {

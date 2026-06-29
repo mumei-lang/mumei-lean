@@ -173,9 +173,9 @@ rm -rf /home/ubuntu/mumei-sort-e2e
 mkdir -p /home/ubuntu/mumei-sort-e2e
 cd /home/ubuntu/repos/mumei
 LLVM_SYS_170_PREFIX=/usr/lib/llvm-17 LIBCLANG_PATH=/usr/lib/x86_64-linux-gnu \
-  ./target/debug/mumei verify --proof-cert \
-  --output /home/ubuntu/mumei-sort-e2e/list.proof-cert.json \
-  std/list.mm
+  ./target/debug/mumei verify --proof-cert --escalate-lean \
+  --output /home/ubuntu/mumei-sort-e2e/sort_ascending.proof-cert.json \
+  tests/fixtures/sort_ascending.mm
 ```
 
 Expected mumei certificate assertions for `verified_insertion_sort_ascending`:
@@ -193,9 +193,9 @@ Then run the bridge with Lake enabled:
 cd /home/ubuntu/repos/mumei-lean
 PATH="$HOME/.elan/bin:$PATH" \
   python scripts/bridge.py \
-  --cert /home/ubuntu/mumei-sort-e2e/list.proof-cert.json \
+  --cert /home/ubuntu/mumei-sort-e2e/sort_ascending.proof-cert.json \
   --out-dir /home/ubuntu/mumei-sort-e2e/generated \
-  --lean-cert-out /home/ubuntu/mumei-sort-e2e/list.lean-cert.json \
+  --lean-cert-out /home/ubuntu/mumei-sort-e2e/sort_ascending.lean-cert.json \
   --module-prefix Generated
 ```
 
@@ -205,7 +205,7 @@ Expected bridge assertions:
 - Generated Lean contains `MumeiLean.Sort.insertion_sort_ascending_bridge`.
 - Lean cert atom `verified_insertion_sort_ascending` has `z3_check_result == "lean_verified"` and `status == "verified"`.
 - `lean_metadata.known_witness_used is False`.
-- `lean_metadata.lean_theorem_name == "Generated.Std.Std.List.verified_insertion_sort_ascending_correct"`.
+- `lean_metadata.lean_theorem_name == "Generated.Std.List.verified_insertion_sort_ascending_correct"`.
 
 Focused pytest coverage:
 

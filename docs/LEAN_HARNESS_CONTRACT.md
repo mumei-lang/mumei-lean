@@ -6,7 +6,7 @@ Mumei obligations that Z3 returns as `unknown`. It narrows the broader
 contract that callers can use to validate inputs, generated Lean, `lake build`,
 `.lean-cert.json`, and summary JSON outputs.
 
-The cross-project roadmap is the sole upper roadmap. This contract uses the canonical field names `harness_contract`, `intent_fidelity`, `artifact_paths`, `budget_policy_fingerprint`, and `lean_verified` without aliases. The docs-sync contract is pinned by `tests/test_contract_vocabulary.py` so `lean_verified`, `stale_translator`, `translator_version`, and `bridge_lemma_hash` do not drift.
+The cross-project roadmap is the sole upper roadmap. This contract uses the canonical field names `harness_contract`, `intent_fidelity`, `artifact_paths`, `budget_policy_fingerprint`, and `lean_verified` without aliases. The docs-sync and code-surface contract is pinned by `tests/test_contract_vocabulary.py` so `lean_verified`, `stale_translator`, `translator_version`, and `bridge_lemma_hash` do not drift. The test covers docs text, Python bridge code constants (`scripts/export_cert.py` `TRANSLATOR_VERSION` / `BRIDGE_LEMMA_HASH` ↔ document pinned values), and code-surface alias drift in docstrings, argparse help, and user-visible output strings across `scripts/export_cert.py`, `scripts/bridge.py`, `scripts/ingest_cert.py`, and `scripts/bridge_harness.py`.
 
 
 ## Unknown obligation bridge contract

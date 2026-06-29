@@ -7,6 +7,10 @@ on:
       - 'docs/LEAN_HARNESS_CONTRACT.md'
       - 'docs/INTEGRATION.md'
       - 'tests/test_contract_vocabulary.py'
+      - 'scripts/export_cert.py'
+      - 'scripts/bridge.py'
+      - 'scripts/ingest_cert.py'
+      - 'scripts/bridge_harness.py'
       - '.github/workflows/contract-vocabulary.yml'
   workflow_dispatch:
 

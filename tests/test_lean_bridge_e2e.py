@@ -24,6 +24,9 @@ GENERATED_CRYPTO_PRIMITIVES = (
 GENERATED_FINITE_FIELD = (
     REPO_ROOT / "generated" / "Generated" / "Std" / "Algebra" / "Finite_field.lean"
 )
+GENERATED_SORT_LIST = (
+    REPO_ROOT / "generated" / "Generated" / "Std" / "List.lean"
+)
 
 
 def _bridge_env() -> dict[str, str]:
@@ -276,7 +279,7 @@ def test_bridge_no_build_dry_run(tmp_path: Path):
     assert metadata["translator_version"] == "mumei-lean-translator-ir-v1"
     assert (
         metadata["bridge_lemma_hash"]
-        == "a8fd0b115fd29a6e87190bd041dbd5ab7a09ec89af6ac5b10ef152a1a0c0f643"
+        == "5f6faccb722e66782f2b11da66c2a9588c6d346bde2f8c4a163ddfceeac32522"
     )
     assert payload["all_verified"] is False
 
@@ -305,6 +308,53 @@ def test_bridge_scan_unknown(tmp_path: Path):
     _assert_bridge_ok(proc)
     payload = json.loads(summary.read_text())
     assert payload["total_unknown"] >= 1
+
+
+def _cleanup_generated_sort_list() -> None:
+    _cleanup_generated_file(GENERATED_SORT_LIST)
+
+
+@pytest.mark.lake_available
+def test_sort_ascending_upgrades_spurious_to_lean_verified(
+    lake_available, tmp_path: Path
+):
+    """5th live generated theorem path: insertion sort ascending preservation.
+
+    The sort atom produces ``z3_check_result == "spurious_candidate"``
+    (Z3 Array + forall quantifier), which the bridge now accepts as an
+    escalation candidate. The bridge delegates to
+    ``MumeiLean.Sort.insertion_sort_ascending_bridge`` and ``lake build``
+    discharges the proof, upgrading the atom to ``lean_verified``.
+    """
+    out_cert = tmp_path / "std_list_sort_ascending.lean-cert.json"
+    out_dir = REPO_ROOT / "generated"
+    _cleanup_generated_sort_list()
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "std_list_sort_ascending.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+
+        _assert_bridge_ok(proc)
+        assert GENERATED_SORT_LIST.exists()
+        payload = json.loads(out_cert.read_text())
+        atom = next(
+            a for a in payload["atoms"]
+            if a["name"] == "verified_insertion_sort_ascending"
+        )
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["status"] == "verified"
+        assert atom["lean_metadata"]["known_witness_used"] is False
+        assert atom["lean_metadata"]["lean_theorem_name"] == (
+            "Generated.Std.List."
+            "verified_insertion_sort_ascending_correct"
+        )
+    finally:
+        _cleanup_generated_sort_list()
 
 
 @pytest.mark.lake_available

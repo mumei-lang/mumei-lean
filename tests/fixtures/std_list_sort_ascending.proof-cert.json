@@ -1,0 +1,110 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-06-29T00:00:00Z",
+  "mumei_version": "0.6.0",
+  "z3_version": "Z3 version 4.8.12 - 64 bit",
+  "file": "std/list.mm",
+  "atoms": [
+    {
+      "name": "verified_insertion_sort_ascending",
+      "z3_check_result": "spurious_candidate",
+      "content_hash": "2b2c406f1906b9ca80ea860ee106384b10839d76f9b55b428ce7506df43fe424",
+      "status": "failed",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "std/list.mm"
+        },
+        "traceability_hash": "4ce4cbabe34f99d493f7d2f1e868c7b311f67bc4e3497cc5a1de64258b73d2f2",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 2,
+        "checked_refinements": 0,
+        "ensures_implication_checks": 2,
+        "diagnostics": []
+      },
+      "proof_hash": "88343100710b57ad96983f6e1620c268dd23242b90583cb72bb1c6fa932247b1",
+      "dependencies": [],
+      "effects": [],
+      "requires": "n >= 0 && true",
+      "ensures": "result == n && forall(i, 0, result - 1, arr[i] <= arr[i + 1])",
+      "body_expr": "{ if n <= 1 { n } else { let i = 1; while i < n invariant: i >= 1 && i <= n decreases: n - i { let key = arr[i]; let j = i; while j > 0 invariant: j >= 0 && j <= i decreases: j { if arr[j - 1] > key { arr[j] = arr[j - 1]; j = j - 1 } else { j = 0 } }; arr[j] = key; i = i + 1 }; n } }",
+      "body_summary": "{ if n <= 1 { n } else { let i = 1; while i < n invariant: i >= 1 && i <= n decreases: n - i { let key = arr[i]; let j = i; while j > 0 invariant: j >= 0 && j <= i decreases: j { if arr[j - 1] > key { arr[j] = arr[j - 1]; j = j - 1 } else { j = 0 } }; arr[j] = key; i = i + 1 }; n } }",
+      "z3_result_class": "sat",
+      "escalation_reason": "spurious_candidate",
+      "logic_fragment_tag": "quantifier_alternation",
+      "logic_fragment_tags": [
+        "recursive_invariant",
+        "trigger_sensitive_quantifier"
+      ],
+      "translator_version": "mumei-lean-translator-ir-v1",
+      "binder_mapping": {
+        "result": "result",
+        "n": "n"
+      },
+      "bridge_lemma_hash": "5f6faccb722e66782f2b11da66c2a9588c6d346bde2f8c4a163ddfceeac32522",
+      "translator_ir": {
+        "sort": "loop_invariant",
+        "binders": [
+          {
+            "mumei_name": "n",
+            "lean_name": "n",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(n >= 0 && true) -> (result == n && forall(i, 0, result - 1, arr[i] <= arr[i + 1]))",
+        "provenance_span": {
+          "file": "std/list.mm",
+          "line": 470,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "loop_invariant_recursion",
+          "refinement_predicate_lowering",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [
+          "refinement_predicate_lowering: Quantifiers and refinement predicates are lowered to Lean dependent types."
+        ],
+        "proof_trace_hints": [
+          "carry subtype predicate witnesses through quantifier lowering"
+        ],
+        "requires_bridge_lemmas": [
+          "mumei_subtype_predicate_bridge"
+        ]
+      },
+      "symbol_provenance": [
+        {
+          "symbol_name": "forall",
+          "source": "uninterpreted_function",
+          "location": null
+        }
+      ],
+      "solver_process_metadata": {
+        "task_id": null,
+        "cache_key": "62c508f0133d878556dc4258958fcf10570053e3146eb40a688c1c4da7d294b3",
+        "generation_id": "",
+        "solver_config_fingerprint": "4eb8092c0cb08dd4c8d6494173a480c7fae3ce88feef61311d32f80092aad8dc",
+        "timeout_ms": 10000,
+        "cancel_reason": null,
+        "process_start_time": "",
+        "process_end_time": "2026-06-29T22:22:59Z"
+      }
+    }
+  ],
+  "certificate_hash": "fixture",
+  "all_verified": false
+}

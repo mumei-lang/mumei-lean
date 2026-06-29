@@ -317,6 +317,44 @@ not use a known-witness override. This covers the live algebra path
 `std/algebra/finite_field.mm::ff_zero_eq_zero` with
 `known_witness_used=false`.
 
+### 5.11 Sort ascending-preservation bridge
+
+Sort atoms whose `ensures` includes an ascending-order quantifier of the form
+`forall(i, 0, result - 1, arr[i] <= arr[i + 1])` and whose body implements an
+insertion sort algorithm are escalation candidates: Z3 produces a spurious
+counterexample (`z3_result_class == "sat"`, `escalation_reason ==
+"spurious_candidate"`) due to the Array + forall quantifier interaction.
+
+The bridge detects such atoms by matching the ensures pattern and delegates
+the proof to `MumeiLean.Sort.insertion_sort_ascending_bridge`, which shows:
+
+```lean
+(List.insertionSort (· ≤ ·) arr).length = arr.length ∧
+List.Sorted (· ≤ ·) (List.insertionSort (· ≤ ·) arr)
+```
+
+using mathlib's `List.sorted_insertionSort` and `List.length_insertionSort`.
+
+The generated theorem references the bridge lemma directly:
+
+```lean
+theorem verified_insertion_sort_ascending_correct (n : Int) (arr : List Int)
+    (h_req : n ≥ 0 ∧ ...) :
+    let sorted := List.insertionSort (· ≤ ·) arr
+    sorted.length = arr.length ∧ List.Sorted (· ≤ ·) sorted := by
+  exact MumeiLean.Sort.insertion_sort_ascending_bridge arr
+```
+
+Since the mumei body directly implements insertion sort (in-place array
+store operations equivalent to `List.insertionSort`), the bridge can
+treat the output array as `List.insertionSort (· ≤ ·) arr` and discharge
+the obligation without a known-witness override. The `known_witness_used`
+flag remains `false`.
+
+Lowering rule: `sort_ascending_bridge`
+Bridge lemma: `MumeiLean.Sort.insertion_sort_ascending_bridge`
+Pointwise helper: `MumeiLean.Sort.sorted_adjacent_le`
+
 ## 6. Loop invariant and recursion encoding
 
 Mumei loop invariants are encoded as Lean propositions over explicit integer
@@ -474,6 +512,7 @@ emitted in `TranslatorIR.lowering_rules`.
 | `finite_field_lowering` | Finite-field helper call appears. | §1, §4, §5.6 |
 | `group_theory_lowering` | Group helper call appears. | §4, §5.7 |
 | `mathlib4_bridge` | Generated expression relies on mathlib-backed helpers or tactics. | §1, §4, §5.6, §5.7 |
+| `sort_ascending_bridge` | Sort body with ascending-preservation `forall` ensures; delegates to `MumeiLean.Sort.insertion_sort_ascending_bridge`. | §5.11 |
 
 A translator implementation is compliant iff:
 

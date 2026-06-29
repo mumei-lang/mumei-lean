@@ -86,20 +86,32 @@ def _paragraphs(text: str) -> list[tuple[int, str]]:
 
 
 def _extract_module_constants(path: Path) -> dict[str, str]:
-    """Extract top-level string constant assignments from a Python file via AST."""
+    """Extract top-level string constant assignments from a Python file via AST.
+
+    Handles both plain ``X = "..."`` and annotated ``X: str = "..."``.
+    """
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(path))
     constants: dict[str, str] = {}
     for node in ast.iter_child_nodes(tree):
-        if not isinstance(node, ast.Assign):
-            continue
-        if len(node.targets) != 1:
-            continue
-        target = node.targets[0]
-        if not isinstance(target, ast.Name):
-            continue
-        if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
-            constants[target.id] = node.value.value
+        if isinstance(node, ast.Assign):
+            if len(node.targets) != 1:
+                continue
+            target = node.targets[0]
+            if not isinstance(target, ast.Name):
+                continue
+            if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+                constants[target.id] = node.value.value
+        elif isinstance(node, ast.AnnAssign):
+            target = node.target
+            if not isinstance(target, ast.Name):
+                continue
+            if (
+                node.value is not None
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            ):
+                constants[target.id] = node.value.value
     return constants
 
 
@@ -289,6 +301,19 @@ def test_bridge_code_surfaces_no_lean_vocabulary_alias_drift() -> None:
     Only key-like contexts are checked to avoid false positives on ordinary
     English prose (e.g. "the bridge hash is computed from ...").
     """
+    # Precompile word-boundary patterns for all forbidden aliases.
+    alias_patterns: list[tuple[str, re.Pattern[str]]] = [
+        (
+            alias,
+            re.compile(
+                rf"(?<![A-Za-z0-9_]){re.escape(alias)}(?![A-Za-z0-9_])",
+                re.IGNORECASE,
+            ),
+        )
+        for aliases in LEAN_FORBIDDEN_ALIASES.values()
+        for alias in aliases
+    ]
+
     failures: list[str] = []
     for script_path in BRIDGE_SCRIPTS:
         if not script_path.exists():
@@ -297,19 +322,14 @@ def test_bridge_code_surfaces_no_lean_vocabulary_alias_drift() -> None:
         rel = script_path.relative_to(REPO_ROOT)
         surfaces = _collect_code_surface_strings(script_path)
         for lineno, text in surfaces:
-            for _canonical, aliases in LEAN_FORBIDDEN_ALIASES.items():
-                for alias in aliases:
-                    pattern = re.compile(
-                        rf"(?<![A-Za-z0-9_]){re.escape(alias)}(?![A-Za-z0-9_])",
-                        re.IGNORECASE,
-                    )
-                    for line in text.splitlines():
-                        if not pattern.search(line):
-                            continue
-                        if _is_key_context(line, alias):
-                            failures.append(
-                                f"{rel}:{lineno}: forbidden alias `{alias}` "
-                                f"in key-like context"
-                            )
-                            break
+            for alias, pattern in alias_patterns:
+                for line in text.splitlines():
+                    if not pattern.search(line):
+                        continue
+                    if _is_key_context(line, alias):
+                        failures.append(
+                            f"{rel}:{lineno}: forbidden alias `{alias}` "
+                            f"in key-like context"
+                        )
+                        break
     assert failures == [], "\n".join(failures)

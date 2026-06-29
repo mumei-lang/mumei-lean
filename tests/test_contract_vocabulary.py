@@ -263,7 +263,7 @@ def test_code_constants_match_doc_pinned_values() -> None:
         failures.append("export_cert.py is missing TRANSLATOR_VERSION constant")
     if doc_tv is None:
         failures.append("LEAN_HARNESS_CONTRACT.md is missing translator_version pinned value")
-    if code_tv and doc_tv and code_tv != doc_tv:
+    if code_tv is not None and doc_tv is not None and code_tv != doc_tv:
         failures.append(
             f"TRANSLATOR_VERSION drift: code={code_tv!r} != doc={doc_tv!r}"
         )
@@ -274,7 +274,7 @@ def test_code_constants_match_doc_pinned_values() -> None:
         failures.append("export_cert.py is missing BRIDGE_LEMMA_HASH constant")
     if doc_bh is None:
         failures.append("LEAN_HARNESS_CONTRACT.md is missing bridge_lemma_hash pinned value")
-    if code_bh and doc_bh and code_bh != doc_bh:
+    if code_bh is not None and doc_bh is not None and code_bh != doc_bh:
         failures.append(
             f"BRIDGE_LEMMA_HASH drift: code={code_bh!r} != doc={doc_bh!r}"
         )

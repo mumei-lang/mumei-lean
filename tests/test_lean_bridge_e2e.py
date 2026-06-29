@@ -21,6 +21,9 @@ GENERATED_PATTERNS = (
 GENERATED_CRYPTO_PRIMITIVES = (
     REPO_ROOT / "generated" / "Generated" / "Std" / "Crypto" / "Primitives.lean"
 )
+GENERATED_FINITE_FIELD = (
+    REPO_ROOT / "generated" / "Generated" / "Std" / "Algebra" / "Finite_field.lean"
+)
 
 
 def _bridge_env() -> dict[str, str]:
@@ -85,6 +88,10 @@ def _cleanup_generated_patterns() -> None:
 
 def _cleanup_generated_crypto_primitives() -> None:
     _cleanup_generated_file(GENERATED_CRYPTO_PRIMITIVES)
+
+
+def _cleanup_generated_finite_field() -> None:
+    _cleanup_generated_file(GENERATED_FINITE_FIELD)
 
 
 @pytest.mark.lake_available
@@ -205,6 +212,42 @@ def test_crypto_constant_time_eq_upgrades_unknown_to_lean_verified(
         )
     finally:
         _cleanup_generated_crypto_primitives()
+
+
+@pytest.mark.lake_available
+def test_finite_field_zero_eq_upgrades_unknown_to_lean_verified(
+    lake_available, tmp_path: Path
+):
+    out_cert = tmp_path / "std_algebra_finite_field.lean-cert.json"
+    out_dir = REPO_ROOT / "generated"
+    _cleanup_generated_finite_field()
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(
+                FIXTURES
+                / "std_algebra_finite_field_ff_zero_eq_zero.proof-cert.json"
+            ),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+
+        _assert_bridge_ok(proc)
+        assert GENERATED_FINITE_FIELD.exists()
+        payload = json.loads(out_cert.read_text())
+        atom = next(
+            a for a in payload["atoms"] if a["name"] == "ff_zero_eq_zero"
+        )
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["status"] == "verified"
+        assert atom["lean_metadata"]["known_witness_used"] is False
+        assert atom["lean_metadata"]["lean_theorem_name"] == (
+            "Generated.Std.Algebra.Finite_field.ff_zero_eq_zero_correct"
+        )
+    finally:
+        _cleanup_generated_finite_field()
 
 
 def test_bridge_no_build_dry_run(tmp_path: Path):

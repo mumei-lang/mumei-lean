@@ -43,6 +43,7 @@ from typing import Any, Iterable, List, Optional
 
 try:
     # When invoked as ``python -m scripts.ingest_cert`` or via pytest.
+    from .proofcert import Z3CheckResult
     from .expr_translator import (
         BRIDGE_LEMMA_HASH,
         TRANSLATOR_VERSION,
@@ -54,6 +55,7 @@ try:
     from .known_witnesses import KNOWN_LEAN_WITNESSES
 except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py``
     sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from proofcert import Z3CheckResult  # type: ignore
     from expr_translator import (  # type: ignore
         BRIDGE_LEMMA_HASH,
         TRANSLATOR_VERSION,
@@ -244,7 +246,7 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
             z3_check_result = atom.get("z3_check_result")
             escalation_reason = atom.get("escalation_reason", "") or ""
             is_candidate = (
-                z3_check_result == "unknown"
+                z3_check_result == Z3CheckResult.UNKNOWN.value
                 or atom.get("z3_result_class") == "unknown"
                 or z3_check_result == "spurious_candidate"
                 or escalation_reason == "spurious_candidate"

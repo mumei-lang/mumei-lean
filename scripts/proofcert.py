@@ -11,6 +11,9 @@ class Z3CheckResult(str, Enum):
     UNKNOWN = "unknown"
     SKIPPED = "skipped"
     LEAN_VERIFIED = "lean_verified"
+    TIMEOUT = "timeout"
+    RESOURCE_LIMIT = "resource_limit"
+    SPURIOUS_CANDIDATE = "spurious_candidate"
 
 
 class VerificationStatus(str, Enum):

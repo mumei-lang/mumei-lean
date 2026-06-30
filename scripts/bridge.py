@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 try:
+    from .proofcert import Z3CheckResult
     from .ingest_cert import (
         IngestedAtom,
         collect_unknown_atoms,
@@ -56,6 +57,7 @@ try:
     from .known_witnesses import KNOWN_LEAN_WITNESSES
 except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
     sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from proofcert import Z3CheckResult  # type: ignore
     from ingest_cert import (  # type: ignore
         IngestedAtom,
         collect_unknown_atoms,
@@ -90,7 +92,7 @@ def _is_unknown_lean_candidate(atom: dict) -> bool:
     z3_check = atom.get("z3_check_result", "")
     escalation = atom.get("escalation_reason", "") or ""
     return (
-        z3_check == "unknown"
+        z3_check == Z3CheckResult.UNKNOWN.value
         or atom.get("z3_result_class") == "unknown"
         or z3_check == "spurious_candidate"
         or escalation == "spurious_candidate"

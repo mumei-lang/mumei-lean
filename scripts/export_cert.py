@@ -34,12 +34,14 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 try:
+    from .proofcert import Z3CheckResult, VerificationStatus
     from .known_witnesses import (
         KNOWN_LEAN_WITNESSES,
         known_atom_from_generated_theorem,
         known_witness_proof_path,
     )
 except ImportError:  # pragma: no cover - direct ``python scripts/export_cert.py``
+    from proofcert import Z3CheckResult, VerificationStatus  # type: ignore
     from known_witnesses import (  # type: ignore
         KNOWN_LEAN_WITNESSES,
         known_atom_from_generated_theorem,
@@ -278,7 +280,7 @@ def _unknown_lean_candidate(atom: dict) -> bool:
     z3_check = atom.get("z3_check_result", "")
     escalation = atom.get("escalation_reason", "") or ""
     return (
-        z3_check == "unknown"
+        z3_check == Z3CheckResult.UNKNOWN.value
         or atom.get("z3_result_class") == "unknown"
         or z3_check == "spurious_candidate"
         or escalation == "spurious_candidate"
@@ -411,7 +413,7 @@ def _upgrade_atom_list(
         )
         if proved:
             atom["z3_check_result"] = LEAN_VERIFIED
-            atom["status"] = "verified"
+            atom["status"] = VerificationStatus.VERIFIED.value
             atom["translator_version"] = TRANSLATOR_VERSION
             atom["bridge_lemma_hash"] = BRIDGE_LEMMA_HASH
             metadata = _metadata_for_atom(
@@ -535,7 +537,7 @@ def upgrade_certificate(
                 1
                 for atom in out["candidates"]
                 if isinstance(atom, dict)
-                and atom.get("z3_check_result") == LEAN_VERIFIED
+                and atom.get("z3_check_result") == Z3CheckResult.LEAN_VERIFIED.value
             )
     else:
         _upgrade_single_certificate(

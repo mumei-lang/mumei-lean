@@ -81,46 +81,23 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
     )
     from known_witnesses import KNOWN_LEAN_WITNESSES  # type: ignore
 
+from bridge_metrics import (  # type: ignore
+    _aggregate_metrics,
+    _empty_metric_bucket,
+    _metric_bucket_success_rate,
+    _summary_details,
+)
+from bridge_scan import (  # type: ignore
+    _is_unknown_lean_candidate,
+    _load_cert,
+    _scan_unknown_certs,
+)
+from bridge_strategy import (  # type: ignore
+    resolve_mathlib_imports,
+    select_proof_strategy,
+)
+
 AtomKey = Tuple[str, str]
-
-
-def _load_cert(path: Path) -> dict:
-    return json.loads(path.read_text())
-
-
-def _is_unknown_lean_candidate(atom: dict) -> bool:
-    z3_check = atom.get("z3_check_result", "")
-    escalation = atom.get("escalation_reason", "") or ""
-    return (
-        z3_check == Z3CheckResult.UNKNOWN.value
-        or atom.get("z3_result_class") == "unknown"
-        or z3_check == "spurious_candidate"
-        or escalation == "spurious_candidate"
-    )
-
-
-def _scan_unknown_certs(std_certs_dir: Path) -> List[Tuple[Path, dict]]:
-    """Return a list of ``(path, certificate_dict)`` for each per-module
-    cert under ``std_certs_dir`` that contains at least one ``unknown``
-    atom.
-    """
-    found: List[Tuple[Path, dict]] = []
-    if not std_certs_dir.exists():
-        return found
-    for path in sorted(std_certs_dir.rglob("*.json")):
-        try:
-            payload = json.loads(path.read_text())
-        except (OSError, json.JSONDecodeError):
-            continue
-        atoms = payload.get("atoms")
-        if not isinstance(atoms, list):
-            continue
-        if any(
-            isinstance(a, dict) and _is_unknown_lean_candidate(a)
-            for a in atoms
-        ):
-            found.append((path, payload))
-    return found
 
 
 def _candidate_metadata(
@@ -225,111 +202,6 @@ def _has_structural_partial_translation(atom: IngestedAtom) -> bool:
         or atom.ensures_translation.is_partial
         or body_partial
     )
-
-
-def select_proof_strategy(atom: IngestedAtom) -> dict:
-    """Select an automated proof strategy based on TranslatorIR metadata.
-
-    Examines the atom's ``lowering_rules`` and ``requires_bridge_lemmas``
-    to choose which Lean tactic or proof pattern to attempt first. This
-    enables the bridge to emit targeted ``by`` blocks rather than falling
-    back to the generic ``mumei_arith`` cascade for every obligation.
-
-    Returns a dict with:
-    - ``strategy``: name of the proof strategy
-    - ``tactics``: ordered list of Lean tactics to try
-    - ``imports``: additional Lean imports required
-    - ``hints``: human-readable explanation
-    """
-    ir = atom.translator_ir
-    if not isinstance(ir, dict):
-        return {
-            "strategy": "default",
-            "tactics": ["mumei_arith"],
-            "imports": [],
-            "hints": "no TranslatorIR metadata; using default cascade",
-        }
-    rules = ir.get("lowering_rules", [])
-    hints_list = ir.get("proof_trace_hints", [])
-
-    tactics: List[str] = []
-    imports: List[str] = []
-    strategy = "default"
-
-    if "finite_field_lowering" in rules:
-        strategy = "finite_field"
-        tactics.extend(["unfold MumeiLean.Algebra.mumei_ff_in_field",
-                         "constructor", "exact Int.emod_nonneg _ _",
-                         "exact Int.emod_lt_of_pos _ _"])
-        imports.append("MumeiLean.Algebra")
-
-    if "group_theory_lowering" in rules:
-        strategy = "group_theory" if strategy == "default" else f"{strategy}+group"
-        tactics.extend(["simp [mul_assoc]", "ring"])
-        imports.append("MumeiLean.Algebra")
-
-    if "crypto_primitive_lowering" in rules:
-        strategy = "crypto" if strategy == "default" else f"{strategy}+crypto"
-        tactics.extend(["unfold MumeiLean.Crypto.hash",
-                         "unfold MumeiLean.Crypto.encrypt",
-                         "unfold MumeiLean.Crypto.decrypt",
-                         "ring"])
-        imports.append("MumeiLean.Crypto")
-
-    if "quantifier_skolemize_lowering" in rules:
-        strategy = "skolemize" if strategy == "default" else f"{strategy}+skolemize"
-        tactics.extend(["rcases", "exact"])
-        imports.append("MumeiLean.Quantifiers")
-
-    if "implication_lowering" in rules:
-        strategy = "implication" if strategy == "default" else f"{strategy}+implication"
-        tactics.extend(["intro", "exact"])
-        imports.append("MumeiLean.Quantifiers")
-
-    if "higher_order_predicate_lowering" in rules:
-        strategy = "higher_order" if strategy == "default" else f"{strategy}+higher_order"
-        tactics.extend(["intro", "apply", "exact"])
-        imports.append("MumeiLean.AdvancedPatterns")
-
-    if not tactics:
-        tactics = ["mumei_arith"]
-
-    return {
-        "strategy": strategy,
-        "tactics": tactics,
-        "imports": sorted(set(imports)),
-        "hints": "; ".join(hints_list) if hints_list else "using default cascade",
-    }
-
-
-def resolve_mathlib_imports(atom: IngestedAtom) -> List[str]:
-    """Determine which mathlib4 modules should be imported based on the atom's
-    TranslatorIR lowering rules.
-
-    Returns a list of Lean ``import`` strings. This allows ``ingest_cert.py``
-    to emit the correct imports at the top of generated Lean files without
-    requiring manual specification.
-    """
-    ir = atom.translator_ir
-    if not isinstance(ir, dict):
-        return []
-    rules = ir.get("lowering_rules", [])
-    imports: List[str] = []
-    if "finite_field_lowering" in rules:
-        imports.extend([
-            "import Mathlib.Data.ZMod.Basic",
-            "import Mathlib.Data.Int.ModEq",
-        ])
-    if "group_theory_lowering" in rules:
-        imports.append("import Mathlib.Algebra.Group.Basic")
-    if "crypto_primitive_lowering" in rules:
-        imports.extend([
-            "import Mathlib.Data.Int.ModEq",
-            "import Mathlib.Data.Nat.Totient",
-        ])
-    if "integer_overflow_bridge" in rules:
-        imports.append("import Mathlib.Tactic")
-    return sorted(set(imports))
 
 
 def _atom_key(atom: IngestedAtom) -> AtomKey:
@@ -453,146 +325,6 @@ def _remove_stale_generated_modules(
         target = out_dir / module_to_path(module_key, module_prefix)
         if target.exists():
             target.unlink()
-
-
-def _empty_metric_bucket() -> dict:
-    return {
-        "attempts": 0,
-        "lean_successes": 0,
-        "partial_translation": 0,
-        MANUAL_LEMMA_REQUIRED: 0,
-        "stale_translator": 0,
-        "success_rate": 0.0,
-    }
-
-
-def _metric_bucket_success_rate(bucket: dict) -> None:
-    attempts = bucket["attempts"]
-    bucket["success_rate"] = (
-        round(bucket["lean_successes"] / attempts, 4) if attempts else 0.0
-    )
-
-
-def _aggregate_metrics(
-    metadata_by_payload: List[Dict[str, dict]],
-    atoms_per_payload: List[List[IngestedAtom]],
-) -> dict:
-    metrics = {
-        "escalation_attempts": 0,
-        "lean_successes": 0,
-        "partial_translation": 0,
-        MANUAL_LEMMA_REQUIRED: 0,
-        "stale_translator": 0,
-        "by_atom": {},
-        "by_logic_fragment": {},
-        "by_failure_reason": {},
-        "by_z3_result_class": {},
-        "low_success_categories": [],
-    }
-    for metadata, atoms in zip(metadata_by_payload, atoms_per_payload):
-        for atom in atoms:
-            status = metadata.get(atom.name, {}).get("status", MANUAL_LEMMA_REQUIRED)
-            if status == "manual_required":
-                status = MANUAL_LEMMA_REQUIRED
-            metrics["escalation_attempts"] += 1
-            if status == LEAN_VERIFIED:
-                metrics["lean_successes"] += 1
-            elif status == "partial_translation":
-                metrics["partial_translation"] += 1
-                if atom.manual_lemma_reason:
-                    metrics[MANUAL_LEMMA_REQUIRED] += 1
-            elif status == "stale_translator":
-                metrics["stale_translator"] += 1
-            else:
-                metrics[MANUAL_LEMMA_REQUIRED] += 1
-            metrics["by_atom"][atom.name] = {
-                "status": status,
-                "failure_reason": atom.escalation_reason,
-                "logic_fragment_tags": atom.logic_fragment_tags,
-                "z3_result_class": atom.z3_result_class,
-                "translator_version": atom.translator_version,
-                "bridge_lemma_hash": atom.bridge_lemma_hash,
-                "manual_lemma_reason": atom.manual_lemma_reason,
-                "known_witness_used": bool(metadata.get(atom.name, {}).get("known_witness_used")),
-                "lean_module": metadata.get(atom.name, {}).get("lean_module"),
-                "lean_theorem_name": metadata.get(atom.name, {}).get("lean_theorem_name"),
-            }
-            reason = atom.escalation_reason or "unknown"
-            reason_bucket = metrics["by_failure_reason"].setdefault(
-                reason,
-                _empty_metric_bucket(),
-            )
-            reason_bucket["attempts"] += 1
-            reason_bucket_key = (
-                "lean_successes" if status == LEAN_VERIFIED else status
-            )
-            reason_bucket[reason_bucket_key] += 1
-            for tag in atom.logic_fragment_tags or ["untagged"]:
-                tag_bucket = metrics["by_logic_fragment"].setdefault(
-                    tag,
-                    _empty_metric_bucket(),
-                )
-                tag_bucket["attempts"] += 1
-                tag_bucket_key = (
-                    "lean_successes" if status == LEAN_VERIFIED else status
-                )
-                tag_bucket[tag_bucket_key] += 1
-            class_bucket = metrics["by_z3_result_class"].setdefault(
-                atom.z3_result_class or atom.z3_check_result,
-                _empty_metric_bucket(),
-            )
-            class_bucket["attempts"] += 1
-            class_bucket_key = (
-                "lean_successes" if status == LEAN_VERIFIED else status
-            )
-            class_bucket[class_bucket_key] += 1
-    for grouping_name in (
-        "by_failure_reason",
-        "by_logic_fragment",
-        "by_z3_result_class",
-    ):
-        for key, bucket in metrics[grouping_name].items():
-            _metric_bucket_success_rate(bucket)
-            if bucket["attempts"] >= 1 and bucket["success_rate"] < 0.7:
-                metrics["low_success_categories"].append(
-                    {"group": grouping_name, "category": key, **bucket}
-                )
-    return metrics
-
-
-def _summary_details(
-    payloads: List[Tuple[Path, dict]],
-    metadata_by_payload: List[Dict[str, dict]],
-    atoms_per_payload: List[List[IngestedAtom]],
-) -> List[dict]:
-    details: List[dict] = []
-    for (src_path, _payload), metadata, atoms in zip(
-        payloads,
-        metadata_by_payload,
-        atoms_per_payload,
-    ):
-        proved = sum(
-            1
-            for atom in atoms
-            if metadata.get(atom.name, {}).get("status") == LEAN_VERIFIED
-        )
-        known_witness_used = sum(
-            1
-            for atom in atoms
-            if metadata.get(atom.name, {}).get("known_witness_used")
-        )
-        details.append(
-            {
-                "source": str(src_path),
-                "candidate_count": len(atoms),
-                "lean_fallback": {
-                    "attempted": len(atoms),
-                    "proved": proved,
-                    "known_witness_used": known_witness_used,
-                },
-            }
-        )
-    return details
 
 
 def _run_lake_build(repo_dir: Path, log_path: Path) -> int:

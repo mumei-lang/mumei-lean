@@ -55,6 +55,18 @@ try:
         bridge_stage_metadata,
     )
     from .known_witnesses import KNOWN_LEAN_WITNESSES
+    from .bridge_scan import (
+        _is_unknown_lean_candidate,
+        _load_cert,
+        _scan_unknown_certs,
+    )
+    from .bridge_strategy import resolve_mathlib_imports, select_proof_strategy
+    from .bridge_metrics import (
+        _aggregate_metrics,
+        _empty_metric_bucket,
+        _metric_bucket_success_rate,
+        _summary_details,
+    )
 except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from proofcert import Z3CheckResult  # type: ignore
@@ -80,22 +92,21 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
         bridge_stage_metadata,
     )
     from known_witnesses import KNOWN_LEAN_WITNESSES  # type: ignore
-
-from bridge_metrics import (  # type: ignore
-    _aggregate_metrics,
-    _empty_metric_bucket,
-    _metric_bucket_success_rate,
-    _summary_details,
-)
-from bridge_scan import (  # type: ignore
-    _is_unknown_lean_candidate,
-    _load_cert,
-    _scan_unknown_certs,
-)
-from bridge_strategy import (  # type: ignore
-    resolve_mathlib_imports,
-    select_proof_strategy,
-)
+    from bridge_scan import (  # type: ignore
+        _is_unknown_lean_candidate,
+        _load_cert,
+        _scan_unknown_certs,
+    )
+    from bridge_strategy import (  # type: ignore
+        resolve_mathlib_imports,
+        select_proof_strategy,
+    )
+    from bridge_metrics import (  # type: ignore
+        _aggregate_metrics,
+        _empty_metric_bucket,
+        _metric_bucket_success_rate,
+        _summary_details,
+    )
 
 AtomKey = Tuple[str, str]
 

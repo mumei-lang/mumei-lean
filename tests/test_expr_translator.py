@@ -544,6 +544,21 @@ def test_translator_ir_serializes_guard_trace_metadata():
     assert payload["guard_trace_expected_outcome"] == "none"
 
 
+def test_normalize_guard_trace_translator_ir_without_expected_outcome_is_unchanged():
+    translator_ir = {
+        "sort": "contract_obligation",
+        "guard_trace": {"ops": ["lock", "externalCall", "unlock"]},
+        "lowering_rules": ["smart_contract_guard_trace_lowering"],
+    }
+
+    normalized = normalize_guard_trace_translator_ir(translator_ir)
+
+    assert normalized is translator_ir
+    assert "obligation_class" not in normalized
+    assert "theorem_goal" not in normalized
+    assert "guard_trace_expected_outcome" not in normalized
+
+
 def test_nested_quantifier_with_finite_field_and_group_metadata():
     result = translate_contract(
         "forall(x, 0, p, exists(y, 0, p, ff_in_field(ff_add(x, y, p), p) && "

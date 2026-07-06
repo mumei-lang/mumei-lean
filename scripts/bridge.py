@@ -326,9 +326,9 @@ def _remove_stale_generated_modules(
     *,
     out_dir: Path,
     module_prefix: str,
-    known_witness_proved: Set[AtomKey],
     generated_atoms: List[IngestedAtom],
 ) -> None:
+    """Prune stale files only inside the bridge-generated module tree."""
     generated_module_paths = {
         module_to_path(atom.module_key, module_prefix) for atom in generated_atoms
     }
@@ -660,7 +660,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     _remove_stale_generated_modules(
         out_dir=args.out_dir,
         module_prefix=args.module_prefix,
-        known_witness_proved=known_witness_proved,
         generated_atoms=all_atoms,
     )
     write_modules(all_atoms, args.out_dir, args.module_prefix)
@@ -668,7 +667,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     _remove_stale_generated_modules(
         out_dir=args.repo_dir / "generated",
         module_prefix=args.module_prefix,
-        known_witness_proved=known_witness_proved,
         generated_atoms=all_atoms,
     )
 

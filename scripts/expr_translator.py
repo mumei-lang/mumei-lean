@@ -968,10 +968,17 @@ def normalize_guard_trace_translator_ir(translator_ir: Dict[str, Any]) -> Dict[s
     ops = guard_trace.get("ops")
     if not isinstance(ops, list) or not all(isinstance(op, str) for op in ops):
         return translator_ir
+    expected_outcome = guard_trace.get("expected_outcome")
+    if expected_outcome is None:
+        return translator_ir
+    try:
+        lean_expected_outcome = guard_trace_expected_to_lean(expected_outcome)
+    except ValueError:
+        return translator_ir
     normalized = dict(translator_ir)
     normalized_guard_trace = {
         "ops": [str(op) for op in ops],
-        "expected_outcome": guard_trace.get("expected_outcome"),
+        "expected_outcome": expected_outcome,
     }
     normalized["guard_trace"] = normalized_guard_trace
     normalized["guard_trace_ops"] = list(normalized_guard_trace["ops"])
@@ -979,7 +986,7 @@ def normalize_guard_trace_translator_ir(translator_ir: Dict[str, Any]) -> Dict[s
     normalized["theorem_goal"] = (
         "runGuard GuardState.Unlocked "
         f"[{', '.join(f'GuardOp.{op}' for op in normalized_guard_trace['ops'])}] = "
-        f"{guard_trace_expected_to_lean(normalized_guard_trace['expected_outcome'])}"
+        f"{lean_expected_outcome}"
     )
     normalized["obligation_class"] = OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE
     lowering_rules = normalized.setdefault("lowering_rules", [])
@@ -996,14 +1003,21 @@ def normalize_guard_trace_translator_ir(translator_ir: Dict[str, Any]) -> Dict[s
     return normalized
 
 
-def render_guard_trace_theorem(atom_name: str, guard_trace: Dict[str, Any]) -> str:
+def render_guard_trace_theorem(
+    atom_name: str,
+    guard_trace: Dict[str, Any],
+    provenance_prefix: str = "",
+) -> str:
     ops = guard_trace.get("ops")
     if not isinstance(ops, list) or not all(isinstance(op, str) for op in ops):
         raise ValueError("guard trace must include an ordered list of op strings")
     theorem_name = f"{_sanitize_lean_identifier(atom_name)}_correct"
     ops_expr = ", ".join(f"GuardOp.{op}" for op in ops)
-    expected = guard_trace_expected_to_lean(guard_trace.get("expected_outcome"))
-    return "\n".join(
+    expected_outcome = guard_trace.get("expected_outcome")
+    if expected_outcome is None:
+        raise ValueError("guard trace must include a recognized expected_outcome")
+    expected = guard_trace_expected_to_lean(expected_outcome)
+    return provenance_prefix + "\n".join(
         [
             f"theorem {theorem_name} :",
             f"    runGuard GuardState.Unlocked [{ops_expr}] = {expected} := by",

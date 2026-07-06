@@ -564,35 +564,9 @@ def _sort_ascending_proof(atom: IngestedAtom) -> Optional[str]:
     if "arr[i] <= arr[i + 1]" not in ensures and "arr[i] <= arr[i+1]" not in ensures:
         return None
 
-    metadata = [f"z3_check_result={atom.z3_check_result}"]
-    if atom.z3_result_class:
-        metadata.append(f"z3_result_class={atom.z3_result_class}")
-    metadata.extend(_translator_ir_metadata(atom))
-    if atom.escalation_reason:
-        metadata.append(f"escalation_reason={atom.escalation_reason}")
-    if atom.logic_fragment_tags:
-        metadata.append("logic_fragments=" + ",".join(atom.logic_fragment_tags))
-
-    traceability_comments: List[str] = []
-    if atom.escalation_reason:
-        traceability_comments.append(
-            f"-- mumei_escalation_reason: {atom.escalation_reason}"
-        )
-    if atom.logic_fragment_tags:
-        traceability_comments.append(
-            "-- mumei_logic_fragment_tags: " + ",".join(atom.logic_fragment_tags)
-        )
-    if atom.z3_result_class:
-        traceability_comments.append(f"-- mumei_z3_result_class: {atom.z3_result_class}")
-    traceability_block = "\n".join(traceability_comments)
-    if traceability_block:
-        traceability_block += "\n"
-
     return (
-        traceability_block
-        + f"/-- Auto-generated from mumei atom `{atom.name}` "
-        f"({' ; '.join(metadata)}). -/\n"
-        f"theorem {_lean_theorem_name(atom.name)} (n : Int) (arr : List Int)\n"
+        _theorem_preamble(atom)
+        + f"theorem {_lean_theorem_name(atom.name)} (n : Int) (arr : List Int)\n"
         f"    (h_req : n ≥ 0) :\n"
         f"    let sorted := List.insertionSort (· ≤ ·) arr\n"
         f"    sorted.length = arr.length ∧ List.Sorted (· ≤ ·) sorted := by\n"
@@ -786,6 +760,38 @@ def _translator_ir_metadata(atom: IngestedAtom) -> List[str]:
     return metadata
 
 
+def _theorem_preamble(atom: IngestedAtom) -> str:
+    metadata = [f"z3_check_result={atom.z3_check_result}"]
+    if atom.z3_result_class:
+        metadata.append(f"z3_result_class={atom.z3_result_class}")
+    metadata.extend(_translator_ir_metadata(atom))
+    if atom.escalation_reason:
+        metadata.append(f"escalation_reason={atom.escalation_reason}")
+    if atom.logic_fragment_tags:
+        metadata.append("logic_fragments=" + ",".join(atom.logic_fragment_tags))
+
+    traceability_comments: List[str] = []
+    if atom.escalation_reason:
+        traceability_comments.append(
+            f"-- mumei_escalation_reason: {atom.escalation_reason}"
+        )
+    if atom.logic_fragment_tags:
+        traceability_comments.append(
+            "-- mumei_logic_fragment_tags: " + ",".join(atom.logic_fragment_tags)
+        )
+    if atom.z3_result_class:
+        traceability_comments.append(f"-- mumei_z3_result_class: {atom.z3_result_class}")
+    traceability_block = "\n".join(traceability_comments)
+    if traceability_block:
+        traceability_block += "\n"
+
+    return (
+        traceability_block
+        + f"/-- Auto-generated from mumei atom `{atom.name}` "
+        f"({' ; '.join(metadata)}). -/\n"
+    )
+
+
 def render_theorem(atom: IngestedAtom) -> str:
     """Render a single Lean ``theorem`` declaration for ``atom``."""
     if isinstance(atom.translator_ir, dict):
@@ -795,7 +801,11 @@ def render_theorem(atom: IngestedAtom) -> str:
             == OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE
             and isinstance(guard_trace, dict)
         ):
-            return render_guard_trace_theorem(atom.name, guard_trace)
+            return render_guard_trace_theorem(
+                atom.name,
+                guard_trace,
+                provenance_prefix=_theorem_preamble(atom),
+            )
     sort_proof = _sort_ascending_proof(atom)
     if sort_proof is not None:
         return sort_proof

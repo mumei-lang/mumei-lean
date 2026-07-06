@@ -494,6 +494,10 @@ def test_guard_trace_fixture_renders_run_guard_theorems_and_imports(tmp_path: Pa
 
     rendered_guarded = render_theorem(atoms[0])
     rendered_unguarded = render_theorem(atoms[1])
+    assert "/-- Auto-generated from mumei atom `guarded_reentrancy_trace`" in rendered_guarded
+    assert "-- mumei_escalation_reason: sc" in rendered_guarded
+    assert "-- mumei_logic_fragment_tags: smart_contract,guard_trace" in rendered_guarded
+    assert "-- mumei_z3_result_class: unknown" in rendered_guarded
     assert "theorem guarded_reentrancy_trace_correct" in rendered_guarded
     assert "runGuard GuardState.Unlocked [GuardOp.lock, GuardOp.externalCall, GuardOp.unlock] = some GuardState.Unlocked := by" in rendered_guarded
     assert "decide" in rendered_guarded

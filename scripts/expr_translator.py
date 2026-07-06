@@ -864,9 +864,10 @@ def classify_obligation(tokens: List[tuple], lowering_rules: List[str]) -> str:
     """Classify the obligation into one of the formal obligation classes.
 
     The classification uses a priority order: crypto > finite_field >
-    group_theory > smart_contract > rtgs > quantifier > arithmetic >
-    unknown. The first matching class wins; mixed obligations inherit
+    group_theory > smart_contract > rtgs > quantifier > unknown >
+    arithmetic. The first matching class wins; mixed obligations inherit
     the highest-priority class for bridge lemma selection.
+    Arithmetic is the fallback when no other class matches.
     """
     has_crypto = any(
         kind == "ID" and text in _CRYPTO_FUNCTIONS for kind, text in tokens

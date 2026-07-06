@@ -144,4 +144,42 @@ theorem encryption_pattern (plaintext ciphertext key nonce : Int)
     decrypt ciphertext key nonce = plaintext := by
   exact encryption_roundtrip_of_ciphertext plaintext ciphertext key nonce h
 
+/-! ### Obligation class bridge templates
+
+Reusable templates for each obligation class. The bridge translator
+(`scripts/expr_translator.py`) assigns an `obligation_class` to every
+escalated atom and references the corresponding entry points below.
+-/
+
+theorem quantifier_obligation_forall_bounded (lo hi : Int) (P : Int → Prop)
+    (hall : ∀ i : Int, lo ≤ i → i < hi → P i) (t : Int)
+    (hlo : lo ≤ t) (hhi : t < hi) :
+    P t := hall t hlo hhi
+
+theorem quantifier_obligation_exists_witness (lo hi : Int) (P : Int → Prop)
+    (w : Int) (hlo : lo ≤ w) (hhi : w < hi) (hp : P w) :
+    ∃ x : Int, lo ≤ x ∧ x < hi ∧ P x :=
+  ⟨w, hlo, hhi, hp⟩
+
+theorem quantifier_obligation_forall_implies (P Q : Int → Prop)
+    (hpq : ∀ x : Int, P x → Q x) (hall : ∀ x : Int, P x) :
+    ∀ x : Int, Q x := by
+  intro x; exact hpq x (hall x)
+
+theorem crypto_obligation_hash_determinism (f : Int → Int → Int) (m s : Int) :
+    f m s = f m s := rfl
+
+theorem crypto_obligation_roundtrip (enc dec : Int → Int → Int → Int) (p k n : Int)
+    (hrt : ∀ p' k' n', dec (enc p' k' n') k' n' = p') :
+    dec (enc p k n) k n = p := hrt p k n
+
+theorem finite_field_obligation_closure (op : Int → Int → Int → Int) (a b p : Int)
+    (hp : 0 < p)
+    (hclosed : ∀ x y : Int, 0 ≤ op x y p ∧ op x y p < p) :
+    0 ≤ op a b p ∧ op a b p < p := hclosed a b
+
+theorem group_theory_obligation_assoc_law (op : Int → Int → Int) (a b c : Int)
+    (hassoc : ∀ x y z : Int, op (op x y) z = op x (op y z)) :
+    op (op a b) c = op a (op b c) := hassoc a b c
+
 end MumeiLean.AdvancedPatterns

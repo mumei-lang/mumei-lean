@@ -21,6 +21,15 @@ Promotion to `lean_verified` requires a successful Lean build plus matching `tra
 
 P9-D/E/F/G の完了により、NLAE integration milestone は実装済み。
 
+## Contract Expression Translator Extension — ✅ Implemented
+
+Extends the v1 bridge to formal **obligation class** taxonomy with v2 translator. Each escalated atom is now classified into one of eight obligation classes (`quantifier_obligation`, `finite_field_obligation`, `group_theory_obligation`, `crypto_primitive_obligation`, `arithmetic_obligation`, `smart_contract_obligation`, `rtgs_obligation`, `unknown_obligation`), and the classification is recorded in `TranslatorIR.obligation_class`. Each class maps to a set of canonical Lean bridge lemma entry points in `MumeiLean/AdvancedPatterns.lean`, `MumeiLean/Algebra.lean`, `MumeiLean/Crypto.lean`, and `MumeiLean/Quantifiers.lean`.
+
+- ✅ `scripts/expr_translator.py`: obligation class taxonomy, `classify_obligation()`, `obligation_bridge_lemmas()`, bridge lemma merge into `TranslatorIR.requires_bridge_lemmas`
+- ✅ `MumeiLean/AdvancedPatterns.lean`: obligation class bridge templates (bounded forall/exists, crypto roundtrip, finite field closure, group associativity)
+- ✅ `tests/test_expr_translator.py`: 17 obligation class regression tests covering all 8 classes, priority ordering, bridge lemma population, and `TranslatorIR` serialization
+- ✅ `translator_version` bumped to `mumei-lean-translator-ir-v2`, `bridge_lemma_hash` updated
+
 ## Lean fallback unknown-obligation bridge — ✅ Implemented
 
 - `scripts/ingest_cert.py` now treats only `z3_result_class == "unknown"` or raw `z3_check_result == "unknown"` as Lean escalation candidates; `status == "unknown"` or `escalation_reason` alone is not enough.

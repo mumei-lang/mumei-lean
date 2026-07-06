@@ -276,10 +276,10 @@ def test_bridge_no_build_dry_run(tmp_path: Path):
     assert metadata["translator_ir"]["sort"] == "contract_obligation"
     assert metadata["logic_fragment_tags"] == []
     assert metadata["manual_lemma_reason"] is None
-    assert metadata["translator_version"] == "mumei-lean-translator-ir-v1"
+    assert metadata["translator_version"] == "mumei-lean-translator-ir-v2"
     assert (
         metadata["bridge_lemma_hash"]
-        == "5f6faccb722e66782f2b11da66c2a9588c6d346bde2f8c4a163ddfceeac32522"
+        == "a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11"
     )
     assert payload["all_verified"] is False
 

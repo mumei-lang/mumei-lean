@@ -237,8 +237,91 @@ _SCALAR_CALL_FUNCTIONS = (
     - {"old"}
 )
 
-TRANSLATOR_VERSION = "mumei-lean-translator-ir-v1"
-BRIDGE_LEMMA_HASH = "5f6faccb722e66782f2b11da66c2a9588c6d346bde2f8c4a163ddfceeac32522"
+TRANSLATOR_VERSION = "mumei-lean-translator-ir-v2"
+BRIDGE_LEMMA_HASH = "a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11"
+
+# Obligation class taxonomy for escalated atoms.
+# Each class maps to a set of Lean bridge lemma entry points.
+OBLIGATION_CLASS_QUANTIFIER = "quantifier_obligation"
+OBLIGATION_CLASS_FINITE_FIELD = "finite_field_obligation"
+OBLIGATION_CLASS_GROUP_THEORY = "group_theory_obligation"
+OBLIGATION_CLASS_CRYPTO = "crypto_primitive_obligation"
+OBLIGATION_CLASS_ARITHMETIC = "arithmetic_obligation"
+OBLIGATION_CLASS_SMART_CONTRACT = "smart_contract_obligation"
+OBLIGATION_CLASS_RTGS = "rtgs_obligation"
+OBLIGATION_CLASS_UNKNOWN = "unknown_obligation"
+
+_OBLIGATION_CLASS_BRIDGE_LEMMAS: Dict[str, List[str]] = {
+    OBLIGATION_CLASS_QUANTIFIER: [
+        "MumeiLean.Quantifiers.skolemize_exists",
+        "MumeiLean.Quantifiers.herbrand_forall",
+        "MumeiLean.Quantifiers.bounded_forall_of_unrestricted",
+        "MumeiLean.Quantifiers.bounded_exists_of_witness",
+        "MumeiLean.Quantifiers.forall_and_intro",
+        "MumeiLean.Quantifiers.nested_forall_intro",
+        "MumeiLean.Quantifiers.nested_exists_intro",
+        "MumeiLean.AdvancedPatterns.bounded_forall_weaken",
+        "MumeiLean.AdvancedPatterns.bounded_exists_map",
+        "MumeiLean.AdvancedPatterns.nested_forall_swap",
+        "MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern",
+    ],
+    OBLIGATION_CLASS_FINITE_FIELD: [
+        "MumeiLean.Algebra.ff_add_in_field",
+        "MumeiLean.Algebra.ff_mul_in_field",
+        "MumeiLean.Algebra.ff_sub_in_field",
+        "MumeiLean.Algebra.ff_neg_in_field",
+        "MumeiLean.Algebra.ff_zero_in_field",
+        "MumeiLean.Algebra.ff_one_in_field",
+        "MumeiLean.Algebra.ff_eq_refl",
+        "MumeiLean.Algebra.ff_eq_symm",
+        "MumeiLean.Algebra.ff_eq_trans",
+        "MumeiLean.Algebra.ff_add_comm",
+        "MumeiLean.Algebra.ff_mul_comm",
+        "MumeiLean.Algebra.ff_add_zero",
+        "MumeiLean.Algebra.ff_mul_one",
+        "MumeiLean.AdvancedPatterns.finite_field_binary_closed",
+    ],
+    OBLIGATION_CLASS_GROUP_THEORY: [
+        "MumeiLean.Algebra.group_mul_assoc",
+        "MumeiLean.Algebra.group_left_inv",
+        "MumeiLean.Algebra.group_right_inv",
+        "MumeiLean.Algebra.group_mul_one",
+        "MumeiLean.Algebra.group_one_mul",
+        "MumeiLean.Algebra.group_inv_inv",
+        "MumeiLean.Algebra.group_mul_inv_rev",
+        "MumeiLean.Algebra.mumei_group_comm_int",
+        "MumeiLean.AdvancedPatterns.group_hom_preserves_mul",
+    ],
+    OBLIGATION_CLASS_CRYPTO: [
+        "MumeiLean.Crypto.hash_deterministic",
+        "MumeiLean.Crypto.hash_modulus_bounds",
+        "MumeiLean.Crypto.encryption_roundtrip",
+        "MumeiLean.Crypto.rsa_signature_correct",
+        "MumeiLean.Crypto.signature_verify_sound",
+        "MumeiLean.Crypto.kdf_deterministic",
+        "MumeiLean.Crypto.hmac_deterministic",
+        "MumeiLean.Crypto.commitment_binding_pattern",
+        "MumeiLean.Crypto.zk_verify_soundness",
+        "MumeiLean.AdvancedPatterns.hash_stability_under_equal_inputs",
+        "MumeiLean.AdvancedPatterns.signature_pattern",
+        "MumeiLean.AdvancedPatterns.encryption_pattern",
+    ],
+    OBLIGATION_CLASS_ARITHMETIC: [
+        "MumeiLean.Algebra.sc_subtraction_nonnegative",
+    ],
+    OBLIGATION_CLASS_SMART_CONTRACT: [
+        "MumeiLean.AdvancedPatterns.sc_withdraw_allowed_intro",
+        "MumeiLean.AdvancedPatterns.sc_no_negative_after_withdraw",
+    ],
+    OBLIGATION_CLASS_RTGS: [
+        "MumeiLean.AdvancedPatterns.rtgs_balance_conserved_refl",
+        "MumeiLean.AdvancedPatterns.rtgs_trace_safe_intro",
+        "MumeiLean.Algebra.rtgs_transfer_conserves_sum",
+    ],
+    OBLIGATION_CLASS_UNKNOWN: [
+        "MumeiLean.AdvancedPatterns.unknown_obligation_intro",
+    ],
+}
 
 
 @dataclass
@@ -290,6 +373,7 @@ class TranslatorIR:
     semantic_gap_notes: List[str] = field(default_factory=list)
     proof_trace_hints: List[str] = field(default_factory=list)
     requires_bridge_lemmas: List[str] = field(default_factory=list)
+    obligation_class: Optional[str] = None
 
     def to_dict(self) -> Dict[str, object]:
         payload: Dict[str, object] = {
@@ -307,6 +391,8 @@ class TranslatorIR:
             payload["proof_trace_hints"] = list(self.proof_trace_hints)
         if self.requires_bridge_lemmas:
             payload["requires_bridge_lemmas"] = list(self.requires_bridge_lemmas)
+        if self.obligation_class:
+            payload["obligation_class"] = self.obligation_class
         return payload
 
 
@@ -774,6 +860,59 @@ def _extract_predicate_arities(tokens: List[tuple]) -> Dict[str, int]:
     return predicate_arities
 
 
+def classify_obligation(tokens: List[tuple], lowering_rules: List[str]) -> str:
+    """Classify the obligation into one of the formal obligation classes.
+
+    The classification uses a priority order: crypto > finite_field >
+    group_theory > smart_contract > rtgs > quantifier > unknown >
+    arithmetic. The first matching class wins; mixed obligations inherit
+    the highest-priority class for bridge lemma selection.
+    Arithmetic is the fallback when no other class matches.
+    """
+    has_crypto = any(
+        kind == "ID" and text in _CRYPTO_FUNCTIONS for kind, text in tokens
+    ) or "crypto_primitive_lowering" in lowering_rules
+    has_ff = any(
+        kind == "ID" and text in _FINITE_FIELD_FUNCTIONS for kind, text in tokens
+    ) or "finite_field_lowering" in lowering_rules
+    has_group = any(
+        kind == "ID" and text in _GROUP_FUNCTIONS for kind, text in tokens
+    ) or "group_theory_lowering" in lowering_rules
+    has_sc = any(
+        kind == "ID" and text in _SMART_CONTRACT_FUNCTIONS for kind, text in tokens
+    ) or "smart_contract_lowering" in lowering_rules
+    has_rtgs = any(
+        kind == "ID" and text in _RTGS_FUNCTIONS for kind, text in tokens
+    ) or "rtgs_settlement_lowering" in lowering_rules
+    has_quantifier = any(
+        kind == "KW" and text in _QUANTIFIER_KEYWORDS for kind, text in tokens
+    ) or "refinement_predicate_lowering" in lowering_rules
+    has_unknown = any(
+        kind == "ID" and text in _UNKNOWN_OBLIGATION_FUNCTIONS for kind, text in tokens
+    ) or "unknown_obligation_lowering" in lowering_rules
+
+    if has_crypto:
+        return OBLIGATION_CLASS_CRYPTO
+    if has_ff:
+        return OBLIGATION_CLASS_FINITE_FIELD
+    if has_group:
+        return OBLIGATION_CLASS_GROUP_THEORY
+    if has_sc:
+        return OBLIGATION_CLASS_SMART_CONTRACT
+    if has_rtgs:
+        return OBLIGATION_CLASS_RTGS
+    if has_quantifier:
+        return OBLIGATION_CLASS_QUANTIFIER
+    if has_unknown:
+        return OBLIGATION_CLASS_UNKNOWN
+    return OBLIGATION_CLASS_ARITHMETIC
+
+
+def obligation_bridge_lemmas(obligation_class: str) -> List[str]:
+    """Return the canonical bridge lemma entry points for an obligation class."""
+    return list(_OBLIGATION_CLASS_BRIDGE_LEMMAS.get(obligation_class, []))
+
+
 def _build_translator_ir(
     source: str,
     lean_expr: str,
@@ -793,6 +932,12 @@ def _build_translator_ir(
         binders.append(_result_binder_for_source(source, tokens))
     sort = "manual_lemma_required" if manual_lemma_reason else "contract_obligation"
     lowering_rules = _lowering_rules(tokens, array_ids, string_ids)
+    obl_class = classify_obligation(tokens, lowering_rules)
+    bridge_lemmas = _bridge_lemmas_for_rules(lowering_rules)
+    obl_lemmas = obligation_bridge_lemmas(obl_class)
+    for lemma in obl_lemmas:
+        if lemma not in bridge_lemmas:
+            bridge_lemmas.append(lemma)
     return TranslatorIR(
         sort=sort,
         binders=binders,
@@ -801,7 +946,8 @@ def _build_translator_ir(
         manual_lemma_reason=manual_lemma_reason,
         semantic_gap_notes=_build_semantic_gap_notes(tokens, array_ids, string_ids),
         proof_trace_hints=_proof_trace_hints_for_rules(lowering_rules),
-        requires_bridge_lemmas=_bridge_lemmas_for_rules(lowering_rules),
+        requires_bridge_lemmas=bridge_lemmas,
+        obligation_class=obl_class,
     )
 
 

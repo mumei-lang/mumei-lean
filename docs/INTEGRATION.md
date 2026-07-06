@@ -25,7 +25,7 @@ Field handling is fixed:
 | `manual_lemma_reason` | Stable reason a generated theorem needs human lemma work; dry runs should emit `manual_lemma_required`, not `lean_verified`. |
 | `stale_translator` | mumei-side rejection when `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract. |
 
-Current contract constants are `translator_version = mumei-lean-translator-ir-v1` and `bridge_lemma_hash = a8fd0b115fd29a6e87190bd041dbd5ab7a09ec89af6ac5b10ef152a1a0c0f643`.
+Current contract constants are `translator_version = mumei-lean-translator-ir-v2` and `bridge_lemma_hash = a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11`.
 
 ## Bridge acceptance invariant
 

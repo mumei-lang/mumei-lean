@@ -3,9 +3,19 @@ from __future__ import annotations
 
 import expr_translator
 from expr_translator import (
+    OBLIGATION_CLASS_ARITHMETIC,
+    OBLIGATION_CLASS_CRYPTO,
+    OBLIGATION_CLASS_FINITE_FIELD,
+    OBLIGATION_CLASS_GROUP_THEORY,
+    OBLIGATION_CLASS_QUANTIFIER,
+    OBLIGATION_CLASS_RTGS,
+    OBLIGATION_CLASS_SMART_CONTRACT,
+    OBLIGATION_CLASS_UNKNOWN,
     TranslatorIR,
     TranslatorIRBinder,
+    classify_obligation,
     contains_identifier,
+    obligation_bridge_lemmas,
     translate_body,
     translate_contract,
     translate_finite_field,
@@ -700,10 +710,9 @@ def test_translator_ir_semantic_gap_metadata_serializes_when_present():
     assert "string_regex_bridge" in payload["lowering_rules"]
     assert "semantic_gap_notes" in payload
     assert "proof_trace_hints" in payload
-    assert payload["requires_bridge_lemmas"] == [
-        "mumei_i64_overflow_bridge",
-        "mumei_regex_bridge",
-    ]
+    bridge = payload["requires_bridge_lemmas"]
+    assert "mumei_i64_overflow_bridge" in bridge
+    assert "mumei_regex_bridge" in bridge
 
 
 def test_translator_ir_regex_manual_lemma_requires_string_bridge():
@@ -910,3 +919,107 @@ def test_multiple_quantifiers_with_algebra():
     assert "((y + x) % p)" in result.lean_expr
     assert result.is_partial is False
     assert "finite_field_lowering" in result.translator_ir.lowering_rules
+
+
+# ---- Obligation class tests ----
+
+
+def test_obligation_class_arithmetic():
+    result = translate_contract("x > 0 && y < 10")
+    assert result.translator_ir is not None
+    assert result.translator_ir.obligation_class == OBLIGATION_CLASS_ARITHMETIC
+
+
+def test_obligation_class_quantifier():
+    result = translate_contract("forall(i, 0, n, arr[i] >= 0)")
+    assert result.translator_ir is not None
+    assert result.translator_ir.obligation_class == OBLIGATION_CLASS_QUANTIFIER
+
+
+def test_obligation_class_finite_field():
+    result = translate_contract("ff_add(a, b, p) == ff_add(b, a, p)")
+    assert result.translator_ir is not None
+    assert result.translator_ir.obligation_class == OBLIGATION_CLASS_FINITE_FIELD
+
+
+def test_obligation_class_group_theory():
+    result = translate_contract("group_mul(a, b) == group_mul(b, a)")
+    assert result.translator_ir is not None
+    assert result.translator_ir.obligation_class == OBLIGATION_CLASS_GROUP_THEORY
+
+
+def test_obligation_class_crypto():
+    result = translate_contract("hash(m, s) == hash(m, s)")
+    assert result.translator_ir is not None
+    assert result.translator_ir.obligation_class == OBLIGATION_CLASS_CRYPTO
+
+
+def test_obligation_class_smart_contract():
+    result = translate_contract("sc_withdraw_allowed(balance, amount)")
+    assert result.translator_ir is not None
+    assert result.translator_ir.obligation_class == OBLIGATION_CLASS_SMART_CONTRACT
+
+
+def test_obligation_class_rtgs():
+    result = translate_contract("rtgs_balance_conserved(b, d, c, a)")
+    assert result.translator_ir is not None
+    assert result.translator_ir.obligation_class == OBLIGATION_CLASS_RTGS
+
+
+def test_obligation_class_unknown():
+    result = translate_contract("unknown_obligation(x)")
+    assert result.translator_ir is not None
+    assert result.translator_ir.obligation_class == OBLIGATION_CLASS_UNKNOWN
+
+
+def test_obligation_class_crypto_trumps_quantifier():
+    result = translate_contract(
+        "forall(i, 0, n, decrypt(encrypt(i, key, i), key, i) == i)"
+    )
+    assert result.translator_ir is not None
+    assert result.translator_ir.obligation_class == OBLIGATION_CLASS_CRYPTO
+
+
+def test_obligation_class_ff_trumps_quantifier():
+    result = translate_contract(
+        "forall(x, 0, p, ff_in_field(x, p))"
+    )
+    assert result.translator_ir is not None
+    assert result.translator_ir.obligation_class == OBLIGATION_CLASS_FINITE_FIELD
+
+
+def test_obligation_bridge_lemmas_populated():
+    lemmas = obligation_bridge_lemmas(OBLIGATION_CLASS_QUANTIFIER)
+    assert len(lemmas) > 0
+    assert "MumeiLean.Quantifiers.skolemize_exists" in lemmas
+
+
+def test_obligation_bridge_lemmas_crypto():
+    lemmas = obligation_bridge_lemmas(OBLIGATION_CLASS_CRYPTO)
+    assert "MumeiLean.Crypto.encryption_roundtrip" in lemmas
+
+
+def test_obligation_bridge_lemmas_merged_into_translator_ir():
+    result = translate_contract("forall(i, 0, n, arr[i] >= 0)")
+    assert result.translator_ir is not None
+    bridge = result.translator_ir.requires_bridge_lemmas
+    assert "MumeiLean.Quantifiers.skolemize_exists" in bridge
+
+
+def test_obligation_class_in_translator_ir_dict():
+    result = translate_contract("ff_mul(a, b, p) == ff_mul(b, a, p)")
+    assert result.translator_ir is not None
+    d = result.translator_ir.to_dict()
+    assert "obligation_class" in d
+    assert d["obligation_class"] == OBLIGATION_CLASS_FINITE_FIELD
+
+
+def test_classify_obligation_direct():
+    from expr_translator import _tokenize, _lowering_rules
+    tokens = _tokenize("hash(m, s)")
+    rules = _lowering_rules(tokens, [], [])
+    assert classify_obligation(tokens, rules) == OBLIGATION_CLASS_CRYPTO
+
+
+def test_translator_version_is_v2():
+    assert expr_translator.TRANSLATOR_VERSION == "mumei-lean-translator-ir-v2"

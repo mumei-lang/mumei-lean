@@ -10,12 +10,16 @@ from expr_translator import (
     OBLIGATION_CLASS_QUANTIFIER,
     OBLIGATION_CLASS_RTGS,
     OBLIGATION_CLASS_SMART_CONTRACT,
+    OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
     OBLIGATION_CLASS_UNKNOWN,
     TranslatorIR,
     TranslatorIRBinder,
     classify_obligation,
     contains_identifier,
+    guard_trace_expected_to_lean,
     obligation_bridge_lemmas,
+    normalize_guard_trace_translator_ir,
+    render_guard_trace_theorem,
     translate_body,
     translate_contract,
     translate_finite_field,
@@ -480,6 +484,64 @@ def test_sc_and_rtgs_calls_record_domain_lowering():
     assert rtgs.translator_ir is not None
     assert "rtgs_settlement_lowering" in rtgs.translator_ir.lowering_rules
     assert "mumei_rtgs_settlement_bridge" in rtgs.translator_ir.requires_bridge_lemmas
+
+
+def test_guard_trace_lowering_normalizes_expected_outcome_and_classification():
+    translator_ir = normalize_guard_trace_translator_ir(
+        {
+            "sort": "contract_obligation",
+            "binders": [],
+            "theorem_goal": "",
+            "provenance_span": {"file": "", "line": 0, "col": 0, "len": 0},
+            "lowering_rules": [],
+            "guard_trace": {
+                "ops": ["lock", "externalCall", "unlock"],
+                "expected_outcome": "safe",
+            },
+        }
+    )
+
+    assert translator_ir["obligation_class"] == (
+        OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE
+    )
+    assert (
+        translator_ir["theorem_goal"]
+        == "runGuard GuardState.Unlocked [GuardOp.lock, GuardOp.externalCall, "
+        "GuardOp.unlock] = some GuardState.Unlocked"
+    )
+    assert "smart_contract_guard_trace_lowering" in translator_ir["lowering_rules"]
+    assert (
+        "MumeiLean.SmartContract.no_external_call_without_lock"
+        in translator_ir["requires_bridge_lemmas"]
+    )
+    assert classify_obligation([], translator_ir["lowering_rules"]) == (
+        OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE
+    )
+    assert guard_trace_expected_to_lean(True) == "some GuardState.Unlocked"
+    assert guard_trace_expected_to_lean("unsafe") == "none"
+    rendered = render_guard_trace_theorem(
+        "guarded_reentrancy_trace",
+        translator_ir["guard_trace"],
+    )
+    assert "theorem guarded_reentrancy_trace_correct" in rendered
+    assert "runGuard GuardState.Unlocked" in rendered
+    assert "by" in rendered
+    assert "decide" in rendered
+
+
+def test_translator_ir_serializes_guard_trace_metadata():
+    ir = TranslatorIR(
+        sort="contract_obligation",
+        binders=[TranslatorIRBinder("lock", "lock", "i64", "Int")],
+        theorem_goal="runGuard GuardState.Unlocked [GuardOp.lock] = none",
+        guard_trace_ops=["lock"],
+        guard_trace_expected_outcome="none",
+    )
+
+    payload = ir.to_dict()
+
+    assert payload["guard_trace_ops"] == ["lock"]
+    assert payload["guard_trace_expected_outcome"] == "none"
 
 
 def test_nested_quantifier_with_finite_field_and_group_metadata():

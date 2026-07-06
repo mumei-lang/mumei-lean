@@ -1,0 +1,91 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-06T00:00:00Z",
+  "mumei_version": "0.6.0",
+  "z3_version": "Z3 version 4.12.2",
+  "file": "std/contract/guard_trace.mm",
+  "atoms": [
+    {
+      "name": "guarded_reentrancy_trace",
+      "z3_check_result": "unknown",
+      "z3_result_class": "unknown",
+      "status": "unknown",
+      "escalation_reason": "sc",
+      "unknown_obligation_domain": "smart_contract",
+      "logic_fragment_tag": "smart_contract_guard_trace",
+      "logic_fragment_tags": ["smart_contract", "guard_trace"],
+      "proof_hash": "guarded_reentrancy_trace-proof",
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "bridge_lemma_hash": "a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11",
+      "binder_mapping": {},
+      "requires": "true",
+      "ensures": "true",
+      "body_summary": "guard trace proof for a guarded external call",
+      "body_expr": "",
+      "translator_ir": {
+        "sort": "contract_obligation",
+        "binders": [],
+        "theorem_goal": "runGuard GuardState.Unlocked [GuardOp.lock, GuardOp.externalCall, GuardOp.unlock] = some GuardState.Unlocked",
+        "provenance_span": {
+          "file": "std/contract/guard_trace.mm",
+          "line": 1,
+          "col": 1,
+          "len": 0
+        },
+        "lowering_rules": ["smart_contract_guard_trace_lowering"],
+        "proof_trace_hints": ["use the concrete guard trace with SmartContract.runGuard"],
+        "requires_bridge_lemmas": ["MumeiLean.SmartContract.no_external_call_without_lock"],
+        "obligation_class": "smart_contract_guard_trace_obligation",
+        "guard_trace": {
+          "ops": ["lock", "externalCall", "unlock"],
+          "expected_outcome": "safe"
+        },
+        "guard_trace_ops": ["lock", "externalCall", "unlock"],
+        "guard_trace_expected_outcome": "safe"
+      }
+    },
+    {
+      "name": "unguarded_reentrancy_trace",
+      "z3_check_result": "unknown",
+      "z3_result_class": "unknown",
+      "status": "unknown",
+      "escalation_reason": "sc",
+      "unknown_obligation_domain": "smart_contract",
+      "logic_fragment_tag": "smart_contract_guard_trace",
+      "logic_fragment_tags": ["smart_contract", "guard_trace"],
+      "proof_hash": "unguarded_reentrancy_trace-proof",
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "bridge_lemma_hash": "a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11",
+      "binder_mapping": {},
+      "requires": "true",
+      "ensures": "true",
+      "body_summary": "guard trace proof for an unguarded external call",
+      "body_expr": "",
+      "translator_ir": {
+        "sort": "contract_obligation",
+        "binders": [],
+        "theorem_goal": "runGuard GuardState.Unlocked [GuardOp.externalCall] = none",
+        "provenance_span": {
+          "file": "std/contract/guard_trace.mm",
+          "line": 2,
+          "col": 1,
+          "len": 0
+        },
+        "lowering_rules": ["smart_contract_guard_trace_lowering"],
+        "proof_trace_hints": ["use the concrete guard trace with SmartContract.runGuard"],
+        "requires_bridge_lemmas": ["MumeiLean.SmartContract.no_external_call_without_lock"],
+        "obligation_class": "smart_contract_guard_trace_obligation",
+        "guard_trace": {
+          "ops": ["externalCall"],
+          "expected_outcome": "none"
+        },
+        "guard_trace_ops": ["externalCall"],
+        "guard_trace_expected_outcome": "none"
+      }
+    }
+  ],
+  "package_name": "std",
+  "package_version": "0",
+  "certificate_hash": "",
+  "all_verified": false
+}

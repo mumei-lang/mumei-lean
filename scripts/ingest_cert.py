@@ -46,9 +46,12 @@ try:
     from .proofcert import Z3CheckResult
     from .expr_translator import (
         BRIDGE_LEMMA_HASH,
+        OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
         TRANSLATOR_VERSION,
         TranslationResult,
         contains_identifier,
+        normalize_guard_trace_translator_ir,
+        render_guard_trace_theorem,
         translate_body,
         translate_contract,
     )
@@ -58,9 +61,12 @@ except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py
     from proofcert import Z3CheckResult  # type: ignore
     from expr_translator import (  # type: ignore
         BRIDGE_LEMMA_HASH,
+        OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
         TRANSLATOR_VERSION,
         TranslationResult,
         contains_identifier,
+        normalize_guard_trace_translator_ir,
+        render_guard_trace_theorem,
         translate_body,
         translate_contract,
     )
@@ -115,6 +121,14 @@ class IngestedAtom:
         if "insertion_sort_ascending" in self.name:
             ensures = self.raw_ensures.strip()
             if "arr[i] <= arr[i + 1]" in ensures or "arr[i] <= arr[i+1]" in ensures:
+                return True
+        if isinstance(self.translator_ir, dict):
+            if self.translator_ir.get("obligation_class") == (
+                OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE
+            ):
+                return True
+            guard_trace = self.translator_ir.get("guard_trace")
+            if isinstance(guard_trace, dict) and isinstance(guard_trace.get("ops"), list):
                 return True
         return False
 
@@ -225,14 +239,20 @@ def _attach_domain_to_translator_ir(
 ) -> None:
     if not unknown_obligation_domain:
         return
-    rule = (
-        "smart_contract_lowering"
-        if unknown_obligation_domain == "smart_contract"
-        else "rtgs_settlement_lowering"
-    )
     translator_ir["unknown_obligation_domain"] = unknown_obligation_domain
     rules = translator_ir.setdefault("lowering_rules", [])
-    if isinstance(rules, list) and rule not in rules:
+    if not isinstance(rules, list):
+        rules = []
+        translator_ir["lowering_rules"] = rules
+    if isinstance(translator_ir.get("guard_trace"), dict) or translator_ir.get(
+        "obligation_class"
+    ) == OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE:
+        rule = "smart_contract_guard_trace_lowering"
+    elif unknown_obligation_domain == "smart_contract":
+        rule = "smart_contract_lowering"
+    else:
+        rule = "rtgs_settlement_lowering"
+    if rule not in rules:
         rules.append(rule)
 
 
@@ -349,7 +369,7 @@ def _string_dict(value: object) -> dict[str, str]:
 def _translator_ir_payload(atom: dict, *fallbacks: Optional[TranslationResult]) -> dict:
     raw_ir = atom.get("translator_ir")
     if isinstance(raw_ir, dict):
-        result = dict(raw_ir)
+        result = normalize_guard_trace_translator_ir(dict(raw_ir))
         result.setdefault("binders", [])
         result.setdefault("lowering_rules", [])
         result.setdefault("semantic_gap_notes", [])
@@ -487,6 +507,16 @@ def _atom_result_name(atom_name: str) -> str:
     return parts[0] + "".join(part[:1].upper() + part[1:] for part in parts[1:]) + "Result"
 
 
+def _lean_theorem_name(atom_name: str) -> str:
+    clean = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in atom_name)
+    clean = clean.strip("_")
+    if not clean:
+        clean = "atom"
+    if clean[0].isdigit():
+        clean = f"_{clean}"
+    return f"{clean}_correct"
+
+
 def _finite_field_zero_eq_proof(
     atom: IngestedAtom,
     result_name: str,
@@ -562,7 +592,7 @@ def _sort_ascending_proof(atom: IngestedAtom) -> Optional[str]:
         traceability_block
         + f"/-- Auto-generated from mumei atom `{atom.name}` "
         f"({' ; '.join(metadata)}). -/\n"
-        f"theorem {atom.name}_correct (n : Int) (arr : List Int)\n"
+        f"theorem {_lean_theorem_name(atom.name)} (n : Int) (arr : List Int)\n"
         f"    (h_req : n ≥ 0) :\n"
         f"    let sorted := List.insertionSort (· ≤ ·) arr\n"
         f"    sorted.length = arr.length ∧ List.Sorted (· ≤ ·) sorted := by\n"
@@ -758,6 +788,14 @@ def _translator_ir_metadata(atom: IngestedAtom) -> List[str]:
 
 def render_theorem(atom: IngestedAtom) -> str:
     """Render a single Lean ``theorem`` declaration for ``atom``."""
+    if isinstance(atom.translator_ir, dict):
+        guard_trace = atom.translator_ir.get("guard_trace")
+        if (
+            atom.translator_ir.get("obligation_class")
+            == OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE
+            and isinstance(guard_trace, dict)
+        ):
+            return render_guard_trace_theorem(atom.name, guard_trace)
     sort_proof = _sort_ascending_proof(atom)
     if sort_proof is not None:
         return sort_proof
@@ -979,7 +1017,7 @@ def render_theorem(atom: IngestedAtom) -> str:
         traceability_block +
         f"/-- Auto-generated from mumei atom `{atom.name}` "
         f"({' ; '.join(metadata)}). -/\n"
-        f"theorem {atom.name}_correct {params_decl}{h_body_param} :\n"
+        f"theorem {_lean_theorem_name(atom.name)} {params_decl}{h_body_param} :\n"
         f"    ({requires_lean}) → ({ensures_lean}) := by\n"
         f"{note_block}{body}\n"
     )
@@ -1008,8 +1046,19 @@ def _render_known_witness_delegate(atom: IngestedAtom) -> Optional[str]:
 def render_module(module_key: str, prefix: str, atoms: List[IngestedAtom]) -> str:
     """Render the full Lean source for a module's worth of atoms."""
     namespace = _module_to_lean_namespace(module_key, prefix)
+    import_lines = ["import MumeiLean"]
+    open_lines = ["open MumeiLean"]
+    if any(
+        isinstance(atom.translator_ir, dict)
+        and atom.translator_ir.get("obligation_class")
+        == OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE
+        for atom in atoms
+    ):
+        import_lines.append("import MumeiLean.SmartContract")
+        open_lines.append("open MumeiLean.SmartContract")
     header = (
-        "import MumeiLean\n\n"
+        "\n".join(import_lines)
+        + "\n\n"
         "/-!\n"
         f"# {namespace}\n\n"
         f"Auto-generated by `scripts/ingest_cert.py` for mumei module "
@@ -1021,7 +1070,8 @@ def render_module(module_key: str, prefix: str, atoms: List[IngestedAtom]) -> st
         "unclosed goals are reported as build failures.\n"
         "-/\n\n"
         f"namespace {namespace}\n\n"
-        "open MumeiLean\n\n"
+        + "\n".join(open_lines)
+        + "\n\n"
     )
     body = "\n".join(render_theorem(a) for a in atoms)
     footer = f"\nend {namespace}\n"

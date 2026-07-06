@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 # Tokens we recognise. Order matters: longer prefixes must come first
 # so e.g. ``>=`` is not split into ``>`` + ``=``.
@@ -248,8 +248,11 @@ OBLIGATION_CLASS_GROUP_THEORY = "group_theory_obligation"
 OBLIGATION_CLASS_CRYPTO = "crypto_primitive_obligation"
 OBLIGATION_CLASS_ARITHMETIC = "arithmetic_obligation"
 OBLIGATION_CLASS_SMART_CONTRACT = "smart_contract_obligation"
+OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE = "smart_contract_guard_trace_obligation"
 OBLIGATION_CLASS_RTGS = "rtgs_obligation"
 OBLIGATION_CLASS_UNKNOWN = "unknown_obligation"
+
+SMART_CONTRACT_GUARD_TRACE_LOWERING = "smart_contract_guard_trace_lowering"
 
 _OBLIGATION_CLASS_BRIDGE_LEMMAS: Dict[str, List[str]] = {
     OBLIGATION_CLASS_QUANTIFIER: [
@@ -313,6 +316,9 @@ _OBLIGATION_CLASS_BRIDGE_LEMMAS: Dict[str, List[str]] = {
         "MumeiLean.AdvancedPatterns.sc_withdraw_allowed_intro",
         "MumeiLean.AdvancedPatterns.sc_no_negative_after_withdraw",
     ],
+    OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE: [
+        "MumeiLean.SmartContract.no_external_call_without_lock",
+    ],
     OBLIGATION_CLASS_RTGS: [
         "MumeiLean.AdvancedPatterns.rtgs_balance_conserved_refl",
         "MumeiLean.AdvancedPatterns.rtgs_trace_safe_intro",
@@ -374,6 +380,8 @@ class TranslatorIR:
     proof_trace_hints: List[str] = field(default_factory=list)
     requires_bridge_lemmas: List[str] = field(default_factory=list)
     obligation_class: Optional[str] = None
+    guard_trace_ops: List[str] = field(default_factory=list)
+    guard_trace_expected_outcome: Optional[str] = None
 
     def to_dict(self) -> Dict[str, object]:
         payload: Dict[str, object] = {
@@ -393,6 +401,10 @@ class TranslatorIR:
             payload["requires_bridge_lemmas"] = list(self.requires_bridge_lemmas)
         if self.obligation_class:
             payload["obligation_class"] = self.obligation_class
+        if self.guard_trace_ops:
+            payload["guard_trace_ops"] = list(self.guard_trace_ops)
+        if self.guard_trace_expected_outcome is not None:
+            payload["guard_trace_expected_outcome"] = self.guard_trace_expected_outcome
         return payload
 
 
@@ -462,6 +474,7 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "let_binding_lowering",
     "unknown_obligation_lowering",
     "smart_contract_lowering",
+    "smart_contract_guard_trace_lowering",
     "rtgs_settlement_lowering",
     "sort_ascending_bridge",
 }
@@ -742,6 +755,8 @@ def _bridge_lemmas_for_rules(lowering_rules: List[str]) -> List[str]:
         bridge_lemmas.append("mumei_crypto_primitive_bridge")
     if "smart_contract_lowering" in lowering_rules:
         bridge_lemmas.append("mumei_smart_contract_bridge")
+    if "smart_contract_guard_trace_lowering" in lowering_rules:
+        bridge_lemmas.append("MumeiLean.SmartContract.no_external_call_without_lock")
     if "rtgs_settlement_lowering" in lowering_rules:
         bridge_lemmas.append("mumei_rtgs_settlement_bridge")
     if "unknown_obligation_lowering" in lowering_rules:
@@ -769,6 +784,8 @@ def _proof_trace_hints_for_rules(lowering_rules: List[str]) -> List[str]:
         hints.append("route regex/string obligations through explicit bridge assumptions")
     if "smart_contract_lowering" in lowering_rules:
         hints.append("discharge SC obligations with guard-state and balance lemmas")
+    if "smart_contract_guard_trace_lowering" in lowering_rules:
+        hints.append("close concrete guard traces with SmartContract.runGuard and decide")
     if "rtgs_settlement_lowering" in lowering_rules:
         hints.append("discharge RTGS obligations with validation-before-settlement and conservation lemmas")
     if "refinement_predicate_lowering" in lowering_rules:
@@ -878,6 +895,7 @@ def classify_obligation(tokens: List[tuple], lowering_rules: List[str]) -> str:
     has_group = any(
         kind == "ID" and text in _GROUP_FUNCTIONS for kind, text in tokens
     ) or "group_theory_lowering" in lowering_rules
+    has_guard_trace = "smart_contract_guard_trace_lowering" in lowering_rules
     has_sc = any(
         kind == "ID" and text in _SMART_CONTRACT_FUNCTIONS for kind, text in tokens
     ) or "smart_contract_lowering" in lowering_rules
@@ -897,6 +915,8 @@ def classify_obligation(tokens: List[tuple], lowering_rules: List[str]) -> str:
         return OBLIGATION_CLASS_FINITE_FIELD
     if has_group:
         return OBLIGATION_CLASS_GROUP_THEORY
+    if has_guard_trace:
+        return OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE
     if has_sc:
         return OBLIGATION_CLASS_SMART_CONTRACT
     if has_rtgs:
@@ -911,6 +931,86 @@ def classify_obligation(tokens: List[tuple], lowering_rules: List[str]) -> str:
 def obligation_bridge_lemmas(obligation_class: str) -> List[str]:
     """Return the canonical bridge lemma entry points for an obligation class."""
     return list(_OBLIGATION_CLASS_BRIDGE_LEMMAS.get(obligation_class, []))
+
+
+def _sanitize_lean_identifier(name: str) -> str:
+    clean = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in name)
+    clean = clean.strip("_")
+    if not clean:
+        return "generated_theorem"
+    if clean[0].isdigit():
+        clean = f"_{clean}"
+    return clean
+
+
+def guard_trace_expected_to_lean(expected_outcome: Any) -> str:
+    if expected_outcome is True:
+        return "some GuardState.Unlocked"
+    if expected_outcome is False:
+        return "none"
+    if not isinstance(expected_outcome, str):
+        raise ValueError(f"unsupported guard trace outcome: {expected_outcome!r}")
+    normalized = expected_outcome.strip()
+    lowered = normalized.lower()
+    if normalized in {"some GuardState.Unlocked", "none"}:
+        return normalized
+    if lowered in {"safe", "guarded", "some", "unlocked"}:
+        return "some GuardState.Unlocked"
+    if lowered in {"unsafe", "unguarded", "none", "exposed"}:
+        return "none"
+    raise ValueError(f"unsupported guard trace outcome: {expected_outcome!r}")
+
+
+def normalize_guard_trace_translator_ir(translator_ir: Dict[str, Any]) -> Dict[str, Any]:
+    guard_trace = translator_ir.get("guard_trace")
+    if not isinstance(guard_trace, dict):
+        return translator_ir
+    ops = guard_trace.get("ops")
+    if not isinstance(ops, list) or not all(isinstance(op, str) for op in ops):
+        return translator_ir
+    normalized = dict(translator_ir)
+    normalized_guard_trace = {
+        "ops": [str(op) for op in ops],
+        "expected_outcome": guard_trace.get("expected_outcome"),
+    }
+    normalized["guard_trace"] = normalized_guard_trace
+    normalized["guard_trace_ops"] = list(normalized_guard_trace["ops"])
+    normalized["guard_trace_expected_outcome"] = normalized_guard_trace["expected_outcome"]
+    normalized["theorem_goal"] = (
+        "runGuard GuardState.Unlocked "
+        f"[{', '.join(f'GuardOp.{op}' for op in normalized_guard_trace['ops'])}] = "
+        f"{guard_trace_expected_to_lean(normalized_guard_trace['expected_outcome'])}"
+    )
+    normalized["obligation_class"] = OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE
+    lowering_rules = normalized.setdefault("lowering_rules", [])
+    if SMART_CONTRACT_GUARD_TRACE_LOWERING not in lowering_rules:
+        lowering_rules.append(SMART_CONTRACT_GUARD_TRACE_LOWERING)
+    proof_trace_hints = normalized.setdefault("proof_trace_hints", [])
+    hint = "use the concrete guard trace with SmartContract.runGuard"
+    if hint not in proof_trace_hints:
+        proof_trace_hints.append(hint)
+    requires_bridge_lemmas = normalized.setdefault("requires_bridge_lemmas", [])
+    bridge_lemma = "MumeiLean.SmartContract.no_external_call_without_lock"
+    if bridge_lemma not in requires_bridge_lemmas:
+        requires_bridge_lemmas.append(bridge_lemma)
+    return normalized
+
+
+def render_guard_trace_theorem(atom_name: str, guard_trace: Dict[str, Any]) -> str:
+    ops = guard_trace.get("ops")
+    if not isinstance(ops, list) or not all(isinstance(op, str) for op in ops):
+        raise ValueError("guard trace must include an ordered list of op strings")
+    theorem_name = f"{_sanitize_lean_identifier(atom_name)}_correct"
+    ops_expr = ", ".join(f"GuardOp.{op}" for op in ops)
+    expected = guard_trace_expected_to_lean(guard_trace.get("expected_outcome"))
+    return "\n".join(
+        [
+            f"theorem {theorem_name} :",
+            f"    runGuard GuardState.Unlocked [{ops_expr}] = {expected} := by",
+            "  decide",
+            "",
+        ]
+    )
 
 
 def _build_translator_ir(

@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "timestamp": "2026-06-07T00:00:00Z",
-  "mumei_version": "0.6.0",
+  "mumei_version": "0.6.12",
   "file": "std/settlement.mm",
   "source_certificate": "fixtures/vstd_settlement.proof-cert.json",
   "bundle_kind": "escalation_bundle",

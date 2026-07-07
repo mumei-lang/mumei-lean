@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "timestamp": "2026-06-07T00:00:00Z",
-  "mumei_version": "0.6.0",
+  "mumei_version": "0.6.12",
   "z3_version": "Z3 version 4.12.2",
   "file": "std/settlement.mm",
   "atoms": [

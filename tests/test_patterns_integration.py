@@ -12,7 +12,7 @@ def _pattern_cert() -> dict:
     return {
         "version": "1.0",
         "timestamp": "2026-05-11T00:00:00Z",
-        "mumei_version": "0.6.0",
+        "mumei_version": "0.6.12",
         "z3_version": "4.12.2",
         "file": "std/math/patterns.mm",
         "atoms": [

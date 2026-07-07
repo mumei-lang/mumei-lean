@@ -71,7 +71,7 @@ The standard live generated theorem paths are:
   `Generated.Std.Algebra.Finite_field.ff_zero_eq_zero_correct`; Lake proves
   the equality witness through `MumeiLean.Algebra.ff_eq_refl` with
   `known_witness_used = false` and no bridge lemma hash change.
-- `tests/fixtures/sort_ascending.mm::verified_insertion_sort_ascending`: the
+- `std/list.mm::verified_insertion_sort_ascending`: the
   sort ascending-preservation path lowers `forall(i, 0, n-1, arr[i] <= arr[i+1])`
   ensures to `MumeiLean.Sort.insertion_sort_ascending_bridge` backed by
   mathlib's `List.Sorted`. This is the fifth live generated theorem path.

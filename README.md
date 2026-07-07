@@ -71,6 +71,10 @@ The standard live generated theorem paths are:
   `Generated.Std.Algebra.Finite_field.ff_zero_eq_zero_correct`; Lake proves
   the equality witness through `MumeiLean.Algebra.ff_eq_refl` with
   `known_witness_used = false` and no bridge lemma hash change.
+- `std/list.mm::verified_insertion_sort_ascending`: the
+  sort ascending-preservation path lowers `forall(i, 0, n-1, arr[i] <= arr[i+1])`
+  ensures to `MumeiLean.Sort.insertion_sort_ascending_bridge` backed by
+  mathlib's `List.Sorted`. This is the fifth live generated theorem path.
 
 Field handling is fixed:
 
@@ -141,6 +145,7 @@ mumei-lean/
 │   ├── Crypto.lean        # Hash, signature, and crypto primitive proof patterns
 │   ├── AdvancedPatterns.lean  # Reusable domain proof patterns
 │   ├── StdMathAbs.lean    # std/math_abs Lean witness proofs
+│   ├── Sort.lean          # Sort ascending-preservation bridge (mathlib List.Sorted)
 │   └── Settlement.lean    # RTGS settlement and balance proofs
 ├── scripts/
 │   ├── expr_translator.py # mumei contract expr → Lean Prop translator
@@ -266,11 +271,13 @@ The live-generated paths share one contract with mumei-agent docs:
    `Generated.Std.Math.Patterns.bounded_mul_with_overflow_check_correct` in
    `generated/Generated/Std/Math/Patterns.lean`,
    `Generated.Std.Crypto.Primitives.constant_time_eq_flag_correct` in
-   `generated/Generated/Std/Crypto/Primitives.lean`, and
+   `generated/Generated/Std/Crypto/Primitives.lean`,
    `Generated.Std.Algebra.Finite_field.ff_zero_eq_zero_correct` in
-   `generated/Generated/Std/Algebra/Finite_field.lean`. When these modules
-   build cleanly, their atoms record `known_witness_used = false` and may be
-   promoted to `lean_verified`.
+   `generated/Generated/Std/Algebra/Finite_field.lean`, and the sort
+   ascending-preservation path (`verified_insertion_sort_ascending`) which
+   lowers to `MumeiLean.Sort.insertion_sort_ascending_bridge` backed by
+   mathlib's `List.Sorted`. When these modules build cleanly, their atoms
+   record `known_witness_used = false` and may be promoted to `lean_verified`.
 2. Known-witness fallback: if generated theorem attribution cannot be used but
    the committed witness still validates, the bridge records
    `lean_module = "MumeiLean.StdMathAbs"`, `known_witness_used = true`, and

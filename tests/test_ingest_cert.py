@@ -16,6 +16,9 @@ from ingest_cert import (
     write_modules,
 )
 
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+GUARD_TRACE_FIXTURE = FIXTURES / "guard_trace_demo.proof-cert.json"
+
 
 def _make_atom(
     name: str,
@@ -466,6 +469,48 @@ def test_render_module_emits_namespace_header_and_imports():
     assert "namespace Generated.Std.Math" in src
     assert "import MumeiLean" in src
     assert "end Generated.Std.Math" in src.strip().split("\n")[-1]
+
+
+def test_guard_trace_fixture_renders_run_guard_theorems_and_imports(tmp_path: Path):
+    payload = json.loads(GUARD_TRACE_FIXTURE.read_text())
+    atoms = collect_unknown_atoms(payload)
+
+    assert [atom.name for atom in atoms] == [
+        "guarded_reentrancy_trace",
+        "unguarded_reentrancy_trace",
+    ]
+    assert all(atom.is_partial_translation is False for atom in atoms)
+    assert all(
+        atom.translator_ir["obligation_class"]
+        == "smart_contract_guard_trace_obligation"
+        for atom in atoms
+    )
+    assert atoms[0].translator_ir["guard_trace_ops"] == [
+        "lock",
+        "externalCall",
+        "unlock",
+    ]
+    assert atoms[1].translator_ir["guard_trace_expected_outcome"] == "none"
+
+    rendered_guarded = render_theorem(atoms[0])
+    rendered_unguarded = render_theorem(atoms[1])
+    assert "/-- Auto-generated from mumei atom `guarded_reentrancy_trace`" in rendered_guarded
+    assert "-- mumei_escalation_reason: sc" in rendered_guarded
+    assert "-- mumei_logic_fragment_tags: smart_contract,guard_trace" in rendered_guarded
+    assert "-- mumei_z3_result_class: unknown" in rendered_guarded
+    assert "theorem guarded_reentrancy_trace_correct" in rendered_guarded
+    assert "runGuard GuardState.Unlocked [GuardOp.lock, GuardOp.externalCall, GuardOp.unlock] = some GuardState.Unlocked := by" in rendered_guarded
+    assert "decide" in rendered_guarded
+    assert "theorem unguarded_reentrancy_trace_correct" in rendered_unguarded
+    assert "runGuard GuardState.Unlocked [GuardOp.externalCall] = none := by" in rendered_unguarded
+
+    out_dir = tmp_path / "generated"
+    [written] = write_modules(atoms, out_dir, "Generated")
+    src = written.read_text()
+    assert "import MumeiLean.SmartContract" in src
+    assert "open MumeiLean.SmartContract" in src
+    assert "runGuard GuardState.Unlocked" in src
+    assert "guarded_reentrancy_trace_correct" in src
 
 
 def test_write_modules_groups_by_module_key(tmp_path: Path):

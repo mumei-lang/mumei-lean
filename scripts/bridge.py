@@ -326,16 +326,33 @@ def _remove_stale_generated_modules(
     *,
     out_dir: Path,
     module_prefix: str,
-    known_witness_proved: Set[AtomKey],
     generated_atoms: List[IngestedAtom],
 ) -> None:
-    generated_module_keys = {atom.module_key for atom in generated_atoms}
-    for module_key, _name in known_witness_proved:
-        if module_key in generated_module_keys:
+    """Prune stale files only inside the bridge-generated module tree."""
+    generated_module_paths = {
+        module_to_path(atom.module_key, module_prefix) for atom in generated_atoms
+    }
+    target_root = out_dir / module_prefix
+    if not target_root.exists():
+        return
+    for source in target_root.rglob("*.lean"):
+        rel = source.relative_to(out_dir)
+        if rel not in generated_module_paths:
+            source.unlink()
+
+
+def _mirror_generated_modules(out_dir: Path, repo_dir: Path, module_prefix: str) -> None:
+    source_root = out_dir / module_prefix
+    target_root = repo_dir / "generated" / module_prefix
+    if not source_root.exists():
+        return
+    for source in source_root.rglob("*.lean"):
+        rel = source.relative_to(source_root)
+        target = target_root / rel
+        if source.resolve() == target.resolve():
             continue
-        target = out_dir / module_to_path(module_key, module_prefix)
-        if target.exists():
-            target.unlink()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
 
 
 def _run_lake_build(repo_dir: Path, log_path: Path) -> int:
@@ -643,10 +660,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     _remove_stale_generated_modules(
         out_dir=args.out_dir,
         module_prefix=args.module_prefix,
-        known_witness_proved=known_witness_proved,
         generated_atoms=all_atoms,
     )
     write_modules(all_atoms, args.out_dir, args.module_prefix)
+    _mirror_generated_modules(args.out_dir, args.repo_dir, args.module_prefix)
+    _remove_stale_generated_modules(
+        out_dir=args.repo_dir / "generated",
+        module_prefix=args.module_prefix,
+        generated_atoms=all_atoms,
+    )
 
     # Aggregate per-module unknown atom counts so CI / humans can
     # see which mumei modules still rely on Lean to close their

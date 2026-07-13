@@ -186,6 +186,14 @@ known calls, `forall(..)`, and compact `match { ... }` arms are part of
 the supported surface; bare commas elsewhere still mark the expression
 partial.
 
+When a certificate carries a supported `body_expr`, the bridge emits a Lean
+`def <atom>Result` plus an `h_body` equality so the theorem can prove
+postconditions from body semantics instead of only `requires → ensures`;
+otherwise it falls back to the contract-only proof path. **Current
+limitations:** unknown function calls and domain-specific invariants that need
+bespoke lemmas are not translated automatically — they are preserved verbatim,
+tagged `-- TODO: unproven`, and still require a hand-written Lean witness.
+
 Bridge-rule metadata is incremental and spec-first. Array access emits the
 documented `array_bounds_bridge` rule and records both
 `mumei_array_bounds_bridge` and `mumei_array_get_bridge`; integer arithmetic

@@ -50,55 +50,20 @@ The only promoted Lean path is:
 4. Export `.lean-cert.json` with `lean_result_metadata` and the top-level atom fields `translator_version` and `bridge_lemma_hash`.
 5. mumei accepts `lean_verified` only when those fields match its current constants; mismatches are `stale_translator` and must not be treated as proven.
 
-The standard live generated theorem paths are:
+There are five live generated theorem paths, each lowering a Z3 `unknown` (or
+spurious-candidate) atom to a generated Lean theorem that builds with
+`known_witness_used = false`:
+`abs_saturating`, `bounded_mul_with_overflow_check`, `constant_time_eq_flag`,
+`ff_zero_eq_zero`, and `verified_insertion_sort_ascending`.
 
-- `std/math/abs.mm::abs_saturating`: `scripts/ingest_cert.py` lowers the
-  saturating i64 body semantics into `generated/Generated/Std/Math/Abs.lean`,
-  Lake builds `Generated.Std.Math.Abs.abs_saturating_correct`, and export
-  records `known_witness_used = false`.
-- `std/math/patterns.mm::bounded_mul_with_overflow_check`: complete
-  `body_expr` lowering emits
-  `Generated.Std.Math.Patterns.bounded_mul_with_overflow_check_correct`; Lake
-  proves the nonlinear postcondition conjunction through mathlib-backed
-  generated automation and export records `known_witness_used = false`.
-- `std/crypto/primitives.mm::constant_time_eq_flag`: braced conditional
-  `body_expr` lowering emits
-  `Generated.Std.Crypto.Primitives.constant_time_eq_flag_correct`; Lake proves
-  the deterministic 0/1 crypto-input witness with `known_witness_used = false`
-  and no bridge lemma hash change.
-- `std/algebra/finite_field.mm::ff_zero_eq_zero`: finite-field `ff_zero(p)`
-  body lowering emits
-  `Generated.Std.Algebra.Finite_field.ff_zero_eq_zero_correct`; Lake proves
-  the equality witness through `MumeiLean.Algebra.ff_eq_refl` with
-  `known_witness_used = false` and no bridge lemma hash change.
-- `std/list.mm::verified_insertion_sort_ascending`: the
-  sort ascending-preservation path lowers `forall(i, 0, n-1, arr[i] <= arr[i+1])`
-  ensures to `MumeiLean.Sort.insertion_sort_ascending_bridge` backed by
-  mathlib's `List.Sorted`. This is the fifth live generated theorem path.
-
-Field handling is fixed:
-
-| Field | Meaning |
-| --- | --- |
-| `z3_result_class` | Normalized solver class used for routing; only `unknown` is a Lean escalation candidate. |
-| `escalation_reason` | Why Z3 could not close the obligation, such as timeout/resource limits, quantified reasoning, recursion, or a domain-specific fragment. |
-| `logic_fragment_tags` | Ordered fragment tags used for bridge lemma selection, metrics, and mumei certificate parity. |
-| `translator_ir` | Typed lowering contract emitted into generated Lean and copied into `.lean-cert.json` for mumei-side auditing. |
-| `manual_lemma_reason` | Stable reason a generated theorem needs human lemma work; dry runs should emit `manual_lemma_required`, not `lean_verified`. |
-| `stale_translator` | mumei-side rejection when `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract. |
-
-Current contract constants are `translator_version = mumei-lean-translator-ir-v2` and `bridge_lemma_hash = a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11`.
+Per-path descriptions and the certificate field-handling table live in
+[`docs/LEAN_HARNESS_CONTRACT.md`](docs/LEAN_HARNESS_CONTRACT.md); the current
+`translator_version` / `bridge_lemma_hash` contract constants are pinned in
+[`docs/LEAN_TRANSLATOR_SPEC.md`](docs/LEAN_TRANSLATOR_SPEC.md).
 
 ## Bridge acceptance invariant
 
-The bridge is a complement for Z3 `unknown` obligations only. A candidate can be promoted to `lean_verified` when all of these hold:
-
-1. The source atom was routed from `z3_result_class == "unknown"` or `z3_check_result == "unknown"`.
-2. Generated Lean builds successfully without unresolved manual-lemma placeholders.
-3. The exported atom and `lean_result_metadata` both carry the current `translator_version`.
-4. The exported atom and `lean_result_metadata` both carry the current `bridge_lemma_hash`.
-
-If either `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract, the failure condition is `stale_translator`. `sat`, `unsat`, parser failures, audit/spec issues, and ordinary mumei-agent findings are never upgraded by this bridge.
+An atom is promoted to `lean_verified` only when it was routed from a Z3 `unknown` result, its generated Lean builds without unresolved manual-lemma placeholders, and both the atom and `lean_result_metadata` carry the current `translator_version` and `bridge_lemma_hash`; any mismatch is `stale_translator`. See [`docs/LEAN_HARNESS_CONTRACT.md`](docs/LEAN_HARNESS_CONTRACT.md) for the full invariant and the excluded cases.
 
 ## Architecture in one picture
 
@@ -367,22 +332,15 @@ To build only specific modules (faster for development):
    source translation still lives in Python, while `MumeiLean.CertParser`
    and `MumeiLean.CertWriter` are implemented Lean.Json-based native
    parser/writer modules for downstream tooling that wants a pure Lean path.
-4. **Scope is intentionally small.** The expression translator handles
-   arithmetic comparisons, boolean connectives, integer literals,
-   conditionals, compact `match x { ... }` expressions, typed bounded and
-   unbounded quantifiers, `arr[i]`, list/string literals, and known calls.
-   Finite-field helpers (`ff_add`, `ff_mul`, etc.) and group-theory helpers
-   (`group_mul`, etc.) route through `MumeiLean.Algebra`; cryptographic
-   primitives (`hash`, `signature_verify`, etc.) route through
-   `MumeiLean.Crypto`; higher-order predicates (`holds(P, x)`) lower to
-   direct Lean application (`P x`). If a certificate carries a supported
-   `body_expr`, the bridge emits a Lean `def <atom>Result` plus an `h_body`
-   equality so the theorem can prove postconditions from body semantics
-   instead of only `requires → ensures`. Anything else is preserved verbatim
-   and tagged `-- TODO: unproven` or falls back to the contract-only proof path.
-   Current limitations: unknown function calls and domain-specific
-   invariants that need bespoke lemmas still require a hand-written
-   witness.
+4. **Scope is intentionally small.** The expression translator covers a fixed
+   surface — arithmetic/boolean/comparison operators, literals, conditionals,
+   compact `match`, typed quantifiers, array access, and known helper/domain
+   calls — and emits body-semantics theorems when a certificate carries a
+   supported `body_expr`. Finite-field, group-theory, and crypto helpers route
+   through `MumeiLean.Algebra` / `MumeiLean.Crypto`; anything unsupported is
+   preserved verbatim and gated for a hand-written witness. The full supported
+   surface and current limitations are documented in
+   [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 5. **Targeted at Z3-`unknown`.** `mumei-lean` is *not* a replacement for
    Z3. Use it for the atoms Z3 cannot close (cryptographic correctness,
    abstract-algebraic invariants, etc.).

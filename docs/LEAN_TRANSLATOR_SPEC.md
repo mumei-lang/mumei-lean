@@ -524,3 +524,18 @@ A translator implementation is compliant iff:
 `validate_translator_ir_compliance()` enforces these checks at translation time
 with warnings only. Warnings do not abort translation, because incomplete Lean
 obligations are still useful for triage and handwritten proof completion.
+
+## 9. Certificate field handling and contract constants
+
+Certificate atom field handling is fixed:
+
+| Field | Meaning |
+| --- | --- |
+| `z3_result_class` | Normalized solver class used for routing; only `unknown` is a Lean escalation candidate. |
+| `escalation_reason` | Why Z3 could not close the obligation, such as timeout/resource limits, quantified reasoning, recursion, or a domain-specific fragment. |
+| `logic_fragment_tags` | Ordered fragment tags used for bridge lemma selection, metrics, and mumei certificate parity. |
+| `translator_ir` | Typed lowering contract emitted into generated Lean and copied into `.lean-cert.json` for mumei-side auditing. |
+| `manual_lemma_reason` | Stable reason a generated theorem needs human lemma work; dry runs should emit `manual_lemma_required`, not `lean_verified`. |
+| `stale_translator` | mumei-side rejection when `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract. |
+
+Current contract constants are `translator_version = mumei-lean-translator-ir-v2` and `bridge_lemma_hash = a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11`. These are also pinned in [`LEAN_HARNESS_CONTRACT.md`](LEAN_HARNESS_CONTRACT.md), which the contract-vocabulary test uses as the source of truth against the `scripts/export_cert.py` `TRANSLATOR_VERSION` / `BRIDGE_LEMMA_HASH` constants.

@@ -59,6 +59,36 @@ The standard abs fixture is the reference path for fallback semantics:
 from i64::MIN saturation, non-negative, and negative branches, not from the
 hand-written `MumeiLean.StdMathAbs` witness.
 
+### Live generated theorem paths
+
+The bridge ships five live generated theorem paths. Each lowers a Z3 `unknown`
+(or spurious-candidate) atom to a generated Lean theorem that Lake builds with
+`known_witness_used = false`:
+
+- `std/math/abs.mm::abs_saturating`: `scripts/ingest_cert.py` lowers the
+  saturating i64 body semantics into `generated/Generated/Std/Math/Abs.lean`,
+  Lake builds `Generated.Std.Math.Abs.abs_saturating_correct`, and export
+  records `known_witness_used = false`.
+- `std/math/patterns.mm::bounded_mul_with_overflow_check`: complete
+  `body_expr` lowering emits
+  `Generated.Std.Math.Patterns.bounded_mul_with_overflow_check_correct`; Lake
+  proves the nonlinear postcondition conjunction through mathlib-backed
+  generated automation and export records `known_witness_used = false`.
+- `std/crypto/primitives.mm::constant_time_eq_flag`: braced conditional
+  `body_expr` lowering emits
+  `Generated.Std.Crypto.Primitives.constant_time_eq_flag_correct`; Lake proves
+  the deterministic 0/1 crypto-input witness with `known_witness_used = false`
+  and no bridge lemma hash change.
+- `std/algebra/finite_field.mm::ff_zero_eq_zero`: finite-field `ff_zero(p)`
+  body lowering emits
+  `Generated.Std.Algebra.Finite_field.ff_zero_eq_zero_correct`; Lake proves
+  the equality witness through `MumeiLean.Algebra.ff_eq_refl` with
+  `known_witness_used = false` and no bridge lemma hash change.
+- `std/list.mm::verified_insertion_sort_ascending`: the
+  sort ascending-preservation path lowers `forall(i, 0, n-1, arr[i] <= arr[i+1])`
+  ensures to `MumeiLean.Sort.insertion_sort_ascending_bridge` backed by
+  mathlib's `List.Sorted`. This is the fifth live generated theorem path.
+
 ## Scope
 
 Covered entrypoints:

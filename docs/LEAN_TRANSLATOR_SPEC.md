@@ -403,13 +403,17 @@ Atoms whose obligation follows by induction on a natural-number bound leave Z3
 dedicated proof shape via the explicit
 `translator_ir.bridge_pattern == "int_nonnegative_induction"` marker and
 delegates to `MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern`,
-supplying the polynomial motive plus base/step obligations:
+supplying the polynomial motive plus base/step obligations. The emitted goal is
+the **universally quantified** statement `∀ k : Int, 0 ≤ k → 0 ≤ k * (k + 1)`,
+which matches the atom's `forall(k, 0, n, k * (k + 1) >= 0)` ensures — proving
+only the single instance `0 ≤ n * (n + 1)` at the bound would be strictly weaker
+than the contract, so the theorem statement is the universal that entails it:
 
 ```lean
 theorem sum_nonneg_inductive_correct (n : Int) (h_req : n ≥ 0) :
-    0 ≤ n * (n + 1) := by
+    ∀ k : Int, 0 ≤ k → 0 ≤ k * (k + 1) := by
   refine MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern
-    (fun k => 0 ≤ k * (k + 1)) ?h0 ?hstep n h_req
+    (fun k => 0 ≤ k * (k + 1)) ?h0 ?hstep
   · norm_num
   · intro k ih
     have hk : (0 : Int) ≤ (k : Int) := Int.ofNat_nonneg k

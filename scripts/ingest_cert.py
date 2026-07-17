@@ -627,6 +627,11 @@ def _int_nonnegative_induction_proof(atom: IngestedAtom) -> Optional[str]:
     so the recursive nonnegativity obligation Z3 leaves ``unknown`` is closed by
     induction on the natural-number cast.
 
+    The emitted goal is the **universally quantified** statement
+    ``∀ k : Int, 0 ≤ k → 0 ≤ k * (k + 1)`` so the proven theorem matches the
+    atom's ``forall(k, 0, n, k * (k + 1) >= 0)`` obligation instead of a single
+    instance at ``n`` (which would be strictly weaker than the contract).
+
     See LEAN_TRANSLATOR_SPEC.md section 5.13.
     """
     if _bridge_pattern(atom) != "int_nonnegative_induction":
@@ -637,9 +642,9 @@ def _int_nonnegative_induction_proof(atom: IngestedAtom) -> Optional[str]:
         _theorem_preamble(atom)
         + f"theorem {_lean_theorem_name(atom.name)} ({bound} : Int) "
         f"(h_req : {bound} ≥ 0) :\n"
-        f"    0 ≤ {bound} * ({bound} + 1) := by\n"
+        f"    ∀ k : Int, 0 ≤ k → 0 ≤ k * (k + 1) := by\n"
         f"  refine MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern\n"
-        f"    (fun k => 0 ≤ k * (k + 1)) ?h0 ?hstep {bound} h_req\n"
+        f"    (fun k => 0 ≤ k * (k + 1)) ?h0 ?hstep\n"
         f"  · norm_num\n"
         f"  · intro k ih\n"
         f"    have hk : (0 : Int) ≤ (k : Int) := Int.ofNat_nonneg k\n"

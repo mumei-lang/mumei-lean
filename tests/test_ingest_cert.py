@@ -691,6 +691,8 @@ def test_render_theorem_int_nonnegative_induction_uses_backing_lemma():
     assert (
         "MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern" in rendered
     )
-    assert "0 ≤ n * (n + 1)" in rendered
+    # Goal is the universally quantified statement matching the atom's
+    # `forall(k, 0, n, k * (k + 1) >= 0)` ensures, not a single instance at `n`.
+    assert "∀ k : Int, 0 ≤ k → 0 ≤ k * (k + 1)" in rendered
     assert "nlinarith" in rendered
     assert "sorry" not in rendered

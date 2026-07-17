@@ -642,3 +642,55 @@ def test_main_writes_files(tmp_path: Path):
     assert expected.exists()
     text = expected.read_text()
     assert "theorem inc_correct" in text
+
+
+POLY_BOUND_FIXTURE = FIXTURES / "std_math_patterns_poly_bound.proof-cert.json"
+EXISTS_PIVOT_FIXTURE = FIXTURES / "std_list_exists_pivot_partition.proof-cert.json"
+SUM_NONNEG_FIXTURE = FIXTURES / "std_math_patterns_sum_nonneg.proof-cert.json"
+
+
+def test_render_theorem_nonlinear_monic_uses_body_semantics():
+    """PR3 path 6: single non-conjunction nonlinear predicate lowered through
+    the generic body-semantics path and discharged by ``mumei_arith_deep``."""
+    payload = json.loads(POLY_BOUND_FIXTURE.read_text())
+    [atom] = collect_unknown_atoms(payload)
+    assert atom.is_partial_translation is False
+    rendered = render_theorem(atom)
+    assert "def polyBoundMonotoneResult (x : Int) : Int :=" in rendered
+    assert "x * x + 2 * x + 1" in rendered
+    assert "theorem poly_bound_monotone_correct" in rendered
+    assert "(result ≥ 0)" in rendered
+    assert "mumei_arith_deep" in rendered
+    assert "sorry" not in rendered
+
+
+def test_render_theorem_forall_exists_swap_uses_backing_lemma():
+    """PR3 path 7: ∀∃ alternation delegated to forall_exists_swap_of_finite."""
+    payload = json.loads(EXISTS_PIVOT_FIXTURE.read_text())
+    [atom] = collect_unknown_atoms(payload)
+    assert atom.is_partial_translation is False
+    assert atom.translator_ir["bridge_pattern"] == "forall_exists_swap"
+    rendered = render_theorem(atom)
+    assert "theorem exists_pivot_partition_correct" in rendered
+    assert "∃ f : Int → Int, ∀ i : Int" in rendered
+    assert (
+        "MumeiLean.Quantifiers.forall_exists_swap_of_finite" in rendered
+    )
+    assert "sorry" not in rendered
+
+
+def test_render_theorem_int_nonnegative_induction_uses_backing_lemma():
+    """PR3 path 8: natural-number induction delegated to
+    int_nonnegative_induction_pattern."""
+    payload = json.loads(SUM_NONNEG_FIXTURE.read_text())
+    [atom] = collect_unknown_atoms(payload)
+    assert atom.is_partial_translation is False
+    assert atom.translator_ir["bridge_pattern"] == "int_nonnegative_induction"
+    rendered = render_theorem(atom)
+    assert "theorem sum_nonneg_inductive_correct" in rendered
+    assert (
+        "MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern" in rendered
+    )
+    assert "0 ≤ n * (n + 1)" in rendered
+    assert "nlinarith" in rendered
+    assert "sorry" not in rendered

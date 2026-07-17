@@ -1098,5 +1098,40 @@ def test_classify_obligation_direct():
     assert classify_obligation(tokens, rules) == OBLIGATION_CLASS_CRYPTO
 
 
+def test_obligation_class_nonlinear_monic_is_arithmetic():
+    # PR3 path 6: a single non-conjunction nonlinear predicate has no
+    # quantifier / crypto / ff markers, so it falls back to arithmetic.
+    result = translate_contract("result >= 0")
+    assert result.translator_ir is not None
+    assert result.translator_ir.obligation_class == OBLIGATION_CLASS_ARITHMETIC
+
+
+def test_obligation_class_forall_exists_alternation_is_quantifier():
+    # PR3 path 7: nested forall/exists alternation classifies as quantifier.
+    result = translate_contract(
+        "forall(i, 0, n, exists(j, 0, n, arr[j] <= arr[i]))"
+    )
+    assert result.translator_ir is not None
+    assert result.translator_ir.obligation_class == OBLIGATION_CLASS_QUANTIFIER
+
+
+def test_obligation_class_inductive_forall_is_quantifier():
+    # PR3 path 8: the induction obligation carries a bounded forall, so it
+    # classifies as quantifier and routes to the induction bridge lemma.
+    result = translate_contract("forall(k, 0, n, k * (k + 1) >= 0)")
+    assert result.translator_ir is not None
+    assert result.translator_ir.obligation_class == OBLIGATION_CLASS_QUANTIFIER
+
+
+def test_obligation_bridge_lemmas_include_new_backing_lemmas():
+    # PR3 paths 7 & 8 delegate to these existing lemmas; ensure they are
+    # discoverable through the quantifier obligation registry.
+    lemmas = obligation_bridge_lemmas(OBLIGATION_CLASS_QUANTIFIER)
+    assert "MumeiLean.Quantifiers.forall_exists_swap_of_finite" in lemmas
+    assert (
+        "MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern" in lemmas
+    )
+
+
 def test_translator_version_is_v2():
     assert expr_translator.TRANSLATOR_VERSION == "mumei-lean-translator-ir-v2"

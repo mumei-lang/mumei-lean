@@ -1,0 +1,100 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-17T00:00:00Z",
+  "mumei_version": "0.6.12",
+  "z3_version": "Z3 version 4.8.12 - 64 bit",
+  "file": "std/list.mm",
+  "atoms": [
+    {
+      "name": "exists_pivot_partition",
+      "z3_check_result": "spurious_candidate",
+      "content_hash": "fixture-exists-pivot-partition",
+      "status": "failed",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true
+      },
+      "proof_hash": "fixture-proof-exists-pivot-partition",
+      "dependencies": [],
+      "effects": [],
+      "requires": "n >= 0 && true",
+      "ensures": "forall(i, 0, n, exists(j, 0, n, arr[j] <= arr[i]))",
+      "z3_result_class": "sat",
+      "escalation_reason": "spurious_candidate",
+      "logic_fragment_tag": "quantifier_alternation",
+      "logic_fragment_tags": [
+        "quantifier_alternation",
+        "trigger_sensitive_quantifier"
+      ],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "n": "n",
+        "arr": "arr"
+      },
+      "bridge_lemma_hash": "a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11",
+      "translator_ir": {
+        "sort": "quantifier_obligation",
+        "obligation_class": "quantifier_obligation",
+        "bridge_pattern": "forall_exists_swap",
+        "binders": [
+          {
+            "mumei_name": "n",
+            "lean_name": "n",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "arr",
+            "lean_name": "arr",
+            "mumei_type": "fn",
+            "lean_type": "Int → Int",
+            "role": "param"
+          }
+        ],
+        "theorem_goal": "(n >= 0 && true) -> (forall(i, 0, n, exists(j, 0, n, arr[j] <= arr[i])))",
+        "provenance_span": {
+          "file": "std/list.mm",
+          "line": 512,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "refinement_predicate_lowering",
+          "quantifier_alternation_lowering",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [
+          "quantifier_alternation_lowering: forall/exists alternation is trigger-sensitive in Z3; discharged in Lean via MumeiLean.Quantifiers.forall_exists_swap_of_finite with an explicit choice witness."
+        ],
+        "proof_trace_hints": [
+          "supply the identity choice function so the exists witness is the index itself"
+        ],
+        "requires_bridge_lemmas": [
+          "MumeiLean.Quantifiers.forall_exists_swap_of_finite"
+        ]
+      },
+      "symbol_provenance": [
+        {
+          "symbol_name": "forall",
+          "source": "uninterpreted_function",
+          "location": null
+        },
+        {
+          "symbol_name": "exists",
+          "source": "uninterpreted_function",
+          "location": null
+        }
+      ],
+      "solver_process_metadata": {
+        "timeout_ms": 10000,
+        "cancel_reason": null
+      },
+      "body_summary": "for every index there exists a pivot index whose value is no larger",
+      "body_expr": "{ arr }"
+    }
+  ],
+  "certificate_hash": "fixture-exists-pivot-partition-cert",
+  "all_verified": false
+}

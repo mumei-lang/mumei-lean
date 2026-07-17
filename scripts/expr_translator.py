@@ -263,6 +263,7 @@ _OBLIGATION_CLASS_BRIDGE_LEMMAS: Dict[str, List[str]] = {
         "MumeiLean.Quantifiers.forall_and_intro",
         "MumeiLean.Quantifiers.nested_forall_intro",
         "MumeiLean.Quantifiers.nested_exists_intro",
+        "MumeiLean.Quantifiers.forall_exists_swap_of_finite",
         "MumeiLean.AdvancedPatterns.bounded_forall_weaken",
         "MumeiLean.AdvancedPatterns.bounded_exists_map",
         "MumeiLean.AdvancedPatterns.nested_forall_swap",

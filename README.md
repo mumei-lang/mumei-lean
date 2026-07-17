@@ -50,11 +50,14 @@ The only promoted Lean path is:
 4. Export `.lean-cert.json` with `lean_result_metadata` and the top-level atom fields `translator_version` and `bridge_lemma_hash`.
 5. mumei accepts `lean_verified` only when those fields match its current constants; mismatches are `stale_translator` and must not be treated as proven.
 
-There are five live generated theorem paths, each lowering a Z3 `unknown` (or
+There are eight live generated theorem paths, each lowering a Z3 `unknown` (or
 spurious-candidate) atom to a generated Lean theorem that builds with
 `known_witness_used = false`:
 `abs_saturating`, `bounded_mul_with_overflow_check`, `constant_time_eq_flag`,
-`ff_zero_eq_zero`, and `verified_insertion_sort_ascending`.
+`ff_zero_eq_zero`, `verified_insertion_sort_ascending`, `poly_bound_monotone`
+(single non-conjunction nonlinear arithmetic), `exists_pivot_partition`
+(forall/exists quantifier alternation), and `sum_nonneg_inductive`
+(natural-number induction).
 
 Per-path descriptions and the certificate field-handling table live in
 [`docs/LEAN_HARNESS_CONTRACT.md`](docs/LEAN_HARNESS_CONTRACT.md); the current

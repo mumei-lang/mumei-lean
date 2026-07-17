@@ -218,3 +218,45 @@ PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest \
 ```
 
 The Lake-marked sort ascending test should run and pass when `lake` is available; if it skips unexpectedly, check that `lake` is on `PATH` and that the fixture drivers compile with the pinned Lean toolchain.
+
+## Live Generated Theorem Paths (8 total)
+
+The bridge ships eight live generated theorem paths. Each lowers a Z3 `unknown`
+(or `spurious_candidate`) atom to a generated Lean theorem that builds with
+`known_witness_used = false`:
+
+1. `abs_saturating` — saturating i64 body semantics.
+2. `bounded_mul_with_overflow_check` — nonlinear conjunction body semantics.
+3. `constant_time_eq_flag` — crypto deterministic 0/1 witness.
+4. `ff_zero_eq_zero` — finite-field equality via `MumeiLean.Algebra.ff_eq_refl`.
+5. `verified_insertion_sort_ascending` — sort ascending preservation via `MumeiLean.Sort.insertion_sort_ascending_bridge`.
+6. `poly_bound_monotone` — single non-conjunction nonlinear arithmetic (`result >= 0` over `x*x + 2*x + 1`) via `mumei_arith_deep`.
+7. `exists_pivot_partition` — forall/exists quantifier alternation via `MumeiLean.Quantifiers.forall_exists_swap_of_finite`.
+8. `sum_nonneg_inductive` — natural-number induction via `MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern`.
+
+Focused pytest coverage for the three PR3 paths (6–8), Lake required:
+
+```bash
+cd /home/ubuntu/repos/mumei-lean
+PATH="$HOME/.elan/bin:$PATH" python -m pytest tests/test_lean_bridge_e2e.py -q \
+  -k "poly_bound_monotone or exists_pivot_partition or sum_nonneg_inductive"
+```
+
+Expected bridge assertions for each of the three fixtures
+(`tests/fixtures/std_math_patterns_poly_bound.proof-cert.json`,
+`tests/fixtures/std_list_exists_pivot_partition.proof-cert.json`,
+`tests/fixtures/std_math_patterns_sum_nonneg.proof-cert.json`):
+
+- `lake build` exits with status 0 and no `sorry` warning.
+- Lean cert atom has `z3_check_result == "lean_verified"` and `status == "verified"`.
+- `lean_metadata.known_witness_used is False`.
+- Theorem names are `Generated.Std.Math.Patterns.poly_bound_monotone_correct`, `Generated.Std.List.exists_pivot_partition_correct`, and `Generated.Std.Math.Patterns.sum_nonneg_inductive_correct` respectively.
+
+Non-Lake unit coverage:
+
+```bash
+cd /home/ubuntu/repos/mumei-lean
+PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest \
+  tests/test_ingest_cert.py tests/test_expr_translator.py \
+  tests/test_export_cert.py tests/test_contract_vocabulary.py -q
+```

@@ -127,6 +127,11 @@ class IngestedAtom:
                 OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE
             ):
                 return True
+            if self.translator_ir.get("bridge_pattern") in (
+                "forall_exists_swap",
+                "int_nonnegative_induction",
+            ):
+                return True
             guard_trace = self.translator_ir.get("guard_trace")
             if isinstance(guard_trace, dict) and isinstance(guard_trace.get("ops"), list):
                 return True
@@ -574,6 +579,74 @@ def _sort_ascending_proof(atom: IngestedAtom) -> Optional[str]:
     )
 
 
+def _bridge_pattern(atom: IngestedAtom) -> Optional[str]:
+    """Return the dedicated bridge-pattern marker on an atom, if any.
+
+    PR3 adds two live generated theorem paths whose proof shape is fixed and
+    delegated to a backing lemma (rather than discharged by the generic
+    body-semantics automation).  They are selected by an explicit
+    ``translator_ir.bridge_pattern`` marker so name/ensures matching cannot
+    accidentally route a different atom through them.
+    """
+    if not isinstance(atom.translator_ir, dict):
+        return None
+    pattern = atom.translator_ir.get("bridge_pattern")
+    return str(pattern) if isinstance(pattern, str) and pattern else None
+
+
+def _forall_exists_swap_proof(atom: IngestedAtom) -> Optional[str]:
+    """Generate the quantifier-alternation (∀∃) bridge theorem.
+
+    Delegates to ``MumeiLean.Quantifiers.forall_exists_swap_of_finite`` with an
+    explicit identity choice witness, so the trigger-sensitive ∀∃ obligation Z3
+    reports as ``spurious_candidate`` is closed in Lean without ``sorry``.
+
+    See LEAN_TRANSLATOR_SPEC.md section 5.12.
+    """
+    if _bridge_pattern(atom) != "forall_exists_swap":
+        return None
+    mapping = _lean_binder_mapping(atom)
+    bound = mapping.get("n", "n")
+    arr = mapping.get("arr", "arr")
+    return (
+        _theorem_preamble(atom)
+        + f"theorem {_lean_theorem_name(atom.name)} ({bound} : Int) "
+        f"({arr} : Int → Int) (h_req : {bound} ≥ 0) :\n"
+        f"    ∃ f : Int → Int, ∀ i : Int, {arr} (f i) ≤ {arr} i := by\n"
+        f"  exact MumeiLean.Quantifiers.forall_exists_swap_of_finite\n"
+        f"    (fun i j => {arr} j ≤ {arr} i)\n"
+        f"    (fun i => ⟨i, le_refl _⟩)\n"
+        f"    ⟨fun i => i, fun i => le_refl _⟩\n"
+    )
+
+
+def _int_nonnegative_induction_proof(atom: IngestedAtom) -> Optional[str]:
+    """Generate the natural-number induction bridge theorem.
+
+    Delegates to ``MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern``
+    so the recursive nonnegativity obligation Z3 leaves ``unknown`` is closed by
+    induction on the natural-number cast.
+
+    See LEAN_TRANSLATOR_SPEC.md section 5.13.
+    """
+    if _bridge_pattern(atom) != "int_nonnegative_induction":
+        return None
+    mapping = _lean_binder_mapping(atom)
+    bound = mapping.get("n", "n")
+    return (
+        _theorem_preamble(atom)
+        + f"theorem {_lean_theorem_name(atom.name)} ({bound} : Int) "
+        f"(h_req : {bound} ≥ 0) :\n"
+        f"    0 ≤ {bound} * ({bound} + 1) := by\n"
+        f"  refine MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern\n"
+        f"    (fun k => 0 ≤ k * (k + 1)) ?h0 ?hstep {bound} h_req\n"
+        f"  · norm_num\n"
+        f"  · intro k ih\n"
+        f"    have hk : (0 : Int) ≤ (k : Int) := Int.ofNat_nonneg k\n"
+        f"    nlinarith [ih, hk]\n"
+    )
+
+
 _LEAN_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
@@ -809,6 +882,12 @@ def render_theorem(atom: IngestedAtom) -> str:
     sort_proof = _sort_ascending_proof(atom)
     if sort_proof is not None:
         return sort_proof
+    swap_proof = _forall_exists_swap_proof(atom)
+    if swap_proof is not None:
+        return swap_proof
+    induction_proof = _int_nonnegative_induction_proof(atom)
+    if induction_proof is not None:
+        return induction_proof
 
     req = atom.requires_translation
     ens = atom.ensures_translation

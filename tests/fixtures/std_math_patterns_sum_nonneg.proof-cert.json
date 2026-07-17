@@ -1,0 +1,87 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-17T00:00:00Z",
+  "mumei_version": "0.6.12",
+  "z3_version": "Z3 version 4.8.12 - 64 bit",
+  "file": "std/math/patterns.mm",
+  "atoms": [
+    {
+      "name": "sum_nonneg_inductive",
+      "z3_check_result": "unknown",
+      "content_hash": "fixture-sum-nonneg-inductive",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true
+      },
+      "proof_hash": "fixture-proof-sum-nonneg-inductive",
+      "dependencies": [],
+      "effects": [],
+      "requires": "n >= 0",
+      "ensures": "forall(k, 0, n, k * (k + 1) >= 0)",
+      "z3_result_class": "unknown",
+      "escalation_reason": "requires_induction",
+      "logic_fragment_tag": "inductive_invariant",
+      "logic_fragment_tags": [
+        "inductive_invariant",
+        "natural_number_induction"
+      ],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "n": "n"
+      },
+      "bridge_lemma_hash": "a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11",
+      "translator_ir": {
+        "sort": "quantifier_obligation",
+        "obligation_class": "quantifier_obligation",
+        "bridge_pattern": "int_nonnegative_induction",
+        "binders": [
+          {
+            "mumei_name": "n",
+            "lean_name": "n",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          }
+        ],
+        "theorem_goal": "(n >= 0) -> (forall(k, 0, n, k * (k + 1) >= 0))",
+        "provenance_span": {
+          "file": "std/math/patterns.mm",
+          "line": 73,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "refinement_predicate_lowering",
+          "natural_number_induction_lowering",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [
+          "natural_number_induction_lowering: the nonnegativity follows by induction on the natural-number cast; discharged in Lean via MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern."
+        ],
+        "proof_trace_hints": [
+          "apply the int nonnegative induction pattern with the polynomial as the motive"
+        ],
+        "requires_bridge_lemmas": [
+          "MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern"
+        ]
+      },
+      "symbol_provenance": [
+        {
+          "symbol_name": "forall",
+          "source": "uninterpreted_function",
+          "location": null
+        }
+      ],
+      "solver_process_metadata": {
+        "timeout_ms": 10000,
+        "cancel_reason": null
+      },
+      "body_summary": "sum-shaped polynomial is nonnegative by natural-number induction",
+      "body_expr": "{ n }"
+    }
+  ],
+  "certificate_hash": "fixture-sum-nonneg-inductive-cert",
+  "all_verified": false
+}

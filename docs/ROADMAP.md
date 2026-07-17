@@ -6,6 +6,14 @@
 
 Promotion to `lean_verified` requires a successful Lean build plus matching `translator_version` and `bridge_lemma_hash` in both the exported atom and `lean_result_metadata`; mismatches are `stale_translator`. PRs that update this roadmap should review the cross-project roadmap in the same diff and record relevant bridge regression commands from `tests/`.
 
+Run the local contract vocabulary gate before opening a PR that touches `README.md`, `docs/LEAN_HARNESS_CONTRACT.md`, `docs/INTEGRATION.md`, or the bridge scripts:
+
+```bash
+PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest tests/test_contract_vocabulary.py -q
+```
+
+CI enforces the same gate through `.github/workflows/contract-vocabulary.yml`. This test also pins the `TRANSLATOR_VERSION`/`BRIDGE_LEMMA_HASH` constants against the values documented in `docs/LEAN_HARNESS_CONTRACT.md`, so it doubles as the bidirectional drift guard for the canonical `mumei/scripts/check_contract_vocabulary.py` gate.
+
 ## P9-G: Ecosystem Integration — ✅ Implemented
 
 `mumei-lang/mumei-lean` は P9-G NLAE pipeline の Fidelity Checker を担当する。

@@ -5,9 +5,12 @@ on:
     paths:
       - 'README.md'
       - 'docs/LEAN_HARNESS_CONTRACT.md'
+      - 'docs/LEAN_TRANSLATOR_SPEC.md'
+      - 'docs/BRIDGE_HARNESS_SPEC.md'
       - 'docs/INTEGRATION.md'
       - 'tests/test_contract_vocabulary.py'
       - 'scripts/export_cert.py'
+      - 'scripts/expr_translator.py'
       - 'scripts/bridge.py'
       - 'scripts/ingest_cert.py'
       - 'scripts/bridge_harness.py'

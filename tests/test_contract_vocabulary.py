@@ -33,7 +33,30 @@ NON_UNKNOWN_CASES = ["`sat`", "`unsat`", "parser failure", "parser failures"]
 # with docs/LEAN_HARNESS_CONTRACT.md.
 # ---------------------------------------------------------------------------
 EXPORT_CERT_PATH = REPO_ROOT / "scripts" / "export_cert.py"
+EXPR_TRANSLATOR_PATH = REPO_ROOT / "scripts" / "expr_translator.py"
 HARNESS_CONTRACT_DOC = REPO_ROOT / "docs" / "LEAN_HARNESS_CONTRACT.md"
+
+# Pinned contract constants (L2 safety net).  These literals are the single
+# expected value for the bridge contract.  Any PR that bumps the translator
+# version or bridge lemma hash (e.g. when a new backing lemma is added) MUST
+# update these literals together with every constant-defining script and every
+# pinned doc in the same diff — that is precisely what these tests enforce.
+EXPECTED_TRANSLATOR_VERSION = "mumei-lean-translator-ir-v2"
+EXPECTED_BRIDGE_LEMMA_HASH = (
+    "a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11"
+)
+
+# Every Python script that defines the contract constants as module globals.
+CONSTANT_DEFINING_SCRIPTS = [EXPORT_CERT_PATH, EXPR_TRANSLATOR_PATH]
+
+# Every doc that pins the contract constants in a `translator_version = ...` /
+# `bridge_lemma_hash = ...` sentence.
+PINNED_CONTRACT_DOCS = [
+    REPO_ROOT / "docs" / "LEAN_HARNESS_CONTRACT.md",
+    REPO_ROOT / "docs" / "LEAN_TRANSLATOR_SPEC.md",
+    REPO_ROOT / "docs" / "BRIDGE_HARNESS_SPEC.md",
+    REPO_ROOT / "docs" / "INTEGRATION.md",
+]
 
 # Python bridge scripts whose code surface (docstrings, argparse help,
 # user-visible output strings) is checked for Lean vocabulary alias drift.
@@ -126,6 +149,20 @@ def _extract_doc_pinned_values(path: Path) -> dict[str, str]:
     if m:
         values["bridge_lemma_hash"] = m.group(1)
     return values
+
+
+def _find_all_doc_pinned_values(path: Path) -> dict[str, list[str]]:
+    """Return every pinned translator_version / bridge_lemma_hash occurrence.
+
+    Unlike ``_extract_doc_pinned_values`` (first match only), this collects all
+    occurrences so a doc that repeats the pinned sentence cannot drift on a
+    later line.
+    """
+    text = path.read_text(encoding="utf-8")
+    return {
+        "translator_version": _DOC_TRANSLATOR_RE.findall(text),
+        "bridge_lemma_hash": _DOC_BRIDGE_HASH_RE.findall(text),
+    }
 
 
 def _is_key_context(line: str, alias: str) -> bool:
@@ -288,6 +325,80 @@ def test_code_constants_match_doc_pinned_values() -> None:
         )
 
     assert failures == [], "\n".join(failures)
+
+
+def test_pinned_contract_constants_match_expected_literals() -> None:
+    """L2 safety net: every constant-defining script and every pinned doc must
+    equal the exact expected literals.
+
+    ``test_code_constants_match_doc_pinned_values`` only checks that code and
+    doc agree with *each other*; a coordinated typo would slip through.  This
+    test additionally anchors both sides to a single expected literal and fans
+    the check out across all constant-defining scripts (``export_cert.py``,
+    ``expr_translator.py``) and all pinned docs.  A PR that intentionally bumps
+    the translator version or bridge lemma hash must update these expected
+    literals here in the same diff, which is the intended coupling with PR3.
+    """
+    failures: list[str] = []
+
+    for path in CONSTANT_DEFINING_SCRIPTS:
+        consts = _extract_module_constants(path)
+        rel = path.relative_to(REPO_ROOT)
+        tv = consts.get("TRANSLATOR_VERSION")
+        bh = consts.get("BRIDGE_LEMMA_HASH")
+        if tv != EXPECTED_TRANSLATOR_VERSION:
+            failures.append(
+                f"{rel}: TRANSLATOR_VERSION={tv!r} != expected "
+                f"{EXPECTED_TRANSLATOR_VERSION!r}"
+            )
+        if bh != EXPECTED_BRIDGE_LEMMA_HASH:
+            failures.append(
+                f"{rel}: BRIDGE_LEMMA_HASH={bh!r} != expected "
+                f"{EXPECTED_BRIDGE_LEMMA_HASH!r}"
+            )
+
+    for path in PINNED_CONTRACT_DOCS:
+        if not path.exists():
+            failures.append(f"{path.relative_to(REPO_ROOT)}: pinned doc missing")
+            continue
+        rel = path.relative_to(REPO_ROOT)
+        found = _find_all_doc_pinned_values(path)
+        tvs = found["translator_version"]
+        bhs = found["bridge_lemma_hash"]
+        if not tvs:
+            failures.append(f"{rel}: missing pinned translator_version value")
+        if not bhs:
+            failures.append(f"{rel}: missing pinned bridge_lemma_hash value")
+        for value in tvs:
+            if value != EXPECTED_TRANSLATOR_VERSION:
+                failures.append(
+                    f"{rel}: pinned translator_version={value!r} != expected "
+                    f"{EXPECTED_TRANSLATOR_VERSION!r}"
+                )
+        for value in bhs:
+            if value != EXPECTED_BRIDGE_LEMMA_HASH:
+                failures.append(
+                    f"{rel}: pinned bridge_lemma_hash={value!r} != expected "
+                    f"{EXPECTED_BRIDGE_LEMMA_HASH!r}"
+                )
+
+    assert failures == [], "\n".join(failures)
+
+
+def test_constant_defining_scripts_agree_with_each_other() -> None:
+    """export_cert.py and expr_translator.py must not diverge on the contract
+    constants, since both feed the same certificate acceptance path."""
+    values: dict[str, dict[str, str | None]] = {}
+    for path in CONSTANT_DEFINING_SCRIPTS:
+        consts = _extract_module_constants(path)
+        values[path.relative_to(REPO_ROOT).as_posix()] = {
+            "TRANSLATOR_VERSION": consts.get("TRANSLATOR_VERSION"),
+            "BRIDGE_LEMMA_HASH": consts.get("BRIDGE_LEMMA_HASH"),
+        }
+    distinct_tv = {v["TRANSLATOR_VERSION"] for v in values.values()}
+    distinct_bh = {v["BRIDGE_LEMMA_HASH"] for v in values.values()}
+    assert len(distinct_tv) == 1, f"TRANSLATOR_VERSION diverges: {values}"
+    assert len(distinct_bh) == 1, f"BRIDGE_LEMMA_HASH diverges: {values}"
 
 
 # ---------------------------------------------------------------------------

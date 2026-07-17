@@ -489,6 +489,46 @@ def test_stale_source_contract_is_not_lean_verified(
     assert atom["lean_result_metadata"]["status"] == "stale_translator"
 
 
+def test_stale_source_contract_both_fields_is_not_lean_verified(
+    tmp_path: Path,
+):
+    """Both translator_version and bridge_lemma_hash stale at once must still
+    resolve to stale_translator (not a partial/accidental promotion)."""
+    cert_path = tmp_path / "cert.json"
+    cert_path.write_text(
+        json.dumps(
+            _cert(
+                "std/math.mm",
+                [
+                    {
+                        **_atom("inc", z3="unknown"),
+                        "translator_version": "stale-translator-version",
+                        "bridge_lemma_hash": "stale-bridge-lemma-hash",
+                    }
+                ],
+            )
+        )
+    )
+    out_cert = tmp_path / "out.lean-cert.json"
+
+    rc = main(
+        [
+            "--cert", str(cert_path),
+            "--out-dir", str(tmp_path / "generated"),
+            "--module-prefix", "Generated",
+            "--lean-cert-out", str(out_cert),
+            "--no-build",
+        ]
+    )
+
+    assert rc == 0
+    payload = json.loads(out_cert.read_text())
+    atom = payload["atoms"][0]
+    assert atom["z3_check_result"] == "unknown"
+    assert atom["lean_metadata"]["status"] == "stale_translator"
+    assert atom["lean_result_metadata"]["status"] == "stale_translator"
+
+
 def test_stale_lean_result_contract_is_not_lean_verified(
     tmp_path: Path,
     monkeypatch,

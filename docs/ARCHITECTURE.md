@@ -44,7 +44,12 @@ remain an explicit fallback with `known_witness_used = true`.
 The reference live path is
 `Generated.Std.Math.Abs.abs_saturating_correct`, emitted from
 `std/math/abs.mm::abs_saturating` body semantics and exported with
-`known_witness_used = false`.
+`known_witness_used = false`. There are eight live generated theorem paths in
+total (`abs_saturating`, `bounded_mul_with_overflow_check`,
+`constant_time_eq_flag`, `ff_zero_eq_zero`, `verified_insertion_sort_ascending`,
+`poly_bound_monotone`, `exists_pivot_partition`, `sum_nonneg_inductive`); see
+`docs/LEAN_HARNESS_CONTRACT.md` and `docs/LEAN_TRANSLATOR_SPEC.md` §5 for the
+per-path lowering.
 
 ## Unknown-only bridge acceptance
 

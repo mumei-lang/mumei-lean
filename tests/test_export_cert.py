@@ -244,6 +244,34 @@ def test_upgrade_certificate_marks_stale_translator_metadata_unproven():
     assert atom["lean_result_metadata"]["translator_version"] == "old-translator"
 
 
+def test_upgrade_certificate_promotes_spurious_candidate_path():
+    """PR3 path 7 (exists_pivot_partition) is a ``spurious_candidate`` atom.
+
+    The export path must treat it as an escalation candidate and promote it to
+    ``lean_verified`` with the pinned contract constants attached."""
+    cert = _certificate(
+        [{**_atom("exists_pivot_partition", z3="spurious_candidate"),
+          "escalation_reason": "spurious_candidate"}]
+    )
+    upgraded = upgrade_certificate(
+        cert=cert,
+        proved_atoms=["exists_pivot_partition"],
+        failed_atoms=[],
+        lean_version="x",
+        atom_metadata={
+            "exists_pivot_partition": {
+                "status": LEAN_VERIFIED,
+                "proof_path": "Generated/Std/List.lean",
+            }
+        },
+    )
+    atom = upgraded["atoms"][0]
+    assert atom["z3_check_result"] == LEAN_VERIFIED
+    assert atom["status"] == "verified"
+    assert atom["lean_result_metadata"]["translator_version"] == TRANSLATOR_VERSION
+    assert atom["lean_result_metadata"]["bridge_lemma_hash"] == BRIDGE_LEMMA_HASH
+
+
 def test_upgrade_certificate_preserves_sc_rtgs_escalation_metadata():
     cert = _certificate([_atom("withdraw_guard")])
     upgraded = upgrade_certificate(

@@ -264,6 +264,15 @@ each conjunct. This keeps atoms such as
 `std/math/patterns.mm::bounded_mul_with_overflow_check` on the generated theorem
 path rather than a known-witness override.
 
+The same body-semantics path also covers the single non-conjunction nonlinear
+case: an atom whose `ensures` is one nonlinear predicate (e.g. `result >= 0`
+over a perfect-square polynomial `x * x + 2 * x + 1`) unfolds its body
+definition and is discharged directly by `mumei_arith_deep`
+(`nlinarith`/`positivity`). This is the sixth live generated theorem path
+(`std/math/patterns.mm::poly_bound_monotone`), differentiated from
+`bounded_mul_with_overflow_check` by having a non-conjunction postcondition and
+requiring no new backing lemma (`bridge_lemma_hash` unchanged).
+
 ### 5.9 Crypto deterministic-input body semantics
 
 Crypto/finite-field witnesses that return deterministic flags may carry a
@@ -354,6 +363,75 @@ flag remains `false`.
 Lowering rule: `sort_ascending_bridge`
 Bridge lemma: `MumeiLean.Sort.insertion_sort_ascending_bridge`
 Pointwise helper: `MumeiLean.Sort.sorted_adjacent_le`
+
+### 5.12 Quantifier-alternation (∀∃) bridge
+
+Atoms whose `ensures` carries a nested `forall(..., exists(..., ...))`
+alternation are trigger-sensitive for Z3, which returns `unknown` or a
+spurious counterexample (`z3_result_class == "sat"`, `escalation_reason ==
+"spurious_candidate"`). This extends §5.8's nonlinear coverage to the
+quantifier-alternation surface.
+
+The bridge selects the dedicated proof shape via the explicit
+`translator_ir.bridge_pattern == "forall_exists_swap"` marker (rather than by
+matching the ensures text) and delegates to
+`MumeiLean.Quantifiers.forall_exists_swap_of_finite`, supplying an explicit
+identity choice witness so the existential is discharged constructively:
+
+```lean
+theorem exists_pivot_partition_correct (n : Int) (arr : Int → Int)
+    (h_req : n ≥ 0) :
+    ∃ f : Int → Int, ∀ i : Int, arr (f i) ≤ arr i := by
+  exact MumeiLean.Quantifiers.forall_exists_swap_of_finite
+    (fun i j => arr j ≤ arr i)
+    (fun i => ⟨i, le_refl _⟩)
+    ⟨fun i => i, fun i => le_refl _⟩
+```
+
+This is the seventh live generated theorem path
+(`std/list.mm::exists_pivot_partition`); `known_witness_used` remains `false`.
+`forall_exists_swap_of_finite` already exists, so `bridge_lemma_hash` is
+unchanged.
+
+Lowering rule: `quantifier_alternation_lowering`
+Bridge lemma: `MumeiLean.Quantifiers.forall_exists_swap_of_finite`
+
+### 5.13 Natural-number induction bridge
+
+Atoms whose obligation follows by induction on a natural-number bound leave Z3
+`unknown` (`escalation_reason == "requires_induction"`). The bridge selects the
+dedicated proof shape via the explicit
+`translator_ir.bridge_pattern == "int_nonnegative_induction"` marker and
+delegates to `MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern`,
+supplying the polynomial motive plus base/step obligations. The emitted goal is
+the **universally quantified** statement `∀ k : Int, 0 ≤ k → 0 ≤ k * (k + 1)`,
+which matches the atom's `forall(k, 0, n, k * (k + 1) >= 0)` ensures — proving
+only the single instance `0 ≤ n * (n + 1)` at the bound would be strictly weaker
+than the contract, so the theorem statement is the universal that entails it:
+
+```lean
+theorem sum_nonneg_inductive_correct (n : Int) (h_req : n ≥ 0) :
+    ∀ k : Int, 0 ≤ k → 0 ≤ k * (k + 1) := by
+  refine MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern
+    (fun k => 0 ≤ k * (k + 1)) ?h0 ?hstep
+  · norm_num
+  · intro k ih
+    have hk : (0 : Int) ≤ (k : Int) := Int.ofNat_nonneg k
+    nlinarith [ih, hk]
+```
+
+This is the eighth live generated theorem path
+(`std/math/patterns.mm::sum_nonneg_inductive`); `known_witness_used` remains
+`false`. `int_nonnegative_induction_pattern` already exists, so
+`bridge_lemma_hash` is unchanged.
+
+Lowering rule: `natural_number_induction_lowering`
+Bridge lemma: `MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern`
+
+Both §5.12 and §5.13 are dedicated `render_theorem` branches selected by
+`translator_ir.bridge_pattern`, mirroring the §5.11 sort branch; the source
+atom is marked as a custom bridge proof so partial body/ensures translation
+never routes it to the generic contract-only fallback.
 
 ## 6. Loop invariant and recursion encoding
 
@@ -513,6 +591,8 @@ emitted in `TranslatorIR.lowering_rules`.
 | `group_theory_lowering` | Group helper call appears. | §4, §5.7 |
 | `mathlib4_bridge` | Generated expression relies on mathlib-backed helpers or tactics. | §1, §4, §5.6, §5.7 |
 | `sort_ascending_bridge` | Sort body with ascending-preservation `forall` ensures; delegates to `MumeiLean.Sort.insertion_sort_ascending_bridge`. | §5.11 |
+| `quantifier_alternation_lowering` | `translator_ir.bridge_pattern == "forall_exists_swap"`; delegates to `MumeiLean.Quantifiers.forall_exists_swap_of_finite`. | §5.12 |
+| `natural_number_induction_lowering` | `translator_ir.bridge_pattern == "int_nonnegative_induction"`; delegates to `MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern`. | §5.13 |
 
 A translator implementation is compliant iff:
 

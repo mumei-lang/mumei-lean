@@ -414,6 +414,120 @@ def test_sort_ascending_upgrades_spurious_to_lean_verified(
 
 
 @pytest.mark.lake_available
+def test_poly_bound_monotone_upgrades_unknown_to_lean_verified(
+    lake_available, tmp_path: Path
+):
+    """6th live generated theorem path: single non-conjunction nonlinear
+    predicate. Z3 returns ``unknown`` on the nonlinear obligation; the bridge
+    lowers the body through ``mumei_arith_deep`` (nlinarith/positivity) and
+    ``lake build`` upgrades the atom to ``lean_verified``."""
+    out_cert = tmp_path / "std_math_patterns_poly.lean-cert.json"
+    out_dir = REPO_ROOT / "generated"
+    _cleanup_generated_patterns()
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "std_math_patterns_poly_bound.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+
+        _assert_bridge_ok(proc)
+        assert GENERATED_PATTERNS.exists()
+        payload = json.loads(out_cert.read_text())
+        atom = next(
+            a for a in payload["atoms"] if a["name"] == "poly_bound_monotone"
+        )
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["status"] == "verified"
+        assert atom["lean_metadata"]["known_witness_used"] is False
+        assert atom["lean_metadata"]["lean_theorem_name"] == (
+            "Generated.Std.Math.Patterns.poly_bound_monotone_correct"
+        )
+    finally:
+        _cleanup_generated_patterns()
+
+
+@pytest.mark.lake_available
+def test_exists_pivot_partition_upgrades_spurious_to_lean_verified(
+    lake_available, tmp_path: Path
+):
+    """7th live generated theorem path: forall/exists quantifier alternation.
+
+    Z3 reports ``spurious_candidate`` because the ∀∃ alternation is trigger
+    sensitive. The bridge delegates to
+    ``MumeiLean.Quantifiers.forall_exists_swap_of_finite`` with an explicit
+    identity choice witness and ``lake build`` upgrades to ``lean_verified``."""
+    out_cert = tmp_path / "std_list_exists_pivot.lean-cert.json"
+    out_dir = REPO_ROOT / "generated"
+    _cleanup_generated_sort_list()
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "std_list_exists_pivot_partition.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+
+        _assert_bridge_ok(proc)
+        assert GENERATED_SORT_LIST.exists()
+        payload = json.loads(out_cert.read_text())
+        atom = next(
+            a for a in payload["atoms"] if a["name"] == "exists_pivot_partition"
+        )
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["status"] == "verified"
+        assert atom["lean_metadata"]["known_witness_used"] is False
+        assert atom["lean_metadata"]["lean_theorem_name"] == (
+            "Generated.Std.List.exists_pivot_partition_correct"
+        )
+    finally:
+        _cleanup_generated_sort_list()
+
+
+@pytest.mark.lake_available
+def test_sum_nonneg_inductive_upgrades_unknown_to_lean_verified(
+    lake_available, tmp_path: Path
+):
+    """8th live generated theorem path: natural-number induction.
+
+    Z3 leaves the recursive nonnegativity obligation ``unknown``. The bridge
+    delegates to ``MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern``
+    and ``lake build`` upgrades the atom to ``lean_verified``."""
+    out_cert = tmp_path / "std_math_patterns_sum.lean-cert.json"
+    out_dir = REPO_ROOT / "generated"
+    _cleanup_generated_patterns()
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "std_math_patterns_sum_nonneg.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+
+        _assert_bridge_ok(proc)
+        assert GENERATED_PATTERNS.exists()
+        payload = json.loads(out_cert.read_text())
+        atom = next(
+            a for a in payload["atoms"] if a["name"] == "sum_nonneg_inductive"
+        )
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["status"] == "verified"
+        assert atom["lean_metadata"]["known_witness_used"] is False
+        assert atom["lean_metadata"]["lean_theorem_name"] == (
+            "Generated.Std.Math.Patterns.sum_nonneg_inductive_correct"
+        )
+    finally:
+        _cleanup_generated_patterns()
+
+
+@pytest.mark.lake_available
 def test_bridge_escalation_bundle(lake_available, tmp_path: Path):
     out_cert = tmp_path / "abs_saturating.escalation.lean-cert.json"
     _cleanup_generated_abs()

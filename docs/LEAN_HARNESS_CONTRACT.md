@@ -61,7 +61,7 @@ hand-written `MumeiLean.StdMathAbs` witness.
 
 ### Live generated theorem paths
 
-The bridge ships five live generated theorem paths. Each lowers a Z3 `unknown`
+The bridge ships eight live generated theorem paths. Each lowers a Z3 `unknown`
 (or spurious-candidate) atom to a generated Lean theorem that Lake builds with
 `known_witness_used = false`:
 
@@ -88,6 +88,26 @@ The bridge ships five live generated theorem paths. Each lowers a Z3 `unknown`
   sort ascending-preservation path lowers `forall(i, 0, n-1, arr[i] <= arr[i+1])`
   ensures to `MumeiLean.Sort.insertion_sort_ascending_bridge` backed by
   mathlib's `List.Sorted`. This is the fifth live generated theorem path.
+- `std/math/patterns.mm::poly_bound_monotone`: single non-conjunction
+  nonlinear-arithmetic body lowering emits
+  `Generated.Std.Math.Patterns.poly_bound_monotone_correct`; Lake discharges the
+  `result >= 0` postcondition on the perfect-square polynomial through
+  `mumei_arith_deep` (nlinarith/positivity) with `known_witness_used = false`
+  and no bridge lemma hash change. This is the sixth live generated theorem
+  path.
+- `std/list.mm::exists_pivot_partition`: the forall/exists quantifier
+  alternation path emits `Generated.Std.List.exists_pivot_partition_correct`;
+  Z3 reports `spurious_candidate` because the ∀∃ alternation is trigger
+  sensitive, and Lake discharges it through
+  `MumeiLean.Quantifiers.forall_exists_swap_of_finite` with an explicit identity
+  choice witness, `known_witness_used = false` and no bridge lemma hash change.
+  This is the seventh live generated theorem path.
+- `std/math/patterns.mm::sum_nonneg_inductive`: the natural-number induction
+  path emits `Generated.Std.Math.Patterns.sum_nonneg_inductive_correct`; Lake
+  discharges the recursive nonnegativity obligation through
+  `MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern` with
+  `known_witness_used = false` and no bridge lemma hash change. This is the
+  eighth live generated theorem path.
 
 ## Scope
 

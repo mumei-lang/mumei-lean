@@ -1,0 +1,83 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-17T00:00:00Z",
+  "mumei_version": "0.6.12",
+  "z3_version": "Z3 version 4.8.12 - 64 bit",
+  "file": "std/math/patterns.mm",
+  "atoms": [
+    {
+      "name": "poly_bound_monotone",
+      "z3_check_result": "unknown",
+      "content_hash": "fixture-poly-bound-monotone",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true
+      },
+      "proof_hash": "fixture-proof-poly-bound-monotone",
+      "dependencies": [],
+      "effects": [],
+      "requires": "true",
+      "ensures": "result >= 0",
+      "z3_result_class": "unknown",
+      "escalation_reason": "nonlinear_arithmetic",
+      "logic_fragment_tag": "nonlinear_arithmetic",
+      "logic_fragment_tags": [
+        "nonlinear_arithmetic"
+      ],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "x": "x",
+        "result": "result"
+      },
+      "bridge_lemma_hash": "a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11",
+      "translator_ir": {
+        "sort": "contract_obligation",
+        "binders": [
+          {
+            "mumei_name": "x",
+            "lean_name": "x",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(true) -> (result >= 0)",
+        "provenance_span": {
+          "file": "std/math/patterns.mm",
+          "line": 42,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "nonlinear_arith_bridge",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [
+          "nonlinear_arith_bridge: Z3 returns unknown on the single non-conjunction nonlinear predicate; discharged by nlinarith/positivity via mumei_arith_deep."
+        ],
+        "proof_trace_hints": [
+          "unfold the body definition then apply nlinarith to the perfect-square polynomial"
+        ],
+        "requires_bridge_lemmas": []
+      },
+      "symbol_provenance": [],
+      "solver_process_metadata": {
+        "timeout_ms": 10000,
+        "cancel_reason": null
+      },
+      "body_summary": "monotone nonnegative polynomial bound",
+      "body_expr": "x * x + 2 * x + 1"
+    }
+  ],
+  "certificate_hash": "fixture-poly-bound-monotone-cert",
+  "all_verified": false
+}

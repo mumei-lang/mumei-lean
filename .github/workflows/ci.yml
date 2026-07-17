@@ -25,6 +25,14 @@ jobs:
       - name: Run pytest
         run: python -m pytest -v
 
+      # Regression gate for A1 stage 3 / L3: the guard-trace obligation class
+      # must keep rendering the runGuard trace theorems (SmartContract import,
+      # GuardState/GuardOp/runGuard body). This part needs no Lake toolchain,
+      # so it runs in the required Python job. The Lake-backed lean_verified
+      # E2E gate runs in the bridge-e2e job below.
+      - name: Guard-trace regression gate (L3, no-Lake)
+        run: python -m pytest tests/test_ingest_cert.py -k "guard_trace" -v
+
   bridge-e2e:
     name: bridge body-semantics E2E
     runs-on: ubuntu-latest
@@ -108,6 +116,25 @@ jobs:
               --run-integration \
               -k "lake_available" \
               2>&1 | tee out/bridge_e2e_pytest.log
+
+      # Guard-trace L3 E2E regression gate: certificate -> generated runGuard
+      # trace theorem -> Lake build -> export upgrades the atom to
+      # `z3_check_result == "lean_verified"`. This is the Lake-backed half of
+      # the A1 stage 3 / L3 regression gate (the no-Lake render half runs in
+      # the required python-bridge job).
+      - name: Guard-trace L3 E2E regression gate (Lake)
+        run: |
+          if ! command -v lake >/dev/null 2>&1; then
+            echo "lake not available; skipping guard-trace L3 E2E gate"
+            exit 0
+          fi
+          mkdir -p out
+          set -o pipefail
+          python -m pytest \
+              tests/test_lean_bridge_e2e.py::test_guard_trace_fixture_upgrades_unknown_to_lean_verified \
+              -v \
+              --run-integration \
+              2>&1 | tee out/guard_trace_e2e_pytest.log
 
   lean-build:
     name: lake build

@@ -377,8 +377,6 @@ The module models the relevant body result explicitly and then proves:
 
 ## Repository layout
 
-## Repository layout
-
 ```
 mumei-lean/
 ├── lakefile.lean          # Lean 4 build config (mathlib4 dependency)

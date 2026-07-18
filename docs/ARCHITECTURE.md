@@ -374,3 +374,76 @@ The module models the relevant body result explicitly and then proves:
 | mumei_arith 拡張 | 中 | ring, field_simp 等の追加。暗号プリミティブ証明用 |
 | CertParser.lean / CertWriter.lean ネイティブ実装 | 低 | 現在はスケルトン。Python ブリッジが主要パス |
 | ✅ 実 std/ unknown atom の Lean 証明成功 | 完了 | Pilot 以外の実用的な std 証明例を `MumeiLean.StdMathAbs` に追加 |
+
+## Repository layout
+
+## Repository layout
+
+```
+mumei-lean/
+├── lakefile.lean          # Lean 4 build config (mathlib4 dependency)
+├── lean-toolchain         # Pinned Lean toolchain (mathlib4-compatible)
+├── MumeiLean.lean         # Public umbrella module
+├── MumeiLean/
+│   ├── Basic.lean         # Core types: MumeiContract, ProofResult
+│   ├── CertParser.lean    # Lean.Json-based .proof-cert.json parser
+│   ├── TheoremGen.lean    # Helpers used by generated Lean theorems
+│   ├── Verify.lean        # Per-atom proof outcome helpers
+│   ├── CertWriter.lean    # Lean.Json-based .lean-cert.json writer
+│   ├── Pilot.lean         # Hand-proven pilot theorems (PR 3)
+│   ├── Ownership.lean     # Ownership Transfer Protocol state proof
+│   ├── Patterns.lean      # Reusable SC proof patterns
+│   ├── Algebra.lean       # mathlib-backed finite-field/group helpers
+│   ├── Crypto.lean        # Hash, signature, and crypto primitive proof patterns
+│   ├── AdvancedPatterns.lean  # Reusable domain proof patterns
+│   ├── StdMathAbs.lean    # std/math_abs Lean witness proofs
+│   ├── Sort.lean          # Sort ascending-preservation bridge (mathlib List.Sorted)
+│   └── Settlement.lean    # RTGS settlement and balance proofs
+├── scripts/
+│   ├── expr_translator.py # mumei contract expr → Lean Prop translator
+│   ├── ingest_cert.py     # .proof-cert.json → generated/*.lean
+│   ├── export_cert.py     # lake build log + cert → .lean-cert.json
+│   ├── bridge.py          # End-to-end orchestrator (humans run this)
+│   ├── build.sh           # Optimized full Lake build
+│   └── build-target.sh    # Optimized targeted Lake build
+├── tests/                 # pytest suite for the Python bridge
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── BRIDGE_PIPELINE.md
+│   ├── BRIDGE_HARNESS_SPEC.md
+│   ├── LEAN_HARNESS_CONTRACT.md
+│   ├── LEAN_TRANSLATOR_SPEC.md
+│   ├── MATHLIB4_INTEGRATION.md
+│   ├── LEAN_EXECUTABLE.md
+│   └── INTEGRATION.md
+└── .github/workflows/ci.yml
+```
+
+
+## Design constraints (read me before extending)
+
+
+1. **Typed translator contract preservation.** The bridge treats
+   `TranslatorIRMetadata`, `binder_mapping`, `bridge_lemma_hash`,
+   `manual_lemma_reason`, and `translator_version` as part of the proof
+   contract, not as display-only fields.
+2. **No mumei changes required.** mumei-lean is opt-in and ships
+   exclusively over the existing certificate chain. The mumei compiler
+   keeps treating any `z3_check_result != "unsat"` as unproven, so the
+   new `"lean_verified"` value is forward-compatible.
+3. **Python is the production bridge today.** The end-to-end JSON ↔ Lean
+   source translation still lives in Python, while `MumeiLean.CertParser`
+   and `MumeiLean.CertWriter` are implemented Lean.Json-based native
+   parser/writer modules for downstream tooling that wants a pure Lean path.
+4. **Scope is intentionally small.** The expression translator covers a fixed
+   surface — arithmetic/boolean/comparison operators, literals, conditionals,
+   compact `match`, typed quantifiers, array access, and known helper/domain
+   calls — and emits body-semantics theorems when a certificate carries a
+   supported `body_expr`. Finite-field, group-theory, and crypto helpers route
+   through `MumeiLean.Algebra` / `MumeiLean.Crypto`; anything unsupported is
+   preserved verbatim and gated for a hand-written witness. The full supported
+   surface and current limitations are documented in
+   [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md).
+5. **Targeted at Z3-`unknown`.** `mumei-lean` is *not* a replacement for
+   Z3. Use it for the atoms Z3 cannot close (cryptographic correctness,
+   abstract-algebraic invariants, etc.).

@@ -619,3 +619,45 @@ Certificate atom field handling is fixed:
 | `stale_translator` | mumei-side rejection when `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract. |
 
 Current contract constants are `translator_version = mumei-lean-translator-ir-v2` and `bridge_lemma_hash = a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11`. These are also pinned in [`LEAN_HARNESS_CONTRACT.md`](LEAN_HARNESS_CONTRACT.md). `tests/test_contract_vocabulary.py` anchors both the constant-defining scripts (`scripts/export_cert.py`, `scripts/expr_translator.py`) and every pinned doc (this file, `LEAN_HARNESS_CONTRACT.md`, `BRIDGE_HARNESS_SPEC.md`, `INTEGRATION.md`) to the same expected literals, so any bump must update all of them in a single diff.
+
+## README translator contract
+
+External **Lean 4** proof backend for the [mumei](https://github.com/mumei-lang/mumei)
+formal verification language.
+
+mumei verifies `requires`/`ensures` contracts automatically with the Z3 SMT
+solver. For most atoms this is enough, but Z3 can return `unknown` on
+contracts that lie beyond its decidable fragments — quantifier-heavy
+properties, deep recursion, or domains like cryptographic primitives where a
+hand-written proof is unavoidable.
+
+`mumei-lean` is the *external complement*: it picks up those `unknown` atoms,
+re-states them in Lean 4, lets you (or `mathlib4`) discharge the proof
+obligation, and emits a mumei-compatible `.lean-cert.json` certificate that
+the mumei resolver consumes through its existing
+[Proof Certificate Chain (P5-A)](https://github.com/mumei-lang/mumei/blob/main/docs/PROOF_CERTIFICATE.md)
+and `MUMEI_PROOF_BUNDLE` machinery (SI-5 Phase 3-C). The bridge now preserves
+the typed Lean translator contract: `TranslatorIRMetadata`, binder mappings,
+bridge lemma hashes, and manual lemma reasons move through ingestion, Lean
+checking, and certificate export as auditable metadata.
+
+For P9-G NLAE integration, `mumei-lean` is the **Fidelity Checker**: it
+confirms that the reconstructed `.mm` obligation promoted by mumei-agent and
+mumei can be exported as a `lean_verified` certificate, including live generated
+theorem paths when they build successfully.
+
+Cross-project vocabulary follows `mumei-lang/mumei/docs/CROSS_PROJECT_ROADMAP.md`: `harness_contract`, `intent_fidelity`, `artifact_paths`, `budget_policy_fingerprint`, and `lean_verified` are the canonical field names. Lean fallback documentation in this repo and `mumei-agent/docs/ROADMAP.md` must describe the same contract. The docs-sync contract is pinned by `tests/test_contract_vocabulary.py` so `lean_verified`, `stale_translator`, `translator_version`, and `bridge_lemma_hash` do not drift.
+
+Translator contract updates are spec-first: every new
+`TranslatorIRBinder.mumei_type`, `TranslatorIR.lowering_rules` entry, or bridge
+lemma name must be documented in `docs/LEAN_TRANSLATOR_SPEC.md` before the
+Python bridge emits it. `lean_verified` means a theorem built cleanly with the
+current `translator_version` and `bridge_lemma_hash`; `stale_translator` means
+that version/hash no longer matches. Array lowering now records both
+`mumei_array_bounds_bridge` and `mumei_array_get_bridge`, while integer
+machine-range obligations continue to use `mumei_i64_overflow_bridge`.
+
+> mumei's "fully automatic verification" philosophy is preserved. mumei-lean
+> only steps in for the slice of contracts Z3 cannot close on its own, and the
+> mumei compiler itself requires **zero changes** to consume the resulting
+> certificates: they piggy-back on the existing 3-tier resolver lookup.

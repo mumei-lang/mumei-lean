@@ -10,15 +10,19 @@ from expr_translator import (
     OBLIGATION_CLASS_QUANTIFIER,
     OBLIGATION_CLASS_RTGS,
     OBLIGATION_CLASS_SMART_CONTRACT,
+    OBLIGATION_CLASS_SMART_CONTRACT_CEI,
     OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
     OBLIGATION_CLASS_UNKNOWN,
     TranslatorIR,
     TranslatorIRBinder,
+    cei_expected_to_lean,
     classify_obligation,
     contains_identifier,
     guard_trace_expected_to_lean,
     obligation_bridge_lemmas,
+    normalize_cei_translator_ir,
     normalize_guard_trace_translator_ir,
+    render_cei_theorem,
     render_guard_trace_theorem,
     translate_body,
     translate_contract,
@@ -557,6 +561,82 @@ def test_normalize_guard_trace_translator_ir_without_expected_outcome_is_unchang
     assert "obligation_class" not in normalized
     assert "theorem_goal" not in normalized
     assert "guard_trace_expected_outcome" not in normalized
+
+
+def test_cei_lowering_normalizes_expected_outcome_and_classification():
+    translator_ir = normalize_cei_translator_ir(
+        {
+            "sort": "contract_obligation",
+            "binders": [],
+            "theorem_goal": "",
+            "provenance_span": {"file": "", "line": 0, "col": 0, "len": 0},
+            "lowering_rules": [],
+            "cei": {
+                "ops": ["effect", "interaction"],
+                "expected_outcome": "interacted",
+            },
+        }
+    )
+
+    assert translator_ir["obligation_class"] == OBLIGATION_CLASS_SMART_CONTRACT_CEI
+    assert (
+        translator_ir["theorem_goal"]
+        == "runCei CeiState.Effects [CeiOp.effect, CeiOp.interaction] "
+        "= some CeiState.Interacted"
+    )
+    assert "smart_contract_cei_lowering" in translator_ir["lowering_rules"]
+    assert (
+        "MumeiLean.SmartContract.effect_after_interaction_is_none"
+        in translator_ir["requires_bridge_lemmas"]
+    )
+    assert classify_obligation([], translator_ir["lowering_rules"]) == (
+        OBLIGATION_CLASS_SMART_CONTRACT_CEI
+    )
+    assert cei_expected_to_lean("interacted") == "some CeiState.Interacted"
+    assert cei_expected_to_lean("violation") == "none"
+    rendered = render_cei_theorem(
+        "ordered_cei_trace",
+        translator_ir["cei"],
+    )
+    assert "theorem ordered_cei_trace_correct" in rendered
+    assert "runCei CeiState.Effects" in rendered
+    assert "some CeiState.Interacted" in rendered
+    assert "decide" in rendered
+
+
+def test_cei_violation_lowers_to_none():
+    translator_ir = normalize_cei_translator_ir(
+        {
+            "sort": "contract_obligation",
+            "cei": {
+                "ops": ["interaction", "effect"],
+                "expected_outcome": "none",
+            },
+            "lowering_rules": [],
+        }
+    )
+
+    assert (
+        translator_ir["theorem_goal"]
+        == "runCei CeiState.Effects [CeiOp.interaction, CeiOp.effect] = none"
+    )
+    rendered = render_cei_theorem("violating_cei_trace", translator_ir["cei"])
+    assert "= none := by" in rendered
+
+
+def test_normalize_cei_translator_ir_without_expected_outcome_is_unchanged():
+    translator_ir = {
+        "sort": "contract_obligation",
+        "cei": {"ops": ["effect", "interaction"]},
+        "lowering_rules": ["smart_contract_cei_lowering"],
+    }
+
+    normalized = normalize_cei_translator_ir(translator_ir)
+
+    assert normalized is translator_ir
+    assert "obligation_class" not in normalized
+    assert "theorem_goal" not in normalized
+    assert "cei_expected_outcome" not in normalized
 
 
 def test_nested_quantifier_with_finite_field_and_group_metadata():

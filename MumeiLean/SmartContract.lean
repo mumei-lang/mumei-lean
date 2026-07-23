@@ -143,6 +143,56 @@ theorem unguarded_write_trace_is_none :
     runAccess AccessState.Unchecked [AccessOp.stateWrite] = none := by
   simp [runAccess, accessStep]
 
+/-!
+## Checks-Effects-Interactions ordering model
+
+Distinct from both the reentrancy guard (`GuardState`) and access control
+(`AccessState`): the CEI pattern is a pure *ordering* property. All effects
+(storage writes) must precede any interaction (external call). Once an
+interaction has happened, a later effect is a CEI violation.
+
+`CeiState` tracks whether an interaction has occurred. `runCei` short-circuits
+to `none` the moment an `effect` follows an `interaction`. A CEI-ordered trace
+(`[effect, interaction]`) evaluates to `some CeiState.Interacted`; a violating
+trace (`[interaction, effect]`) to `none`.
+-/
+
+inductive CeiState where
+  | Effects
+  | Interacted
+  deriving DecidableEq, Repr
+
+inductive CeiOp where
+  | effect
+  | interaction
+  deriving DecidableEq, Repr
+
+def ceiStep : CeiState → CeiOp → Option CeiState
+  | .Effects, .effect => some .Effects
+  | .Effects, .interaction => some .Interacted
+  | .Interacted, .interaction => some .Interacted
+  | .Interacted, .effect => none
+
+def runCei : CeiState → List CeiOp → Option CeiState
+  | s, [] => some s
+  | s, op :: ops =>
+      match ceiStep s op with
+      | some next => runCei next ops
+      | none => none
+
+theorem effect_after_interaction_is_none :
+    runCei CeiState.Interacted [CeiOp.effect] = none := by
+  simp [runCei, ceiStep]
+
+theorem cei_ordered_trace_is_interacted :
+    runCei CeiState.Effects [CeiOp.effect, CeiOp.interaction] =
+      some CeiState.Interacted := by
+  simp [runCei, ceiStep]
+
+theorem cei_violation_trace_is_none :
+    runCei CeiState.Effects [CeiOp.interaction, CeiOp.effect] = none := by
+  simp [runCei, ceiStep]
+
 theorem withdraw_amount_nonnegative_bound
     (balance amount : Int)
     (hAmount : amount ≥ 0)

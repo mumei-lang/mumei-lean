@@ -1,0 +1,91 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-23T00:00:00Z",
+  "mumei_version": "0.6.12",
+  "z3_version": "Z3 version 4.12.2",
+  "file": "std/contract/access_control.mm",
+  "atoms": [
+    {
+      "name": "guarded_access_control_trace",
+      "z3_check_result": "unknown",
+      "z3_result_class": "unknown",
+      "status": "unknown",
+      "escalation_reason": "sc",
+      "unknown_obligation_domain": "smart_contract",
+      "logic_fragment_tag": "smart_contract_access_control",
+      "logic_fragment_tags": ["smart_contract", "access_control"],
+      "proof_hash": "guarded_access_control_trace-proof",
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "bridge_lemma_hash": "a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11",
+      "binder_mapping": {},
+      "requires": "true",
+      "ensures": "true",
+      "body_summary": "access-control proof for a guarded state mutation",
+      "body_expr": "",
+      "translator_ir": {
+        "sort": "contract_obligation",
+        "binders": [],
+        "theorem_goal": "runAccess AccessState.Unchecked [AccessOp.authCheck, AccessOp.stateWrite] = some AccessState.Checked",
+        "provenance_span": {
+          "file": "std/contract/access_control.mm",
+          "line": 1,
+          "col": 1,
+          "len": 0
+        },
+        "lowering_rules": ["smart_contract_access_control_lowering"],
+        "proof_trace_hints": ["use the concrete access-control trace with SmartContract.runAccess"],
+        "requires_bridge_lemmas": ["MumeiLean.SmartContract.no_state_write_without_auth"],
+        "obligation_class": "smart_contract_access_control_obligation",
+        "access_control": {
+          "ops": ["authCheck", "stateWrite"],
+          "expected_outcome": "safe"
+        },
+        "access_control_ops": ["authCheck", "stateWrite"],
+        "access_control_expected_outcome": "safe"
+      }
+    },
+    {
+      "name": "unguarded_access_control_trace",
+      "z3_check_result": "unknown",
+      "z3_result_class": "unknown",
+      "status": "unknown",
+      "escalation_reason": "sc",
+      "unknown_obligation_domain": "smart_contract",
+      "logic_fragment_tag": "smart_contract_access_control",
+      "logic_fragment_tags": ["smart_contract", "access_control"],
+      "proof_hash": "unguarded_access_control_trace-proof",
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "bridge_lemma_hash": "a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11",
+      "binder_mapping": {},
+      "requires": "true",
+      "ensures": "true",
+      "body_summary": "access-control proof for an unguarded state mutation",
+      "body_expr": "",
+      "translator_ir": {
+        "sort": "contract_obligation",
+        "binders": [],
+        "theorem_goal": "runAccess AccessState.Unchecked [AccessOp.stateWrite] = none",
+        "provenance_span": {
+          "file": "std/contract/access_control.mm",
+          "line": 2,
+          "col": 1,
+          "len": 0
+        },
+        "lowering_rules": ["smart_contract_access_control_lowering"],
+        "proof_trace_hints": ["use the concrete access-control trace with SmartContract.runAccess"],
+        "requires_bridge_lemmas": ["MumeiLean.SmartContract.no_state_write_without_auth"],
+        "obligation_class": "smart_contract_access_control_obligation",
+        "access_control": {
+          "ops": ["stateWrite"],
+          "expected_outcome": "none"
+        },
+        "access_control_ops": ["stateWrite"],
+        "access_control_expected_outcome": "none"
+      }
+    }
+  ],
+  "package_name": "std",
+  "package_version": "0",
+  "certificate_hash": "",
+  "all_verified": false
+}

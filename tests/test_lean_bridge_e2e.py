@@ -27,6 +27,9 @@ GENERATED_FINITE_FIELD = (
 GENERATED_GUARD_TRACE = (
     REPO_ROOT / "generated" / "Generated" / "Std" / "Contract" / "Guard_trace.lean"
 )
+GENERATED_ACCESS_CONTROL = (
+    REPO_ROOT / "generated" / "Generated" / "Std" / "Contract" / "Access_control.lean"
+)
 GENERATED_SORT_LIST = (
     REPO_ROOT / "generated" / "Generated" / "Std" / "List.lean"
 )
@@ -102,6 +105,10 @@ def _cleanup_generated_finite_field() -> None:
 
 def _cleanup_generated_guard_trace() -> None:
     _cleanup_generated_file(GENERATED_GUARD_TRACE)
+
+
+def _cleanup_generated_access_control() -> None:
+    _cleanup_generated_file(GENERATED_ACCESS_CONTROL)
 
 
 @pytest.mark.lake_available
@@ -205,6 +212,59 @@ def test_guard_trace_fixture_upgrades_unknown_to_lean_verified(
         assert payload["all_verified"] is True
     finally:
         _cleanup_generated_guard_trace()
+
+
+@pytest.mark.lake_available
+def test_access_control_fixture_upgrades_unknown_to_lean_verified(
+    lake_available, tmp_path: Path
+):
+    out_cert = tmp_path / "access_control.lean-cert.json"
+    out_dir = tmp_path / "generated"
+    _cleanup_generated_access_control()
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "access_control_demo.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+
+        _assert_bridge_ok(proc)
+        assert GENERATED_ACCESS_CONTROL.exists()
+        generated_src = GENERATED_ACCESS_CONTROL.read_text()
+        assert "import MumeiLean.SmartContract" in generated_src
+        assert "open MumeiLean.SmartContract" in generated_src
+        assert (
+            "theorem guarded_access_control_trace_correct :\n"
+            "    runAccess AccessState.Unchecked [AccessOp.authCheck, "
+            "AccessOp.stateWrite] = some AccessState.Checked := by\n"
+            "  decide"
+        ) in generated_src
+        assert (
+            "theorem unguarded_access_control_trace_correct :\n"
+            "    runAccess AccessState.Unchecked [AccessOp.stateWrite] = none := by\n"
+            "  decide"
+        ) in generated_src
+        payload = json.loads(out_cert.read_text())
+        guarded = next(
+            atom
+            for atom in payload["atoms"]
+            if atom["name"] == "guarded_access_control_trace"
+        )
+        unguarded = next(
+            atom
+            for atom in payload["atoms"]
+            if atom["name"] == "unguarded_access_control_trace"
+        )
+        assert guarded["z3_check_result"] == "lean_verified"
+        assert guarded["status"] == "verified"
+        assert unguarded["z3_check_result"] == "lean_verified"
+        assert unguarded["status"] == "verified"
+        assert payload["all_verified"] is True
+    finally:
+        _cleanup_generated_access_control()
 
 
 @pytest.mark.lake_available

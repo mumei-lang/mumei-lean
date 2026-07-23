@@ -18,6 +18,7 @@ from ingest_cert import (
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 GUARD_TRACE_FIXTURE = FIXTURES / "guard_trace_demo.proof-cert.json"
+ACCESS_CONTROL_FIXTURE = FIXTURES / "access_control_demo.proof-cert.json"
 
 
 def _make_atom(
@@ -511,6 +512,53 @@ def test_guard_trace_fixture_renders_run_guard_theorems_and_imports(tmp_path: Pa
     assert "open MumeiLean.SmartContract" in src
     assert "runGuard GuardState.Unlocked" in src
     assert "guarded_reentrancy_trace_correct" in src
+
+
+def test_access_control_fixture_renders_run_access_theorems_and_imports(tmp_path: Path):
+    payload = json.loads(ACCESS_CONTROL_FIXTURE.read_text())
+    atoms = collect_unknown_atoms(payload)
+
+    assert [atom.name for atom in atoms] == [
+        "guarded_access_control_trace",
+        "unguarded_access_control_trace",
+    ]
+    assert all(atom.is_partial_translation is False for atom in atoms)
+    assert all(
+        atom.translator_ir["obligation_class"]
+        == "smart_contract_access_control_obligation"
+        for atom in atoms
+    )
+    assert atoms[0].translator_ir["access_control_ops"] == [
+        "authCheck",
+        "stateWrite",
+    ]
+    assert atoms[1].translator_ir["access_control_expected_outcome"] == "none"
+
+    rendered_guarded = render_theorem(atoms[0])
+    rendered_unguarded = render_theorem(atoms[1])
+    assert (
+        "/-- Auto-generated from mumei atom `guarded_access_control_trace`"
+        in rendered_guarded
+    )
+    assert "theorem guarded_access_control_trace_correct" in rendered_guarded
+    assert (
+        "runAccess AccessState.Unchecked [AccessOp.authCheck, AccessOp.stateWrite] "
+        "= some AccessState.Checked := by" in rendered_guarded
+    )
+    assert "decide" in rendered_guarded
+    assert "theorem unguarded_access_control_trace_correct" in rendered_unguarded
+    assert (
+        "runAccess AccessState.Unchecked [AccessOp.stateWrite] = none := by"
+        in rendered_unguarded
+    )
+
+    out_dir = tmp_path / "generated"
+    [written] = write_modules(atoms, out_dir, "Generated")
+    src = written.read_text()
+    assert "import MumeiLean.SmartContract" in src
+    assert "open MumeiLean.SmartContract" in src
+    assert "runAccess AccessState.Unchecked" in src
+    assert "guarded_access_control_trace_correct" in src
 
 
 def test_write_modules_groups_by_module_key(tmp_path: Path):

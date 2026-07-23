@@ -87,6 +87,62 @@ theorem guarded_withdraw_trace_returns_unlocked :
       some GuardState.Unlocked := by
   simp [runGuard, guardStep]
 
+/-!
+## Access-control obligation model
+
+The reentrancy machine above tracks a `GuardState` (Unlocked/Locked). Missing
+access-control is a distinct obligation: an externally callable state-mutating
+function must perform an authorization check *before* any storage write.
+
+`AccessState` tracks whether the caller has been authorized. `runAccess`
+short-circuits to `none` the moment a `stateWrite` is attempted while still
+`Unchecked`, exactly mirroring `runGuard`. A guarded function's concrete op
+trace evaluates to `some AccessState.Checked`; an unguarded one to `none`.
+-/
+
+inductive AccessState where
+  | Unchecked
+  | Checked
+  deriving DecidableEq, Repr
+
+inductive AccessOp where
+  | authCheck
+  | stateWrite
+  deriving DecidableEq, Repr
+
+def accessStep : AccessState → AccessOp → Option AccessState
+  | _, .authCheck => some .Checked
+  | .Checked, .stateWrite => some .Checked
+  | .Unchecked, .stateWrite => none
+
+def runAccess : AccessState → List AccessOp → Option AccessState
+  | s, [] => some s
+  | s, op :: ops =>
+      match accessStep s op with
+      | some next => runAccess next ops
+      | none => none
+
+theorem no_state_write_without_auth (ops : List AccessOp)
+    (h : AccessOp.authCheck ∉ ops)
+    (hw : AccessOp.stateWrite ∈ ops) :
+    runAccess AccessState.Unchecked ops = none := by
+  cases ops with
+  | nil => simp at hw
+  | cons op rest =>
+      cases op with
+      | authCheck => simp at h
+      | stateWrite => simp [runAccess, accessStep]
+
+theorem guarded_write_trace_returns_checked :
+    runAccess AccessState.Unchecked
+      [AccessOp.authCheck, AccessOp.stateWrite] =
+      some AccessState.Checked := by
+  simp [runAccess, accessStep]
+
+theorem unguarded_write_trace_is_none :
+    runAccess AccessState.Unchecked [AccessOp.stateWrite] = none := by
+  simp [runAccess, accessStep]
+
 theorem withdraw_amount_nonnegative_bound
     (balance amount : Int)
     (hAmount : amount ≥ 0)

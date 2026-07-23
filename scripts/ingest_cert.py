@@ -46,11 +46,14 @@ try:
     from .proofcert import Z3CheckResult
     from .expr_translator import (
         BRIDGE_LEMMA_HASH,
+        OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL,
         OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
         TRANSLATOR_VERSION,
         TranslationResult,
         contains_identifier,
+        normalize_access_control_translator_ir,
         normalize_guard_trace_translator_ir,
+        render_access_control_theorem,
         render_guard_trace_theorem,
         translate_body,
         translate_contract,
@@ -61,11 +64,14 @@ except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py
     from proofcert import Z3CheckResult  # type: ignore
     from expr_translator import (  # type: ignore
         BRIDGE_LEMMA_HASH,
+        OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL,
         OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
         TRANSLATOR_VERSION,
         TranslationResult,
         contains_identifier,
+        normalize_access_control_translator_ir,
         normalize_guard_trace_translator_ir,
+        render_access_control_theorem,
         render_guard_trace_theorem,
         translate_body,
         translate_contract,
@@ -123,8 +129,9 @@ class IngestedAtom:
             if "arr[i] <= arr[i + 1]" in ensures or "arr[i] <= arr[i+1]" in ensures:
                 return True
         if isinstance(self.translator_ir, dict):
-            if self.translator_ir.get("obligation_class") == (
-                OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE
+            if self.translator_ir.get("obligation_class") in (
+                OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
+                OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL,
             ):
                 return True
             if self.translator_ir.get("bridge_pattern") in (
@@ -134,6 +141,11 @@ class IngestedAtom:
                 return True
             guard_trace = self.translator_ir.get("guard_trace")
             if isinstance(guard_trace, dict) and isinstance(guard_trace.get("ops"), list):
+                return True
+            access_control = self.translator_ir.get("access_control")
+            if isinstance(access_control, dict) and isinstance(
+                access_control.get("ops"), list
+            ):
                 return True
         return False
 
@@ -253,6 +265,10 @@ def _attach_domain_to_translator_ir(
         "obligation_class"
     ) == OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE:
         rule = "smart_contract_guard_trace_lowering"
+    elif isinstance(translator_ir.get("access_control"), dict) or translator_ir.get(
+        "obligation_class"
+    ) == OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL:
+        rule = "smart_contract_access_control_lowering"
     elif unknown_obligation_domain == "smart_contract":
         rule = "smart_contract_lowering"
     else:
@@ -375,6 +391,7 @@ def _translator_ir_payload(atom: dict, *fallbacks: Optional[TranslationResult]) 
     raw_ir = atom.get("translator_ir")
     if isinstance(raw_ir, dict):
         result = normalize_guard_trace_translator_ir(dict(raw_ir))
+        result = normalize_access_control_translator_ir(result)
         result.setdefault("binders", [])
         result.setdefault("lowering_rules", [])
         result.setdefault("semantic_gap_notes", [])
@@ -884,6 +901,17 @@ def render_theorem(atom: IngestedAtom) -> str:
                 guard_trace,
                 provenance_prefix=_theorem_preamble(atom),
             )
+        access_control = atom.translator_ir.get("access_control")
+        if (
+            atom.translator_ir.get("obligation_class")
+            == OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL
+            and isinstance(access_control, dict)
+        ):
+            return render_access_control_theorem(
+                atom.name,
+                access_control,
+                provenance_prefix=_theorem_preamble(atom),
+            )
     sort_proof = _sort_ascending_proof(atom)
     if sort_proof is not None:
         return sort_proof
@@ -1145,7 +1173,10 @@ def render_module(module_key: str, prefix: str, atoms: List[IngestedAtom]) -> st
     if any(
         isinstance(atom.translator_ir, dict)
         and atom.translator_ir.get("obligation_class")
-        == OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE
+        in (
+            OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
+            OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL,
+        )
         for atom in atoms
     ):
         import_lines.append("import MumeiLean.SmartContract")

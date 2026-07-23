@@ -1,0 +1,91 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-23T00:00:00Z",
+  "mumei_version": "0.6.12",
+  "z3_version": "Z3 version 4.12.2",
+  "file": "std/contract/cei.mm",
+  "atoms": [
+    {
+      "name": "ordered_cei_trace",
+      "z3_check_result": "unknown",
+      "z3_result_class": "unknown",
+      "status": "unknown",
+      "escalation_reason": "sc",
+      "unknown_obligation_domain": "smart_contract",
+      "logic_fragment_tag": "smart_contract_cei",
+      "logic_fragment_tags": ["smart_contract", "cei"],
+      "proof_hash": "ordered_cei_trace-proof",
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "bridge_lemma_hash": "a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11",
+      "binder_mapping": {},
+      "requires": "true",
+      "ensures": "true",
+      "body_summary": "CEI ordering proof for effects-before-interactions",
+      "body_expr": "",
+      "translator_ir": {
+        "sort": "contract_obligation",
+        "binders": [],
+        "theorem_goal": "runCei CeiState.Effects [CeiOp.effect, CeiOp.interaction] = some CeiState.Interacted",
+        "provenance_span": {
+          "file": "std/contract/cei.mm",
+          "line": 1,
+          "col": 1,
+          "len": 0
+        },
+        "lowering_rules": ["smart_contract_cei_lowering"],
+        "proof_trace_hints": ["use the concrete CEI ordering trace with SmartContract.runCei"],
+        "requires_bridge_lemmas": ["MumeiLean.SmartContract.effect_after_interaction_is_none"],
+        "obligation_class": "smart_contract_cei_obligation",
+        "cei": {
+          "ops": ["effect", "interaction"],
+          "expected_outcome": "interacted"
+        },
+        "cei_ops": ["effect", "interaction"],
+        "cei_expected_outcome": "interacted"
+      }
+    },
+    {
+      "name": "violating_cei_trace",
+      "z3_check_result": "unknown",
+      "z3_result_class": "unknown",
+      "status": "unknown",
+      "escalation_reason": "sc",
+      "unknown_obligation_domain": "smart_contract",
+      "logic_fragment_tag": "smart_contract_cei",
+      "logic_fragment_tags": ["smart_contract", "cei"],
+      "proof_hash": "violating_cei_trace-proof",
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "bridge_lemma_hash": "a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11",
+      "binder_mapping": {},
+      "requires": "true",
+      "ensures": "true",
+      "body_summary": "CEI ordering proof for an interaction-before-effect violation",
+      "body_expr": "",
+      "translator_ir": {
+        "sort": "contract_obligation",
+        "binders": [],
+        "theorem_goal": "runCei CeiState.Effects [CeiOp.interaction, CeiOp.effect] = none",
+        "provenance_span": {
+          "file": "std/contract/cei.mm",
+          "line": 2,
+          "col": 1,
+          "len": 0
+        },
+        "lowering_rules": ["smart_contract_cei_lowering"],
+        "proof_trace_hints": ["use the concrete CEI ordering trace with SmartContract.runCei"],
+        "requires_bridge_lemmas": ["MumeiLean.SmartContract.effect_after_interaction_is_none"],
+        "obligation_class": "smart_contract_cei_obligation",
+        "cei": {
+          "ops": ["interaction", "effect"],
+          "expected_outcome": "none"
+        },
+        "cei_ops": ["interaction", "effect"],
+        "cei_expected_outcome": "none"
+      }
+    }
+  ],
+  "package_name": "std",
+  "package_version": "0",
+  "certificate_hash": "",
+  "all_verified": false
+}

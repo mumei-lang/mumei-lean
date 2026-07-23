@@ -30,6 +30,9 @@ GENERATED_GUARD_TRACE = (
 GENERATED_ACCESS_CONTROL = (
     REPO_ROOT / "generated" / "Generated" / "Std" / "Contract" / "Access_control.lean"
 )
+GENERATED_CEI = (
+    REPO_ROOT / "generated" / "Generated" / "Std" / "Contract" / "Cei.lean"
+)
 GENERATED_SORT_LIST = (
     REPO_ROOT / "generated" / "Generated" / "Std" / "List.lean"
 )
@@ -109,6 +112,10 @@ def _cleanup_generated_guard_trace() -> None:
 
 def _cleanup_generated_access_control() -> None:
     _cleanup_generated_file(GENERATED_ACCESS_CONTROL)
+
+
+def _cleanup_generated_cei() -> None:
+    _cleanup_generated_file(GENERATED_CEI)
 
 
 @pytest.mark.lake_available
@@ -265,6 +272,59 @@ def test_access_control_fixture_upgrades_unknown_to_lean_verified(
         assert payload["all_verified"] is True
     finally:
         _cleanup_generated_access_control()
+
+
+@pytest.mark.lake_available
+def test_cei_fixture_upgrades_unknown_to_lean_verified(
+    lake_available, tmp_path: Path
+):
+    out_cert = tmp_path / "cei.lean-cert.json"
+    out_dir = tmp_path / "generated"
+    _cleanup_generated_cei()
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "cei_demo.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+
+        _assert_bridge_ok(proc)
+        assert GENERATED_CEI.exists()
+        generated_src = GENERATED_CEI.read_text()
+        assert "import MumeiLean.SmartContract" in generated_src
+        assert "open MumeiLean.SmartContract" in generated_src
+        assert (
+            "theorem ordered_cei_trace_correct :\n"
+            "    runCei CeiState.Effects [CeiOp.effect, CeiOp.interaction] "
+            "= some CeiState.Interacted := by\n"
+            "  decide"
+        ) in generated_src
+        assert (
+            "theorem violating_cei_trace_correct :\n"
+            "    runCei CeiState.Effects [CeiOp.interaction, CeiOp.effect] = none := by\n"
+            "  decide"
+        ) in generated_src
+        payload = json.loads(out_cert.read_text())
+        ordered = next(
+            atom
+            for atom in payload["atoms"]
+            if atom["name"] == "ordered_cei_trace"
+        )
+        violating = next(
+            atom
+            for atom in payload["atoms"]
+            if atom["name"] == "violating_cei_trace"
+        )
+        assert ordered["z3_check_result"] == "lean_verified"
+        assert ordered["status"] == "verified"
+        assert violating["z3_check_result"] == "lean_verified"
+        assert violating["status"] == "verified"
+        assert payload["all_verified"] is True
+    finally:
+        _cleanup_generated_cei()
 
 
 @pytest.mark.lake_available

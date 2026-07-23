@@ -250,11 +250,13 @@ OBLIGATION_CLASS_ARITHMETIC = "arithmetic_obligation"
 OBLIGATION_CLASS_SMART_CONTRACT = "smart_contract_obligation"
 OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE = "smart_contract_guard_trace_obligation"
 OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL = "smart_contract_access_control_obligation"
+OBLIGATION_CLASS_SMART_CONTRACT_CEI = "smart_contract_cei_obligation"
 OBLIGATION_CLASS_RTGS = "rtgs_obligation"
 OBLIGATION_CLASS_UNKNOWN = "unknown_obligation"
 
 SMART_CONTRACT_GUARD_TRACE_LOWERING = "smart_contract_guard_trace_lowering"
 SMART_CONTRACT_ACCESS_CONTROL_LOWERING = "smart_contract_access_control_lowering"
+SMART_CONTRACT_CEI_LOWERING = "smart_contract_cei_lowering"
 
 _OBLIGATION_CLASS_BRIDGE_LEMMAS: Dict[str, List[str]] = {
     OBLIGATION_CLASS_QUANTIFIER: [
@@ -324,6 +326,9 @@ _OBLIGATION_CLASS_BRIDGE_LEMMAS: Dict[str, List[str]] = {
     ],
     OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL: [
         "MumeiLean.SmartContract.no_state_write_without_auth",
+    ],
+    OBLIGATION_CLASS_SMART_CONTRACT_CEI: [
+        "MumeiLean.SmartContract.effect_after_interaction_is_none",
     ],
     OBLIGATION_CLASS_RTGS: [
         "MumeiLean.AdvancedPatterns.rtgs_balance_conserved_refl",
@@ -482,6 +487,7 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "smart_contract_lowering",
     "smart_contract_guard_trace_lowering",
     "smart_contract_access_control_lowering",
+    "smart_contract_cei_lowering",
     "rtgs_settlement_lowering",
     "sort_ascending_bridge",
 }
@@ -766,6 +772,8 @@ def _bridge_lemmas_for_rules(lowering_rules: List[str]) -> List[str]:
         bridge_lemmas.append("MumeiLean.SmartContract.no_external_call_without_lock")
     if "smart_contract_access_control_lowering" in lowering_rules:
         bridge_lemmas.append("MumeiLean.SmartContract.no_state_write_without_auth")
+    if "smart_contract_cei_lowering" in lowering_rules:
+        bridge_lemmas.append("MumeiLean.SmartContract.effect_after_interaction_is_none")
     if "rtgs_settlement_lowering" in lowering_rules:
         bridge_lemmas.append("mumei_rtgs_settlement_bridge")
     if "unknown_obligation_lowering" in lowering_rules:
@@ -797,6 +805,8 @@ def _proof_trace_hints_for_rules(lowering_rules: List[str]) -> List[str]:
         hints.append("close concrete guard traces with SmartContract.runGuard and decide")
     if "smart_contract_access_control_lowering" in lowering_rules:
         hints.append("close concrete access-control traces with SmartContract.runAccess and decide")
+    if "smart_contract_cei_lowering" in lowering_rules:
+        hints.append("close concrete CEI ordering traces with SmartContract.runCei and decide")
     if "rtgs_settlement_lowering" in lowering_rules:
         hints.append("discharge RTGS obligations with validation-before-settlement and conservation lemmas")
     if "refinement_predicate_lowering" in lowering_rules:
@@ -908,6 +918,7 @@ def classify_obligation(tokens: List[tuple], lowering_rules: List[str]) -> str:
     ) or "group_theory_lowering" in lowering_rules
     has_guard_trace = "smart_contract_guard_trace_lowering" in lowering_rules
     has_access_control = "smart_contract_access_control_lowering" in lowering_rules
+    has_cei = "smart_contract_cei_lowering" in lowering_rules
     has_sc = any(
         kind == "ID" and text in _SMART_CONTRACT_FUNCTIONS for kind, text in tokens
     ) or "smart_contract_lowering" in lowering_rules
@@ -931,6 +942,8 @@ def classify_obligation(tokens: List[tuple], lowering_rules: List[str]) -> str:
         return OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE
     if has_access_control:
         return OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL
+    if has_cei:
+        return OBLIGATION_CLASS_SMART_CONTRACT_CEI
     if has_sc:
         return OBLIGATION_CLASS_SMART_CONTRACT
     if has_rtgs:
@@ -1123,6 +1136,92 @@ def render_access_control_theorem(
         [
             f"theorem {theorem_name} :",
             f"    runAccess AccessState.Unchecked [{ops_expr}] = {expected} := by",
+            "  decide",
+            "",
+        ]
+    )
+
+
+def cei_expected_to_lean(expected_outcome: Any) -> str:
+    if expected_outcome is False:
+        return "none"
+    if not isinstance(expected_outcome, str):
+        raise ValueError(f"unsupported CEI outcome: {expected_outcome!r}")
+    normalized = expected_outcome.strip()
+    lowered = normalized.lower()
+    if normalized in {"some CeiState.Effects", "some CeiState.Interacted", "none"}:
+        return normalized
+    if lowered in {"effects", "effects_only", "effects-only"}:
+        return "some CeiState.Effects"
+    if lowered in {"interacted", "safe", "ordered", "some"}:
+        return "some CeiState.Interacted"
+    if lowered in {"none", "violation", "unsafe", "unordered", "reordered"}:
+        return "none"
+    raise ValueError(f"unsupported CEI outcome: {expected_outcome!r}")
+
+
+def normalize_cei_translator_ir(
+    translator_ir: Dict[str, Any],
+) -> Dict[str, Any]:
+    cei = translator_ir.get("cei")
+    if not isinstance(cei, dict):
+        return translator_ir
+    ops = cei.get("ops")
+    if not isinstance(ops, list) or not all(isinstance(op, str) for op in ops):
+        return translator_ir
+    expected_outcome = cei.get("expected_outcome")
+    if expected_outcome is None:
+        return translator_ir
+    try:
+        lean_expected_outcome = cei_expected_to_lean(expected_outcome)
+    except ValueError:
+        return translator_ir
+    normalized = dict(translator_ir)
+    normalized_cei = {
+        "ops": [str(op) for op in ops],
+        "expected_outcome": expected_outcome,
+    }
+    normalized["cei"] = normalized_cei
+    normalized["cei_ops"] = list(normalized_cei["ops"])
+    normalized["cei_expected_outcome"] = normalized_cei["expected_outcome"]
+    normalized["theorem_goal"] = (
+        "runCei CeiState.Effects "
+        f"[{', '.join(f'CeiOp.{op}' for op in normalized_cei['ops'])}] = "
+        f"{lean_expected_outcome}"
+    )
+    normalized["obligation_class"] = OBLIGATION_CLASS_SMART_CONTRACT_CEI
+    lowering_rules = normalized.setdefault("lowering_rules", [])
+    if SMART_CONTRACT_CEI_LOWERING not in lowering_rules:
+        lowering_rules.append(SMART_CONTRACT_CEI_LOWERING)
+    proof_trace_hints = normalized.setdefault("proof_trace_hints", [])
+    hint = "use the concrete CEI ordering trace with SmartContract.runCei"
+    if hint not in proof_trace_hints:
+        proof_trace_hints.append(hint)
+    requires_bridge_lemmas = normalized.setdefault("requires_bridge_lemmas", [])
+    bridge_lemma = "MumeiLean.SmartContract.effect_after_interaction_is_none"
+    if bridge_lemma not in requires_bridge_lemmas:
+        requires_bridge_lemmas.append(bridge_lemma)
+    return normalized
+
+
+def render_cei_theorem(
+    atom_name: str,
+    cei: Dict[str, Any],
+    provenance_prefix: str = "",
+) -> str:
+    ops = cei.get("ops")
+    if not isinstance(ops, list) or not all(isinstance(op, str) for op in ops):
+        raise ValueError("CEI must include an ordered list of op strings")
+    theorem_name = f"{_sanitize_lean_identifier(atom_name)}_correct"
+    ops_expr = ", ".join(f"CeiOp.{op}" for op in ops)
+    expected_outcome = cei.get("expected_outcome")
+    if expected_outcome is None:
+        raise ValueError("CEI must include a recognized expected_outcome")
+    expected = cei_expected_to_lean(expected_outcome)
+    return provenance_prefix + "\n".join(
+        [
+            f"theorem {theorem_name} :",
+            f"    runCei CeiState.Effects [{ops_expr}] = {expected} := by",
             "  decide",
             "",
         ]

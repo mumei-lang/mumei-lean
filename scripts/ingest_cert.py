@@ -47,13 +47,16 @@ try:
     from .expr_translator import (
         BRIDGE_LEMMA_HASH,
         OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL,
+        OBLIGATION_CLASS_SMART_CONTRACT_CEI,
         OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
         TRANSLATOR_VERSION,
         TranslationResult,
         contains_identifier,
         normalize_access_control_translator_ir,
+        normalize_cei_translator_ir,
         normalize_guard_trace_translator_ir,
         render_access_control_theorem,
+        render_cei_theorem,
         render_guard_trace_theorem,
         translate_body,
         translate_contract,
@@ -65,13 +68,16 @@ except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py
     from expr_translator import (  # type: ignore
         BRIDGE_LEMMA_HASH,
         OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL,
+        OBLIGATION_CLASS_SMART_CONTRACT_CEI,
         OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
         TRANSLATOR_VERSION,
         TranslationResult,
         contains_identifier,
         normalize_access_control_translator_ir,
+        normalize_cei_translator_ir,
         normalize_guard_trace_translator_ir,
         render_access_control_theorem,
+        render_cei_theorem,
         render_guard_trace_theorem,
         translate_body,
         translate_contract,
@@ -132,6 +138,7 @@ class IngestedAtom:
             if self.translator_ir.get("obligation_class") in (
                 OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
                 OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL,
+                OBLIGATION_CLASS_SMART_CONTRACT_CEI,
             ):
                 return True
             if self.translator_ir.get("bridge_pattern") in (
@@ -146,6 +153,9 @@ class IngestedAtom:
             if isinstance(access_control, dict) and isinstance(
                 access_control.get("ops"), list
             ):
+                return True
+            cei = self.translator_ir.get("cei")
+            if isinstance(cei, dict) and isinstance(cei.get("ops"), list):
                 return True
         return False
 
@@ -269,6 +279,10 @@ def _attach_domain_to_translator_ir(
         "obligation_class"
     ) == OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL:
         rule = "smart_contract_access_control_lowering"
+    elif isinstance(translator_ir.get("cei"), dict) or translator_ir.get(
+        "obligation_class"
+    ) == OBLIGATION_CLASS_SMART_CONTRACT_CEI:
+        rule = "smart_contract_cei_lowering"
     elif unknown_obligation_domain == "smart_contract":
         rule = "smart_contract_lowering"
     else:
@@ -392,6 +406,7 @@ def _translator_ir_payload(atom: dict, *fallbacks: Optional[TranslationResult]) 
     if isinstance(raw_ir, dict):
         result = normalize_guard_trace_translator_ir(dict(raw_ir))
         result = normalize_access_control_translator_ir(result)
+        result = normalize_cei_translator_ir(result)
         result.setdefault("binders", [])
         result.setdefault("lowering_rules", [])
         result.setdefault("semantic_gap_notes", [])
@@ -912,6 +927,17 @@ def render_theorem(atom: IngestedAtom) -> str:
                 access_control,
                 provenance_prefix=_theorem_preamble(atom),
             )
+        cei = atom.translator_ir.get("cei")
+        if (
+            atom.translator_ir.get("obligation_class")
+            == OBLIGATION_CLASS_SMART_CONTRACT_CEI
+            and isinstance(cei, dict)
+        ):
+            return render_cei_theorem(
+                atom.name,
+                cei,
+                provenance_prefix=_theorem_preamble(atom),
+            )
     sort_proof = _sort_ascending_proof(atom)
     if sort_proof is not None:
         return sort_proof
@@ -1176,6 +1202,7 @@ def render_module(module_key: str, prefix: str, atoms: List[IngestedAtom]) -> st
         in (
             OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
             OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL,
+            OBLIGATION_CLASS_SMART_CONTRACT_CEI,
         )
         for atom in atoms
     ):

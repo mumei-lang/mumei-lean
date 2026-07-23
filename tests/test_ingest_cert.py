@@ -19,6 +19,7 @@ from ingest_cert import (
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 GUARD_TRACE_FIXTURE = FIXTURES / "guard_trace_demo.proof-cert.json"
 ACCESS_CONTROL_FIXTURE = FIXTURES / "access_control_demo.proof-cert.json"
+CEI_FIXTURE = FIXTURES / "cei_demo.proof-cert.json"
 
 
 def _make_atom(
@@ -559,6 +560,45 @@ def test_access_control_fixture_renders_run_access_theorems_and_imports(tmp_path
     assert "open MumeiLean.SmartContract" in src
     assert "runAccess AccessState.Unchecked" in src
     assert "guarded_access_control_trace_correct" in src
+
+
+def test_cei_fixture_renders_run_cei_theorems_and_imports(tmp_path: Path):
+    payload = json.loads(CEI_FIXTURE.read_text())
+    atoms = collect_unknown_atoms(payload)
+
+    assert [atom.name for atom in atoms] == [
+        "ordered_cei_trace",
+        "violating_cei_trace",
+    ]
+    assert all(atom.is_partial_translation is False for atom in atoms)
+    assert all(
+        atom.translator_ir["obligation_class"] == "smart_contract_cei_obligation"
+        for atom in atoms
+    )
+    assert atoms[0].translator_ir["cei_ops"] == ["effect", "interaction"]
+    assert atoms[1].translator_ir["cei_expected_outcome"] == "none"
+
+    rendered_ordered = render_theorem(atoms[0])
+    rendered_violation = render_theorem(atoms[1])
+    assert "theorem ordered_cei_trace_correct" in rendered_ordered
+    assert (
+        "runCei CeiState.Effects [CeiOp.effect, CeiOp.interaction] "
+        "= some CeiState.Interacted := by" in rendered_ordered
+    )
+    assert "decide" in rendered_ordered
+    assert "theorem violating_cei_trace_correct" in rendered_violation
+    assert (
+        "runCei CeiState.Effects [CeiOp.interaction, CeiOp.effect] = none := by"
+        in rendered_violation
+    )
+
+    out_dir = tmp_path / "generated"
+    [written] = write_modules(atoms, out_dir, "Generated")
+    src = written.read_text()
+    assert "import MumeiLean.SmartContract" in src
+    assert "open MumeiLean.SmartContract" in src
+    assert "runCei CeiState.Effects" in src
+    assert "ordered_cei_trace_correct" in src
 
 
 def test_write_modules_groups_by_module_key(tmp_path: Path):

@@ -114,5 +114,5 @@ jobs:
           path: |
             bridge-summary.json
             generated/
+            generated/lake_build.log
             lean-certs/
-            .lake/lake_build.log

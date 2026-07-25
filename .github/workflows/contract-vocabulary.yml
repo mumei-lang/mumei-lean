@@ -9,6 +9,7 @@ on:
       - 'docs/BRIDGE_HARNESS_SPEC.md'
       - 'docs/INTEGRATION.md'
       - 'tests/test_contract_vocabulary.py'
+      - 'tests/test_ci_workflow_timeouts.py'
       - 'scripts/export_cert.py'
       - 'scripts/expr_translator.py'
       - 'scripts/bridge.py'
@@ -30,10 +31,10 @@ jobs:
           python-version: '3.12'
 
       - name: Install pytest
-        run: python -m pip install pytest
+        run: python -m pip install pytest pyyaml
 
       - name: Check Lean harness docs contract
         env:
           MUMEI_LEAN_SKIP_LIVE: '1'
           PYTHONPATH: scripts
-        run: python -m pytest tests/test_contract_vocabulary.py -q
+        run: python -m pytest tests/test_contract_vocabulary.py tests/test_ci_workflow_timeouts.py -q

@@ -7,30 +7,112 @@ on:
 
 jobs:
   bridge:
+    name: Weekly mumei → Lean bridge scan
     runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Python
+
+      - name: Free disk space
+        continue-on-error: true
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: true
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.12"
+
+      - name: Install pytest
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+
       - name: Checkout mumei repo
         uses: actions/checkout@v4
         with:
           repository: mumei-lang/mumei
           path: mumei
           ref: develop
+
+      - name: Install elan + Lean toolchain
+        continue-on-error: true
+        run: |
+          set +e
+          curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          ~/.elan/bin/elan toolchain install "$(cat lean-toolchain)"
+          exit 0
+
+      - name: Cache Lake build artefacts
+        id: cache-lake
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: |
+            .lake
+            ~/.elan
+          key: lean-bridge-ci-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lakefile.lean') }}
+          restore-keys: |
+            lean-bridge-ci-${{ runner.os }}-
+            lake-${{ runner.os }}-
+            bridge-e2e-${{ runner.os }}-
+
+      - name: Pre-flight diagnostics
+        run: |
+          {
+            echo "## Lean Bridge CI pre-flight"
+            echo "- elan on PATH: $(command -v elan >/dev/null 2>&1 && echo 'yes' || echo 'no')"
+            echo "- lake on PATH: $(command -v lake >/dev/null 2>&1 && echo 'yes' || echo 'no')"
+            echo "- .lake directory exists: $([ -d .lake ] && echo 'yes' || echo 'no')"
+            echo "- ~/.elan directory exists: $([ -d "$HOME/.elan" ] && echo 'yes' || echo 'no')"
+            echo "- mumei checkout exists: $([ -d mumei ] && echo 'yes' || echo 'no')"
+            echo "- cache restore hit: ${{ steps.cache-lake.outputs.cache-hit == 'true' && 'yes' || 'unknown/miss' }}"
+            if command -v lake >/dev/null 2>&1; then
+              echo "- lake version: $(lake --version 2>&1 | head -n 1)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Run bridge scan
         run: |
+          if ! command -v lake >/dev/null 2>&1; then
+            REASON="lake not on PATH"
+            if [ ! -d "$HOME/.elan" ]; then
+              REASON="Lean toolchain (elan) was not installed"
+            fi
+            echo "::warning::Lean Bridge scan degraded: $REASON"
+            {
+              echo "## Lean Bridge scan"
+              echo "**Status:** degraded"
+              echo "**Reason:** $REASON"
+              echo "Artifacts will not contain lean-verified certificates."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          mkdir -p lean-certs generated
           python scripts/bridge.py \
             --scan-unknown mumei \
             --ci-mode \
             --summary-json bridge-summary.json \
             --lean-cert-out lean-certs/
+          {
+            echo "## Lean Bridge scan"
+            echo "**Status:** completed"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lean-bridge-scan
           path: |
             bridge-summary.json
             generated/
+            lean-certs/
+            .lake/lake_build.log

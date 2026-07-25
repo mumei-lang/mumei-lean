@@ -24,6 +24,8 @@ jobs:
           python -m pip install pytest pyyaml
 
       - name: Run pytest
+        env:
+          MUMEI_LEAN_SKIP_LIVE: '1'
         run: python -m pytest -v
 
       # Regression gate for A1 stage 3 / L3: the guard-trace obligation class

@@ -21,7 +21,7 @@ jobs:
       - name: Install pytest
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest
+          python -m pip install pytest pyyaml
 
       - name: Run pytest
         run: python -m pytest -v
@@ -61,7 +61,7 @@ jobs:
       - name: Install pytest
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest
+          python -m pip install pytest pyyaml
 
       - name: Install elan + Lean toolchain
         continue-on-error: true

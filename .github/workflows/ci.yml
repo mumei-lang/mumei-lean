@@ -88,8 +88,8 @@ jobs:
         run: |
           {
             echo "## bridge body-semantics E2E pre-flight"
-            echo "- elan on PATH: $(command -v elan 2>/dev/null && echo 'yes' || echo 'no')"
-            echo "- lake on PATH: $(command -v lake 2>/dev/null && echo 'yes' || echo 'no')"
+            echo "- elan on PATH: $(command -v elan >/dev/null 2>&1 && echo 'yes' || echo 'no')"
+            echo "- lake on PATH: $(command -v lake >/dev/null 2>&1 && echo 'yes' || echo 'no')"
             echo "- .lake directory exists: $([ -d .lake ] && echo 'yes' || echo 'no')"
             echo "- ~/.elan directory exists: $([ -d "$HOME/.elan" ] && echo 'yes' || echo 'no')"
             echo "- cache restore hit: ${{ steps.cache-lake.outputs.cache-hit == 'true' && 'yes' || 'unknown/miss' }}"

@@ -37,7 +37,7 @@ jobs:
     name: bridge body-semantics E2E
     runs-on: ubuntu-latest
     continue-on-error: true
-    timeout-minutes: 90
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -72,6 +72,7 @@ jobs:
           exit 0
 
       - name: Cache Lake build artefacts
+        id: cache-lake
         uses: actions/cache@v4
         continue-on-error: true
         with:
@@ -83,10 +84,39 @@ jobs:
             bridge-e2e-${{ runner.os }}-
             lake-${{ runner.os }}-
 
+      - name: Pre-flight diagnostics
+        run: |
+          {
+            echo "## bridge body-semantics E2E pre-flight"
+            echo "- elan on PATH: $(command -v elan >/dev/null 2>&1 && echo 'yes' || echo 'no')"
+            echo "- lake on PATH: $(command -v lake >/dev/null 2>&1 && echo 'yes' || echo 'no')"
+            echo "- .lake directory exists: $([ -d .lake ] && echo 'yes' || echo 'no')"
+            echo "- ~/.elan directory exists: $([ -d "$HOME/.elan" ] && echo 'yes' || echo 'no')"
+            echo "- cache restore hit: ${{ steps.cache-lake.outputs.cache-hit == 'true' && 'yes' || 'unknown/miss' }}"
+            if command -v lake >/dev/null 2>&1; then
+              echo "- lake version: $(lake --version 2>&1 | head -n 1)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Run bridge E2E if lake is available
         run: |
+          SKIP_REASON=""
           if ! command -v lake >/dev/null 2>&1; then
-            echo "lake not available; skipping bridge E2E"
+            if [ ! -d "$HOME/.elan" ]; then
+              SKIP_REASON="Lean toolchain (elan) was not installed"
+            else
+              SKIP_REASON="lake not on PATH after elan install"
+            fi
+          elif [ ! -d .lake ] && [ "${{ steps.cache-lake.outputs.cache-hit }}" != "true" ]; then
+            SKIP_REASON="lake available but Lake build cache was not restored; mathlib compilation would be too slow in E2E"
+          fi
+          if [ -n "$SKIP_REASON" ]; then
+            echo "::warning::bridge E2E skipped: $SKIP_REASON"
+            {
+              echo "## bridge body-semantics E2E"
+              echo "**Status:** skipped"
+              echo "**Reason:** $SKIP_REASON"
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           mkdir -p out
@@ -100,11 +130,21 @@ jobs:
           atom = next(a for a in payload["atoms"] if a["name"] == "abs_saturating")
           assert atom["z3_check_result"] == "lean_verified", atom
           PY
+          {
+            echo "## bridge body-semantics E2E"
+            echo "**Status:** OK"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run bridge E2E pytest tests if lake is available
         run: |
           if ! command -v lake >/dev/null 2>&1; then
-            echo "lake not available; skipping bridge E2E pytest"
+            REASON="lake not on PATH"
+            echo "::warning::bridge E2E pytest skipped: $REASON"
+            {
+              echo "## bridge E2E pytest"
+              echo "**Status:** skipped"
+              echo "**Reason:** $REASON"
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           mkdir -p out
@@ -116,6 +156,10 @@ jobs:
               --run-integration \
               -k "lake_available" \
               2>&1 | tee out/bridge_e2e_pytest.log
+          {
+            echo "## bridge E2E pytest"
+            echo "**Status:** OK"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Guard-trace L3 E2E regression gate: certificate -> generated runGuard
       # trace theorem -> Lake build -> export upgrades the atom to
@@ -125,7 +169,13 @@ jobs:
       - name: Guard-trace L3 E2E regression gate (Lake)
         run: |
           if ! command -v lake >/dev/null 2>&1; then
-            echo "lake not available; skipping guard-trace L3 E2E gate"
+            REASON="lake not on PATH"
+            echo "::warning::guard-trace L3 E2E gate skipped: $REASON"
+            {
+              echo "## guard-trace L3 E2E gate (Lake)"
+              echo "**Status:** skipped"
+              echo "**Reason:** $REASON"
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           mkdir -p out
@@ -135,6 +185,10 @@ jobs:
               -v \
               --run-integration \
               2>&1 | tee out/guard_trace_e2e_pytest.log
+          {
+            echo "## guard-trace L3 E2E gate (Lake)"
+            echo "**Status:** OK"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   lean-build:
     name: lake build

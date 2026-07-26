@@ -61,7 +61,7 @@ hand-written `MumeiLean.StdMathAbs` witness.
 
 ### Live generated theorem paths
 
-The bridge ships ten live generated theorem paths. Each lowers a Z3 `unknown`
+The bridge ships eleven live generated theorem paths. Each lowers a Z3 `unknown`
 (or spurious-candidate) atom to a generated Lean theorem that Lake builds with
 `known_witness_used = false`:
 
@@ -120,6 +120,14 @@ The bridge ships ten live generated theorem paths. Each lowers a Z3 `unknown`
   `MumeiLean.Algebra.ff_mul_comm_eq` with `known_witness_used = false`. This is
   the tenth live generated theorem path, and its two commutativity lemmas are
   new catalog entries, so it bumps `bridge_lemma_hash`.
+- `std/algebra/finite_field.mm::ff_mul_associative`: the finite-field
+  associativity path emits
+  `Generated.Std.Algebra.Finite_field.ff_mul_associative_correct`; Lake
+  discharges `ff_eq(result, ff_mul(a, ff_mul(b, c, p), p), p)` by rewriting with
+  `MumeiLean.Algebra.ff_mul_assoc_mod` and closing with
+  `MumeiLean.Algebra.ff_eq_refl`, with `known_witness_used = false`. This is the
+  eleventh live generated theorem path; both backing lemmas already exist, so it
+  leaves `bridge_lemma_hash` unchanged.
 
 ## Scope
 

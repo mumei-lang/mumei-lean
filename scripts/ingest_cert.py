@@ -635,6 +635,60 @@ def _finite_field_commutativity_proof(
     )
 
 
+_FF_ASSOCIATIVE_LEMMAS = {
+    "ff_add": "MumeiLean.Algebra.ff_add_assoc_mod",
+    "ff_mul": "MumeiLean.Algebra.ff_mul_assoc_mod",
+}
+
+
+def _finite_field_associativity_proof(
+    atom: IngestedAtom,
+    result_name: str,
+    binder_mapping: dict[str, str],
+) -> Optional[str]:
+    """Generate the finite-field associativity proof (spec section 5.15).
+
+    Selected by the explicit ``translator_ir.bridge_pattern ==
+    "finite_field_associativity"`` marker. Matches a left-nested body such as
+    ``ff_mul(ff_mul(a, b, p), c, p)`` against a right-nested ``ensures``
+    ``ff_eq(result, ff_mul(a, ff_mul(b, c, p), p), p)`` and rewrites with the
+    matching ``*_assoc_mod`` bridge lemma before closing by ``ff_eq``
+    reflexivity.
+    """
+    if _bridge_pattern(atom) != "finite_field_associativity":
+        return None
+    body_expr = atom.body_expr.strip()
+    braced_body = re.fullmatch(r"\{\s*(.*?)\s*\}", body_expr, re.DOTALL)
+    if braced_body is not None:
+        body_expr = braced_body.group(1).strip()
+    ident = r"[A-Za-z_][A-Za-z0-9_]*"
+    body_match = re.fullmatch(
+        rf"(ff_add|ff_mul)\s*\(\s*\1\s*\(\s*({ident})\s*,\s*({ident})\s*,"
+        rf"\s*({ident})\s*\)\s*,\s*({ident})\s*,\s*\4\s*\)",
+        body_expr,
+    )
+    if body_match is None:
+        return None
+    op, left, mid, modulus, right = body_match.groups()
+    ensures_match = re.fullmatch(
+        rf"ff_eq\s*\(\s*result\s*,\s*{op}\s*\(\s*{re.escape(left)}\s*,"
+        rf"\s*{op}\s*\(\s*{re.escape(mid)}\s*,\s*{re.escape(right)}\s*,"
+        rf"\s*{re.escape(modulus)}\s*\)\s*,\s*{re.escape(modulus)}\s*\)\s*,"
+        rf"\s*{re.escape(modulus)}\s*\)",
+        atom.raw_ensures.strip(),
+    )
+    if ensures_match is None:
+        return None
+    mapped_modulus = binder_mapping.get(modulus, modulus)
+    return (
+        "  rw [h_body]\n"
+        f"  unfold {result_name}\n"
+        "  intro _hp\n"
+        f"  rw [{_FF_ASSOCIATIVE_LEMMAS[op]}]\n"
+        f"  exact MumeiLean.Algebra.ff_eq_refl _ {mapped_modulus}"
+    )
+
+
 def _sort_ascending_proof(atom: IngestedAtom) -> Optional[str]:
     """Detect the insertion sort ascending atom and generate a bridge-lemma proof.
 
@@ -1164,6 +1218,7 @@ def render_theorem(atom: IngestedAtom) -> str:
     finite_field_body = (
         _finite_field_zero_eq_proof(atom, result_name, binder_mapping)
         or _finite_field_commutativity_proof(atom, result_name, binder_mapping)
+        or _finite_field_associativity_proof(atom, result_name, binder_mapping)
         if use_body_semantics
         else None
     )

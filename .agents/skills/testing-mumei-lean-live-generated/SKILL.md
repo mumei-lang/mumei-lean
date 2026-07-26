@@ -219,9 +219,9 @@ PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest \
 
 The Lake-marked sort ascending test should run and pass when `lake` is available; if it skips unexpectedly, check that `lake` is on `PATH` and that the fixture drivers compile with the pinned Lean toolchain.
 
-## Live Generated Theorem Paths (10 total)
+## Live Generated Theorem Paths (11 total)
 
-The bridge ships ten live generated theorem paths. Each lowers a Z3 `unknown`
+The bridge ships eleven live generated theorem paths. Each lowers a Z3 `unknown`
 (or `spurious_candidate`) atom to a generated Lean theorem that builds with
 `known_witness_used = false`:
 
@@ -235,14 +235,21 @@ The bridge ships ten live generated theorem paths. Each lowers a Z3 `unknown`
 8. `sum_nonneg_inductive` — natural-number induction via `MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern`.
 9. `rtgs_transfer_conservation` — RTGS balance conservation via `mumei_arith`.
 10. `ff_mul_commutative` — finite-field commutativity (`ff_eq` over swapped `ff_mul` operands) via `MumeiLean.Algebra.ff_mul_comm_eq`.
+11. `ff_mul_associative` — finite-field associativity (`ff_eq` over a re-associated `ff_mul` nesting) via `MumeiLean.Algebra.ff_mul_assoc_mod` + `ff_eq_refl`, selected by `translator_ir.bridge_pattern == "finite_field_associativity"`.
 
-Focused pytest coverage for paths 9–10, Lake required:
+Focused pytest coverage for paths 9–11, Lake required:
 
 ```bash
 cd /home/ubuntu/repos/mumei-lean
 PATH="$HOME/.elan/bin:$PATH" python -m pytest tests/test_lean_bridge_e2e.py -q \
-  -k "rtgs_transfer_conservation or finite_field_commutativity"
+  -k "rtgs_transfer_conservation or finite_field_commutativity or finite_field_associativity"
 ```
+
+Adversarial negative control for path 11: change the fixture `ensures` to an
+operand order that is *not* the re-association of the body (e.g.
+`ff_eq(result, ff_mul(b, ff_mul(a, c, p), p), p)`) and assert the rendered proof
+falls back to `mumei_arith_deep` without citing `ff_mul_assoc_mod`
+(`tests/test_ingest_cert.py::test_finite_field_associativity_requires_matching_operand_order`).
 
 Focused pytest coverage for the three PR3 paths (6–8), Lake required:
 

@@ -270,3 +270,75 @@ PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest \
   tests/test_ingest_cert.py tests/test_expr_translator.py \
   tests/test_export_cert.py tests/test_contract_vocabulary.py -q
 ```
+
+## Adversarial Checks (negative controls)
+
+A green live run only proves something if the same pipeline visibly *refuses* bad input.
+Run these alongside the positive paths whenever promotion logic, the translator contract,
+or `MumeiLean/CertWriter.lean` changes. All of them work on `/tmp` copies; never mutate
+repo fixtures in place.
+
+Always pass `-rs` to pytest for live runs so a silent `SKIPPED` (Lake not on `PATH`, or
+`MUMEI_LEAN_SKIP_LIVE=1` still exported from an earlier command) cannot be mistaken for a pass:
+
+```bash
+PATH="$HOME/.elan/bin:$PATH" PYTHONPATH=scripts python -m pytest \
+  tests/test_lean_bridge_e2e.py tests/test_cert_roundtrip.py -q -rs
+```
+
+### 1. Unprovable goal must not be promoted
+
+Copy any body-semantics fixture and mutate `ensures` (and `translator_ir.theorem_goal`) so the
+generated theorem cannot close — e.g. keep body `{ ff_mul(a, b, p) }` but claim
+`ff_eq(result, ff_add(b, a, p), p)`. Re-run `scripts/bridge.py`.
+
+Expected: `lake build` exits 1 with `unsolved goals`, the bridge exits non-zero, and the atom
+stays `z3_check_result == "unknown"` with `lean_metadata.status == "manual_lemma_required"` and
+`all_verified == false`. If it still exports `lean_verified`, promotion is rubber-stamping.
+
+### 2. Stale translator contract must be rejected even when the proof builds
+
+Make two `/tmp` copies of a fixture: one with `bridge_lemma_hash` reverted to an older catalog
+hash, one with `translator_version` set to an older value. Run the bridge on each.
+
+Expected for both: `lake build` still exits **0** (the Lean proof is fine) but the atom is *not*
+promoted — `z3_check_result == "unknown"`, `status == "unknown"`,
+`lean_metadata.status == "stale_translator"`, `all_verified == false`. Seeing the build succeed
+while the atom is refused is the point: it isolates the trust gate from proof validity.
+The gate lives in `scripts/export_cert.py` (`_translator_contract_current`,
+`_lean_result_contract_current`, and the `stale_translator` branch of `_upgrade_atom_list`).
+
+### 3. Native writer must not rewrite escalation metadata
+
+`tests/fixtures/cert_roundtrip_driver.lean` marks *every* atom `ProofResult.verified`, so it only
+covers the promoted direction. For the non-promoted direction, copy the driver to `/tmp` and swap
+the result constructor:
+
+```bash
+sed 's/ProofResult.verified)/ProofResult.failed "negative control")/' \
+  tests/fixtures/cert_roundtrip_driver.lean > /tmp/rt_neg_driver.lean
+PATH="$HOME/.elan/bin:$PATH" lake env lean --run /tmp/rt_neg_driver.lean /tmp/cert.json
+```
+
+Build the input cert from `tests/fixtures/pilot_proof_cert.json` with
+`z3_result_class="unknown"`, `escalation_reason="z3_unknown"`,
+`logic_fragment_tags=["finite_field","nonlinear_arithmetic"]` on every atom.
+
+Expected:
+- Verified driver: `first_atom_z3 == "lean_verified"` while `z3_result_class`,
+  `escalation_reason`, and `logic_fragment_tags` come back byte-identical to the input.
+  (A writer that still does `z3ResultClass := ...` would report `z3_result_class == "lean_verified"` —
+  that is the regression this guards.)
+- Failed driver: every atom field-for-field identical to the input, `first_atom_z3 == "unknown"`.
+
+Known non-issue: `first_atom_translator_version` comes back as `""` for `pilot_proof_cert.json`
+because that fixture carries no `translator_version`; do not chase it.
+
+## Timing Expectations
+
+With a warm mathlib cache (`.lake` around 5 GB) the whole live suite finishes in well under a
+minute — 23 tests in ~32s, full live `pytest -q` at 286 passed in ~41s, and `lake build` replays
+from cache. The `bridge body-semantics E2E` CI job has historically taken ~45 min instead; that is
+cold-cache `lake exe cache get` time, not a code regression. If a *local* run suddenly takes tens
+of minutes, suspect a cache miss (check `lake exe cache get` and `mkdir -p generated/Generated`)
+rather than the bridge.

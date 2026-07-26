@@ -738,6 +738,9 @@ SUM_NONNEG_FIXTURE = FIXTURES / "std_math_patterns_sum_nonneg.proof-cert.json"
 FF_COMMUTATIVITY_FIXTURE = (
     FIXTURES / "std_algebra_finite_field_ff_mul_commutative.proof-cert.json"
 )
+FF_ASSOCIATIVITY_FIXTURE = (
+    FIXTURES / "std_algebra_finite_field_ff_mul_associative.proof-cert.json"
+)
 
 
 def test_render_theorem_nonlinear_monic_uses_body_semantics():
@@ -818,3 +821,50 @@ def test_render_theorem_finite_field_addition_commutativity_uses_bridge_lemma():
     rendered = render_theorem(atom)
     assert "exact MumeiLean.Algebra.ff_add_comm_eq a b p" in rendered
     assert "sorry" not in rendered
+
+
+def test_render_theorem_finite_field_associativity_uses_bridge_lemma():
+    """Live path 11: a re-associated finite-field product is discharged by the
+    ``ff_mul_assoc_mod`` bridge lemma plus ``ff_eq`` reflexivity."""
+    payload = json.loads(FF_ASSOCIATIVITY_FIXTURE.read_text())
+    [atom] = collect_unknown_atoms(payload)
+    assert atom.is_partial_translation is False
+    assert atom.translator_ir["bridge_pattern"] == "finite_field_associativity"
+    rendered = render_theorem(atom)
+    assert "def ffMulAssociativeResult" in rendered
+    assert "theorem ff_mul_associative_correct" in rendered
+    assert "rw [MumeiLean.Algebra.ff_mul_assoc_mod]" in rendered
+    assert "exact MumeiLean.Algebra.ff_eq_refl _ p" in rendered
+    assert "mumei_arith" not in rendered
+    assert "sorry" not in rendered
+
+
+def test_render_theorem_finite_field_addition_associativity_uses_bridge_lemma():
+    """The same lowering covers re-associated ``ff_add`` operands."""
+    payload = json.loads(FF_ASSOCIATIVITY_FIXTURE.read_text())
+    atom_payload = payload["atoms"][0]
+    atom_payload["body_expr"] = "{ ff_add(ff_add(a, b, p), c, p) }"
+    atom_payload["body_summary"] = atom_payload["body_expr"]
+    atom_payload["ensures"] = "ff_eq(result, ff_add(a, ff_add(b, c, p), p), p)"
+    atom_payload["translator_ir"]["theorem_goal"] = (
+        "(p > 0) -> (ff_eq(result, ff_add(a, ff_add(b, c, p), p), p))"
+    )
+    [atom] = collect_unknown_atoms(payload)
+    rendered = render_theorem(atom)
+    assert "rw [MumeiLean.Algebra.ff_add_assoc_mod]" in rendered
+    assert "sorry" not in rendered
+
+
+def test_finite_field_associativity_requires_matching_operand_order():
+    """Negative control: an ``ensures`` that is not the re-associated body must
+    fall back to the generic body-semantics tactic instead of the assoc lemma."""
+    payload = json.loads(FF_ASSOCIATIVITY_FIXTURE.read_text())
+    atom_payload = payload["atoms"][0]
+    atom_payload["ensures"] = "ff_eq(result, ff_mul(b, ff_mul(a, c, p), p), p)"
+    atom_payload["translator_ir"]["theorem_goal"] = (
+        "(p > 0) -> (ff_eq(result, ff_mul(b, ff_mul(a, c, p), p), p))"
+    )
+    [atom] = collect_unknown_atoms(payload)
+    rendered = render_theorem(atom)
+    assert "ff_mul_assoc_mod" not in rendered
+    assert "mumei_arith_deep" in rendered

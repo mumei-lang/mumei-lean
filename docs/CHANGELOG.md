@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-26: Finite-field associativity bridge as 11th live generated theorem path
+
+- Added the 11th live generated theorem path `std/algebra/finite_field.mm::ff_mul_associative` (§5.15): an `ff_eq` obligation comparing a left-associated `ff_mul` body with its right-associated form (Z3 `unknown` on the nested `%` interaction), discharged by rewriting with `MumeiLean.Algebra.ff_mul_assoc_mod` and closing with `ff_eq_refl`, `known_witness_used = false`. `ff_add` is covered by the same lowering through `ff_add_assoc_mod`.
+- The path is selected by the explicit `translator_ir.bridge_pattern == "finite_field_associativity"` marker (as in §5.12 / §5.13), so an `ensures` that is not the re-association of the body falls back to `mumei_arith_deep`; a negative-control test pins that behaviour.
+- Both backing lemmas already exist in the catalog, so `bridge_lemma_hash` stays `ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347`.
+- Documented the two completed roadmap items with their originating PRs: RTGS `balance_conservation` (#8, extended in #44) and contract-expression translator / `mumei_arith` expansion (#100); CertParser/CertWriter native implementation (#3).
+- Live path count synced from **ten** to **eleven** across `docs/ARCHITECTURE.md`, `docs/LEAN_HARNESS_CONTRACT.md`, `docs/ROADMAP.md`, `docs/LEAN_TRANSLATOR_SPEC.md`, and `.agents/skills/testing-mumei-lean-live-generated/SKILL.md`.
+
 ## 2026-07-26: Finite-field commutativity bridge as 10th live generated theorem path
 
 - Added the 10th live generated theorem path `std/algebra/finite_field.mm::ff_mul_commutative`: an `ff_eq` obligation whose operands are a swapped `ff_mul` call (Z3 `unknown` on the nonlinear `%` interaction) discharged through the new `MumeiLean.Algebra.ff_mul_comm_eq` bridge lemma with `known_witness_used = false`. `ff_add` is covered by the same lowering through `ff_add_comm_eq`.

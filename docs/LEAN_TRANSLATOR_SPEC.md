@@ -486,6 +486,57 @@ Lowering rule: `finite_field_commutativity_lowering`
 Bridge lemmas: `MumeiLean.Algebra.ff_add_comm_eq`,
 `MumeiLean.Algebra.ff_mul_comm_eq`
 
+### 5.15 Finite-field associativity bridge
+
+An atom whose body left-associates a finite-field helper call and whose
+`ensures` compares the result to the right-associated call, e.g.
+
+```text
+body_expr: { ff_mul(ff_mul(a, b, p), c, p) }
+ensures:   ff_eq(result, ff_mul(a, ff_mul(b, c, p), p), p)
+```
+
+is a Lean escalation candidate for the same reason as §5.14: the two nestings
+agree only after the intermediate `%` reductions are pushed through the product,
+so Z3 reports `unknown`. The path is selected by the explicit
+`translator_ir.bridge_pattern == "finite_field_associativity"` marker (as in
+§5.12 / §5.13) rather than by name matching, and the body is lowered through the
+finite-field helpers:
+
+```lean
+def ffMulAssociativeResult (p a b c : Int) : Int :=
+  (MumeiLean.Algebra.mumei_ff_mul (MumeiLean.Algebra.mumei_ff_mul a b p) c p)
+```
+
+The generated theorem re-associates with the matching `*_assoc_mod` bridge
+lemma and closes by `ff_eq` reflexivity:
+
+```lean
+theorem ff_mul_associative_correct (p a b c : Int) (result : Int)
+    (h_body : result = ffMulAssociativeResult p a b c) :
+    (p > 0) → ((MumeiLean.Algebra.mumei_ff_eq result
+        (MumeiLean.Algebra.mumei_ff_mul a
+          (MumeiLean.Algebra.mumei_ff_mul b c p) p) p)) := by
+  rw [h_body]
+  unfold ffMulAssociativeResult
+  intro _hp
+  rw [MumeiLean.Algebra.ff_mul_assoc_mod]
+  exact MumeiLean.Algebra.ff_eq_refl _ p
+```
+
+`ff_add` is handled identically through `MumeiLean.Algebra.ff_add_assoc_mod`.
+This is the eleventh live generated theorem path
+(`std/algebra/finite_field.mm::ff_mul_associative`) and keeps
+`known_witness_used = false`. Both backing lemmas already exist in the catalog
+(§10), so this path leaves `bridge_lemma_hash` unchanged. An `ensures` whose
+operand order is not the re-association of the body (for example
+`ff_eq(result, ff_mul(b, ff_mul(a, c, p), p), p)`) does not match and falls back
+to the generic `mumei_arith_deep` body-semantics tactic.
+
+Lowering rule: `finite_field_associativity_lowering`
+Bridge lemmas: `MumeiLean.Algebra.ff_add_assoc_mod`,
+`MumeiLean.Algebra.ff_mul_assoc_mod`, `MumeiLean.Algebra.ff_eq_refl`
+
 ## 6. Loop invariant and recursion encoding
 
 Mumei loop invariants are encoded as Lean propositions over explicit integer

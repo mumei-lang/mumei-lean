@@ -1,0 +1,171 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-26T00:00:00Z",
+  "mumei_version": "0.6.12",
+  "z3_version": "Z3 version 4.8.12 - 64 bit",
+  "file": "std/algebra/finite_field.mm",
+  "atoms": [
+    {
+      "name": "ff_mul_associative",
+      "z3_check_result": "unknown",
+      "content_hash": "6c1d2e7b4a3f8c9d0e1b2a3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "unknown_fragment",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "std/algebra/finite_field.mm"
+        },
+        "traceability_hash": "3c7d1b90a4e2f6580d1c9b8a7f6e5d4c3b2a1908f7e6d5c4b3a29180f7e6d5c4",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 0,
+        "checked_refinements": 0,
+        "ensures_implication_checks": 0,
+        "diagnostics": [
+          "finite_field associativity is checked by the Lean bridge after Z3 unknown routing"
+        ]
+      },
+      "proof_hash": "b3e2d81f5c7a4b6d8e9f0a1b2c3d4e5f60718293a4b5c6d7e8f9012345678abc",
+      "dependencies": [
+        "ff_mul"
+      ],
+      "effects": [],
+      "requires": "p > 0",
+      "ensures": "ff_eq(result, ff_mul(a, ff_mul(b, c, p), p), p)",
+      "body_expr": "{ ff_mul(ff_mul(a, b, p), c, p) }",
+      "body_summary": "{ ff_mul(ff_mul(a, b, p), c, p) }",
+      "z3_result_class": "unknown",
+      "escalation_reason": "z3_unknown",
+      "logic_fragment_tag": "finite_field",
+      "logic_fragment_tags": [
+        "finite_field",
+        "nonlinear_arithmetic"
+      ],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "result": "result",
+        "a": "a",
+        "b": "b",
+        "c": "c",
+        "p": "p"
+      },
+      "bridge_lemma_hash": "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347",
+      "translator_ir": {
+        "sort": "contract_obligation",
+        "bridge_pattern": "finite_field_associativity",
+        "binders": [
+          {
+            "mumei_name": "a",
+            "lean_name": "a",
+            "mumei_type": "field",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "b",
+            "lean_name": "b",
+            "mumei_type": "field",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "c",
+            "lean_name": "c",
+            "mumei_type": "field",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "p",
+            "lean_name": "p",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "field",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(p > 0) -> (ff_eq(result, ff_mul(a, ff_mul(b, c, p), p), p))",
+        "provenance_span": {
+          "file": "std/algebra/finite_field.mm",
+          "line": 32,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "type_system_mapping",
+          "contract_lowering",
+          "finite_field_lowering",
+          "mathlib4_bridge",
+          "finite_field_associativity_lowering"
+        ],
+        "semantic_gap_notes": [
+          "finite_field_lowering: GF(p)-style helpers are lowered through mathlib4 modular arithmetic and ZMod bridge lemmas.",
+          "finite_field_associativity_lowering: ff_eq goals whose operands re-associate a nested ff_add / ff_mul call are closed by the mod-normalising associativity bridge lemmas rather than by SMT rewriting."
+        ],
+        "proof_trace_hints": [
+          "try finite-field closure lemmas before falling back to manual proof",
+          "re-associate nested finite-field operands with ff_add_assoc_mod / ff_mul_assoc_mod before the mumei_field cascade"
+        ],
+        "requires_bridge_lemmas": [
+          "mumei_finite_field_bridge",
+          "MumeiLean.Algebra.ff_add_assoc_mod",
+          "MumeiLean.Algebra.ff_mul_assoc_mod",
+          "MumeiLean.Algebra.ff_eq_refl",
+          "MumeiLean.Algebra.ff_add_in_field",
+          "MumeiLean.Algebra.ff_mul_in_field",
+          "MumeiLean.Algebra.ff_sub_in_field",
+          "MumeiLean.Algebra.ff_neg_in_field",
+          "MumeiLean.Algebra.ff_zero_in_field",
+          "MumeiLean.Algebra.ff_one_in_field",
+          "MumeiLean.Algebra.ff_eq_symm",
+          "MumeiLean.Algebra.ff_eq_trans",
+          "MumeiLean.Algebra.ff_add_comm",
+          "MumeiLean.Algebra.ff_mul_comm",
+          "MumeiLean.Algebra.ff_add_comm_eq",
+          "MumeiLean.Algebra.ff_mul_comm_eq",
+          "MumeiLean.Algebra.ff_add_zero",
+          "MumeiLean.Algebra.ff_mul_one",
+          "MumeiLean.Algebra.ff_sub_self_eq_zero_mod",
+          "MumeiLean.Algebra.ff_pow_zero",
+          "MumeiLean.Algebra.ff_inv_zero",
+          "MumeiLean.AdvancedPatterns.finite_field_binary_closed",
+          "MumeiLean.AdvancedPatterns.finite_field_commutativity_pattern",
+          "MumeiLean.AdvancedPatterns.finite_field_obligation_closure"
+        ]
+      },
+      "symbol_provenance": [
+        {
+          "symbol_name": "ff_eq",
+          "source": "uninterpreted_function",
+          "location": null
+        },
+        {
+          "symbol_name": "ff_mul",
+          "source": "uninterpreted_function",
+          "location": null
+        }
+      ],
+      "solver_process_metadata": {
+        "task_id": null,
+        "cache_key": "5a2d3c4b6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70819",
+        "generation_id": "",
+        "solver_config_fingerprint": "4eb8092c0cb08dd4c8d6494173a480c7fae3ce88feef61311d32f80092aad8dc",
+        "timeout_ms": 10000,
+        "cancel_reason": null,
+        "process_start_time": "",
+        "process_end_time": "2026-07-26T13:12:31Z",
+        "process_exit_time": ""
+      }
+    }
+  ],
+  "certificate_hash": "fixture-std-algebra-finite-field-ff-mul-associative",
+  "all_verified": false
+}

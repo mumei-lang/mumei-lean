@@ -219,9 +219,9 @@ PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest \
 
 The Lake-marked sort ascending test should run and pass when `lake` is available; if it skips unexpectedly, check that `lake` is on `PATH` and that the fixture drivers compile with the pinned Lean toolchain.
 
-## Live Generated Theorem Paths (8 total)
+## Live Generated Theorem Paths (10 total)
 
-The bridge ships eight live generated theorem paths. Each lowers a Z3 `unknown`
+The bridge ships ten live generated theorem paths. Each lowers a Z3 `unknown`
 (or `spurious_candidate`) atom to a generated Lean theorem that builds with
 `known_witness_used = false`:
 
@@ -233,6 +233,16 @@ The bridge ships eight live generated theorem paths. Each lowers a Z3 `unknown`
 6. `poly_bound_monotone` — single non-conjunction nonlinear arithmetic (`result >= 0` over `x*x + 2*x + 1`) via `mumei_arith_deep`.
 7. `exists_pivot_partition` — forall/exists quantifier alternation via `MumeiLean.Quantifiers.forall_exists_swap_of_finite`.
 8. `sum_nonneg_inductive` — natural-number induction via `MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern`.
+9. `rtgs_transfer_conservation` — RTGS balance conservation via `mumei_arith`.
+10. `ff_mul_commutative` — finite-field commutativity (`ff_eq` over swapped `ff_mul` operands) via `MumeiLean.Algebra.ff_mul_comm_eq`.
+
+Focused pytest coverage for paths 9–10, Lake required:
+
+```bash
+cd /home/ubuntu/repos/mumei-lean
+PATH="$HOME/.elan/bin:$PATH" python -m pytest tests/test_lean_bridge_e2e.py -q \
+  -k "rtgs_transfer_conservation or finite_field_commutativity"
+```
 
 Focused pytest coverage for the three PR3 paths (6–8), Lake required:
 

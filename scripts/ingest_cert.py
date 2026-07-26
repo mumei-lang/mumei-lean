@@ -586,6 +586,55 @@ def _finite_field_zero_eq_proof(
     )
 
 
+_FF_COMMUTATIVE_LEMMAS = {
+    "ff_add": "MumeiLean.Algebra.ff_add_comm_eq",
+    "ff_mul": "MumeiLean.Algebra.ff_mul_comm_eq",
+}
+
+
+def _finite_field_commutativity_proof(
+    atom: IngestedAtom,
+    result_name: str,
+    binder_mapping: dict[str, str],
+) -> Optional[str]:
+    """Generate the finite-field commutativity proof (spec section 5.14).
+
+    Matches atoms whose body is ``ff_add(x, y, p)`` / ``ff_mul(x, y, p)`` and
+    whose ``ensures`` is ``ff_eq(result, ff_add(y, x, p), p)`` with the operands
+    swapped, and discharges them with the matching ``*_comm_eq`` bridge lemma,
+    which is itself proven by the ``mumei_field`` cascade.
+    """
+    body_expr = atom.body_expr.strip()
+    braced_body = re.fullmatch(r"\{\s*(.*?)\s*\}", body_expr, re.DOTALL)
+    if braced_body is not None:
+        body_expr = braced_body.group(1).strip()
+    ident = r"[A-Za-z_][A-Za-z0-9_]*"
+    body_match = re.fullmatch(
+        rf"(ff_add|ff_mul)\s*\(\s*({ident})\s*,\s*({ident})\s*,\s*({ident})\s*\)",
+        body_expr,
+    )
+    if body_match is None:
+        return None
+    op, left, right, modulus = body_match.groups()
+    ensures_match = re.fullmatch(
+        rf"ff_eq\s*\(\s*result\s*,\s*{op}\s*\(\s*{re.escape(right)}\s*,"
+        rf"\s*{re.escape(left)}\s*,\s*{re.escape(modulus)}\s*\)\s*,"
+        rf"\s*{re.escape(modulus)}\s*\)",
+        atom.raw_ensures.strip(),
+    )
+    if ensures_match is None:
+        return None
+    args = " ".join(
+        binder_mapping.get(name, name) for name in (left, right, modulus)
+    )
+    return (
+        "  rw [h_body]\n"
+        f"  unfold {result_name}\n"
+        "  intro _hp\n"
+        f"  exact {_FF_COMMUTATIVE_LEMMAS[op]} {args}"
+    )
+
+
 def _sort_ascending_proof(atom: IngestedAtom) -> Optional[str]:
     """Detect the insertion sort ascending atom and generate a bridge-lemma proof.
 
@@ -1114,6 +1163,7 @@ def render_theorem(atom: IngestedAtom) -> str:
     # ``scripts/export_cert.py`` can attribute it to the owning atom.
     finite_field_body = (
         _finite_field_zero_eq_proof(atom, result_name, binder_mapping)
+        or _finite_field_commutativity_proof(atom, result_name, binder_mapping)
         if use_body_semantics
         else None
     )

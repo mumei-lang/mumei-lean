@@ -44,10 +44,11 @@ remain an explicit fallback with `known_witness_used = true`.
 The reference live path is
 `Generated.Std.Math.Abs.abs_saturating_correct`, emitted from
 `std/math/abs.mm::abs_saturating` body semantics and exported with
-`known_witness_used = false`. There are eight live generated theorem paths in
+`known_witness_used = false`. There are ten live generated theorem paths in
 total (`abs_saturating`, `bounded_mul_with_overflow_check`,
 `constant_time_eq_flag`, `ff_zero_eq_zero`, `verified_insertion_sort_ascending`,
-`poly_bound_monotone`, `exists_pivot_partition`, `sum_nonneg_inductive`); see
+`poly_bound_monotone`, `exists_pivot_partition`, `sum_nonneg_inductive`,
+`rtgs_transfer_conservation`, `ff_mul_commutative`); see
 `docs/LEAN_HARNESS_CONTRACT.md` and `docs/LEAN_TRANSLATOR_SPEC.md` §5 for the
 per-path lowering.
 
@@ -365,9 +366,9 @@ The module models the relevant body result explicitly and then proves:
 | 実 std/ unknown atom の Lean 証明成功 | this PR | MumeiLean/StdMathAbs.lean — abs_saturating / fp_abs / fp_from_int / list_length |
 | ✅ SC 頻出パターン証明ライブラリ | — | `MumeiLean/Patterns.lean` / `AdvancedPatterns.lean` — 上限チェック・保存則・単調性・guard/CEI trace |
 | ✅ RTGS 残高保存の帰納的証明 | — | `MumeiLean/Settlement.lean` + `Algebra.rtgs_transfer_conserves_sum{,_of_amounts}` |
-| ✅ 契約式トランスレータ拡張 | — | 量化子・有限体・群論・暗号を `scripts/expr_translator.py` の obligation class 分類で網羅 |
-| ✅ mumei_arith 拡張 | — | `MumeiLean/Basic.lean` の算術補題 + `Algebra`/`Crypto` の mathlib タクティク経路 |
-| ✅ CertParser.lean / CertWriter.lean ネイティブ実装 | — | `Lean.Data.Json` ベースの parse/write。`translator_version` / `bridge_lemma_hash` / `lean_solver_time_s` を round-trip（`tests/test_cert_roundtrip.py`） |
+| ✅ 契約式トランスレータ拡張 | — | 量化子・有限体・群論・暗号を `scripts/expr_translator.py` の obligation class 分類で網羅。`finite_field_commutativity_lowering` で `ff_eq` の swapped operand 目標を live path 化（§5.14） |
+| ✅ mumei_arith 拡張 | — | `MumeiLean/Basic.lean` の算術補題 + `Algebra`/`Crypto` の mathlib タクティク経路。`mumei_arith` / `mumei_arith_deep` に `ring1` / `field_simp`、有限体・群専用の `mumei_field` cascade を追加 |
+| ✅ CertParser.lean / CertWriter.lean ネイティブ実装 | — | `Lean.Data.Json` ベースの parse/write。`translator_version` / `bridge_lemma_hash` / `lean_solver_time_s` に加え unknown-escalation メタデータ（`z3_result_class` / `escalation_reason` / `logic_fragment_tags`）を round-trip（`tests/test_cert_roundtrip.py`） |
 | ✅ 実 std/ unknown atom の Lean 証明成功 | 完了 | Pilot 以外の実用的な std 証明例を `MumeiLean.StdMathAbs` に追加 |
 
 ### Planned

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-26: Finite-field commutativity bridge as 10th live generated theorem path
+
+- Added the 10th live generated theorem path `std/algebra/finite_field.mm::ff_mul_commutative`: an `ff_eq` obligation whose operands are a swapped `ff_mul` call (Z3 `unknown` on the nonlinear `%` interaction) discharged through the new `MumeiLean.Algebra.ff_mul_comm_eq` bridge lemma with `known_witness_used = false`. `ff_add` is covered by the same lowering through `ff_add_comm_eq`.
+- Added lowering rule `finite_field_commutativity_lowering` (§5.14) and brace-unwrapping for finite-field helper bodies, so `{ ff_mul(a, b, p) }` lowers to the same Lean term as the bare call instead of falling back to the contract-only theorem shape.
+- Extended the bridge lemma catalog: `MumeiLean/Algebra.lean` (`ff_add_comm_eq`, `ff_mul_comm_eq`, `ff_add_assoc_mod`, `ff_mul_assoc_mod`, `ff_pow_zero`, `ff_inv_zero`, `group_pow_zero`, `group_pow_add`, `group_conj_inv`, `mumei_group_pow_zero_int`), `MumeiLean/Quantifiers.lean` (`bounded_forall_imp`, `bounded_forall_of_field_range`, `nested_bounded_forall_intro`), `MumeiLean/Crypto.lean` (`hmac_modulus_bounds`, `commitment_modulus_bounds`), `MumeiLean/AdvancedPatterns.lean` (`finite_field_commutativity_pattern`, `group_conjugation_pattern`).
+- `MumeiLean/Tactics.lean`: `mumei_arith` / `mumei_arith_deep` now try `ring1` and `field_simp`, and the new `mumei_field` cascade automates finite-field and group goals. `ring1` is used instead of `ring` because mathlib's `ring` succeeds after normalising an unclosed goal, which would swallow later stages of the cascade.
+- `bridge_lemma_hash` bumped to `ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347` (derived from the catalog); all pinned docs, fixtures, `scripts/export_cert.py`, and mumei-agent's `_SOLIDITY_GUARD_TRACE_BRIDGE_LEMMA_HASH` updated in the same change set.
+- `MumeiLean/CertWriter.lean` keeps `z3_result_class` as parsed when a proof succeeds (previously overwritten with `lean_verified`), matching `scripts/export_cert.py`; `tests/test_cert_roundtrip.py` now pins `z3_result_class` / `escalation_reason` / `logic_fragment_tags` across the native round trip.
+- Synced the live path count from **eight** to **ten** (including the previously undocumented RTGS conservation path) across `docs/LEAN_HARNESS_CONTRACT.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, and `.agents/skills/testing-mumei-lean-live-generated/SKILL.md`.
+
 ## 2026-07-17: Live generated theorem paths expanded from 5 to 8
 
 - Added the 6th live generated theorem path `std/math/patterns.mm::poly_bound_monotone`: a single non-conjunction nonlinear-arithmetic obligation (`result >= 0` over `x*x + 2*x + 1`) lowered through the generic body-semantics path and discharged by `mumei_arith_deep`. Certificate solver class is `unknown`.

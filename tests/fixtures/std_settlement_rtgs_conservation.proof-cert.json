@@ -32,7 +32,7 @@
         "debit": "debit",
         "credit": "credit"
       },
-      "bridge_lemma_hash": "fec31244e29b7d6bd4790b0a25bceb7fce6bdf8f0b18d74d1c0ccdec8ecdc49d",
+      "bridge_lemma_hash": "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347",
       "symbol_provenance": [],
       "solver_process_metadata": {
         "timeout_ms": 10000,

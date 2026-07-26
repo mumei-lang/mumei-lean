@@ -92,7 +92,10 @@ already treats them as unproven, so the original `z3_check_result`
 — typically `"unknown"` — is the most informative value to preserve).
 
 This mirrors `scripts/export_cert.py`, which only mutates atoms that
-pass `_atom_proved`; failed/timeout atoms are forwarded verbatim. -/
+pass `_atom_proved`; failed/timeout atoms are forwarded verbatim. The
+unknown-escalation metadata (`z3_result_class`, `escalation_reason`,
+`logic_fragment_tags`) is never rewritten: mumei's benchmark consumes it
+to attribute the escalation that produced the Lean proof. -/
 def applyResult
     (results : List (String × ProofResult))
     (a : AtomCertificateData) : AtomCertificateData :=
@@ -100,7 +103,6 @@ def applyResult
   | some (_, .verified) =>
     { a with
         z3CheckResult := ProofResult.verified.toZ3CheckResult,
-        z3ResultClass := ProofResult.verified.toZ3CheckResult,
         status        := ProofResult.verified.toStatus,
         leanResultMetadata :=
           a.leanResultMetadata.map fun m =>

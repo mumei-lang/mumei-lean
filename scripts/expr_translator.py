@@ -218,6 +218,7 @@ _FINITE_FIELD_FUNCTIONS = {
     "ff_add", "ff_sub", "ff_mul", "ff_neg", "ff_pow", "ff_inv", "ff_div",
     "ff_in_field", "is_prime", "mod_eq", "ff_zero", "ff_one", "ff_eq",
 }
+_FINITE_FIELD_COMMUTATIVE_FUNCTIONS = {"ff_add", "ff_mul"}
 _GROUP_FUNCTIONS = {"group_mul", "group_inv", "group_pow", "group_identity", "group_order", "group_comm"}
 _CRYPTO_FUNCTIONS = {"hash", "signature_verify", "encrypt", "decrypt", "kdf", "hmac", "commitment_hash", "zk_verify"}
 _SMART_CONTRACT_FUNCTIONS = {
@@ -243,7 +244,7 @@ TRANSLATOR_VERSION = "mumei-lean-translator-ir-v2"
 # ``compute_bridge_lemma_hash``. Adding or renaming a backing lemma changes
 # this value, which mumei treats as ``stale_translator`` for certificates
 # produced by an older catalog.
-BRIDGE_LEMMA_HASH = "fec31244e29b7d6bd4790b0a25bceb7fce6bdf8f0b18d74d1c0ccdec8ecdc49d"
+BRIDGE_LEMMA_HASH = "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
 
 # Obligation class taxonomy for escalated atoms.
 # Each class maps to a set of Lean bridge lemma entry points.
@@ -276,6 +277,9 @@ _OBLIGATION_CLASS_BRIDGE_LEMMAS: Dict[str, List[str]] = {
         "MumeiLean.Quantifiers.bounded_forall_split_at",
         "MumeiLean.Quantifiers.bounded_forall_shift",
         "MumeiLean.Quantifiers.bounded_exists_of_nonempty_forall",
+        "MumeiLean.Quantifiers.bounded_forall_imp",
+        "MumeiLean.Quantifiers.bounded_forall_of_field_range",
+        "MumeiLean.Quantifiers.nested_bounded_forall_intro",
         "MumeiLean.AdvancedPatterns.bounded_forall_weaken",
         "MumeiLean.AdvancedPatterns.bounded_exists_map",
         "MumeiLean.AdvancedPatterns.nested_forall_swap",
@@ -296,7 +300,14 @@ _OBLIGATION_CLASS_BRIDGE_LEMMAS: Dict[str, List[str]] = {
         "MumeiLean.Algebra.ff_add_zero",
         "MumeiLean.Algebra.ff_mul_one",
         "MumeiLean.Algebra.ff_sub_self_eq_zero_mod",
+        "MumeiLean.Algebra.ff_add_comm_eq",
+        "MumeiLean.Algebra.ff_mul_comm_eq",
+        "MumeiLean.Algebra.ff_add_assoc_mod",
+        "MumeiLean.Algebra.ff_mul_assoc_mod",
+        "MumeiLean.Algebra.ff_pow_zero",
+        "MumeiLean.Algebra.ff_inv_zero",
         "MumeiLean.AdvancedPatterns.finite_field_binary_closed",
+        "MumeiLean.AdvancedPatterns.finite_field_commutativity_pattern",
         "MumeiLean.AdvancedPatterns.finite_field_obligation_closure",
     ],
     OBLIGATION_CLASS_GROUP_THEORY: [
@@ -309,6 +320,11 @@ _OBLIGATION_CLASS_BRIDGE_LEMMAS: Dict[str, List[str]] = {
         "MumeiLean.Algebra.group_mul_inv_rev",
         "MumeiLean.Algebra.mumei_group_comm_int",
         "MumeiLean.Algebra.group_mul_left_cancel",
+        "MumeiLean.Algebra.group_pow_zero",
+        "MumeiLean.Algebra.group_pow_add",
+        "MumeiLean.Algebra.group_conj_inv",
+        "MumeiLean.Algebra.mumei_group_pow_zero_int",
+        "MumeiLean.AdvancedPatterns.group_conjugation_pattern",
         "MumeiLean.AdvancedPatterns.group_hom_preserves_mul",
         "MumeiLean.AdvancedPatterns.group_theory_obligation_assoc_law",
     ],
@@ -325,6 +341,8 @@ _OBLIGATION_CLASS_BRIDGE_LEMMAS: Dict[str, List[str]] = {
         "MumeiLean.Crypto.commitment_deterministic",
         "MumeiLean.Crypto.commitment_same_inputs",
         "MumeiLean.Crypto.zk_verify_stable_under_equal_inputs",
+        "MumeiLean.Crypto.hmac_modulus_bounds",
+        "MumeiLean.Crypto.commitment_modulus_bounds",
         "MumeiLean.AdvancedPatterns.hash_stability_under_equal_inputs",
         "MumeiLean.AdvancedPatterns.signature_pattern",
         "MumeiLean.AdvancedPatterns.encryption_pattern",
@@ -519,6 +537,7 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "refinement_predicate_lowering",
     "integer_overflow_bridge",
     "finite_field_lowering",
+    "finite_field_commutativity_lowering",
     "group_theory_lowering",
     "crypto_primitive_lowering",
     "higher_order_predicate_lowering",
@@ -683,6 +702,11 @@ def _lowering_rules(tokens: List[tuple], array_ids: List[str], string_ids: List[
         rules.append("integer_overflow_bridge")
     if any(kind == "ID" and text in _FINITE_FIELD_FUNCTIONS for kind, text in tokens):
         rules.extend(["finite_field_lowering", "mathlib4_bridge"])
+    if any(kind == "ID" and text == "ff_eq" for kind, text in tokens) and any(
+        kind == "ID" and text in _FINITE_FIELD_COMMUTATIVE_FUNCTIONS
+        for kind, text in tokens
+    ):
+        rules.append("finite_field_commutativity_lowering")
     if any(kind == "ID" and text in _GROUP_FUNCTIONS for kind, text in tokens):
         rules.extend(["group_theory_lowering", "mathlib4_bridge"])
     if any(kind == "ID" and text in _CRYPTO_FUNCTIONS for kind, text in tokens):
@@ -749,6 +773,15 @@ def _build_semantic_gap_notes(
             "finite_field_lowering: GF(p)-style helpers are lowered through "
             "mathlib4 modular arithmetic and ZMod bridge lemmas."
         )
+    if any(kind == "ID" and text == "ff_eq" for kind, text in tokens) and any(
+        kind == "ID" and text in _FINITE_FIELD_COMMUTATIVE_FUNCTIONS
+        for kind, text in tokens
+    ):
+        notes.append(
+            "finite_field_commutativity_lowering: ff_eq goals over swapped "
+            "ff_add / ff_mul operands are closed by the mod-normalising "
+            "commutativity bridge lemmas rather than by SMT rewriting."
+        )
     if any(kind == "ID" and text in _GROUP_FUNCTIONS for kind, text in tokens):
         notes.append(
             "group_theory_lowering: group expressions are lowered to reusable "
@@ -807,6 +840,9 @@ def _bridge_lemmas_for_rules(lowering_rules: List[str]) -> List[str]:
         bridge_lemmas.append("mumei_subtype_predicate_bridge")
     if "finite_field_lowering" in lowering_rules:
         bridge_lemmas.append("mumei_finite_field_bridge")
+    if "finite_field_commutativity_lowering" in lowering_rules:
+        bridge_lemmas.append("MumeiLean.Algebra.ff_add_comm_eq")
+        bridge_lemmas.append("MumeiLean.Algebra.ff_mul_comm_eq")
     if "group_theory_lowering" in lowering_rules:
         bridge_lemmas.append("mumei_group_theory_bridge")
     if "crypto_primitive_lowering" in lowering_rules:
@@ -858,6 +894,11 @@ def _proof_trace_hints_for_rules(lowering_rules: List[str]) -> List[str]:
         hints.append("carry subtype predicate witnesses through quantifier lowering")
     if "finite_field_lowering" in lowering_rules:
         hints.append("try finite-field closure lemmas before falling back to manual proof")
+    if "finite_field_commutativity_lowering" in lowering_rules:
+        hints.append(
+            "close swapped finite-field operands with ff_add_comm_eq / "
+            "ff_mul_comm_eq before the mumei_field cascade"
+        )
     if "group_theory_lowering" in lowering_rules:
         hints.append("rewrite with group associativity, identity, and inverse lemmas")
     if "crypto_primitive_lowering" in lowering_rules:
@@ -2647,9 +2688,11 @@ def _known_body_pattern(source: str) -> Optional[TranslationResult]:
         )
 
     finite_field_source = source
+    was_braced = False
     finite_field_braced = re.fullmatch(r"\{\s*(.*?)\s*\}", source, re.DOTALL)
     if finite_field_braced:
         finite_field_source = finite_field_braced.group(1).strip()
+        was_braced = True
     finite_field_zero = re.fullmatch(
         rf"ff_zero\s*\(\s*({_IDENT_PATTERN})\s*\)",
         finite_field_source,
@@ -2664,6 +2707,19 @@ def _known_body_pattern(source: str) -> Optional[TranslationResult]:
             array_identifiers=[],
             string_identifiers=[],
         )
+
+    # A finite-field helper call is the whole body: translate the unbraced
+    # source so ``{ ff_mul(a, b, p) }`` lowers to the same term as the bare
+    # call instead of falling back to the contract-only theorem shape.
+    finite_field_call = re.fullmatch(
+        rf"({'|'.join(sorted(_FINITE_FIELD_FUNCTIONS))})\s*\((.*)\)",
+        finite_field_source,
+        re.DOTALL,
+    )
+    if finite_field_call and was_braced:
+        lowered = translate_contract(finite_field_source)
+        if not lowered.is_partial:
+            return lowered
 
     return None
 

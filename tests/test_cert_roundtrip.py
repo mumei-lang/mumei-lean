@@ -194,3 +194,62 @@ def test_lean_round_trip_preserves_python_bridge_metadata(tmp_path: Path):
         metadata = atom["lean_result_metadata"]
         assert metadata["lean_solver_time_s"] == pytest.approx(1.25)
         assert metadata["status"] == "lean_verified"
+
+
+def test_cert_writer_preserves_unknown_escalation_metadata_shape():
+    """The writer must emit — and never rewrite — escalation metadata."""
+    src = WRITER_LEAN.read_text()
+    for key in ("z3_result_class", "escalation_reason", "logic_fragment_tags"):
+        assert f'"{key}"' in src, f"CertWriter must emit JSON key {key!r}"
+    # ``applyResult`` upgrades the verdict fields only; the escalation
+    # attribution mumei's benchmark consumes stays as parsed.
+    assert "z3ResultClass :=" not in src
+
+
+@pytest.mark.skipif(not _have_lake(),
+                    reason="lake not on PATH; skipping live Lean round-trip")
+@pytest.mark.skipif(os.environ.get("MUMEI_LEAN_SKIP_LIVE") == "1",
+                    reason="MUMEI_LEAN_SKIP_LIVE=1 set")
+def test_lean_round_trip_preserves_unknown_escalation_metadata(tmp_path: Path):
+    """`z3_result_class` / `escalation_reason` / `logic_fragment_tags` survive.
+
+    The Python bridge routes `unknown` atoms to Lean and keeps the
+    escalation attribution on the exported atom even after the verdict is
+    upgraded to `lean_verified`; the native parser/writer pair must behave
+    identically or `scripts/bridge_metrics.py` loses its per-fragment and
+    per-`z3_result_class` breakdown.
+    """
+    cert = json.loads(PILOT_FIXTURE.read_text())
+    tags = ["finite_field", "nonlinear_arithmetic"]
+    for atom in cert["atoms"]:
+        atom["z3_result_class"] = "unknown"
+        atom["escalation_reason"] = "z3_unknown"
+        atom["logic_fragment_tags"] = tags
+    cert_path = tmp_path / "with_escalation_metadata.proof-cert.json"
+    cert_path.write_text(json.dumps(cert))
+
+    proc = subprocess.run(
+        ["lake", "env", "lean", "--run", str(DRIVER_LEAN), str(cert_path)],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    assert proc.returncode == 0, (
+        f"lake env lean exited {proc.returncode}\n"
+        f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+    summary = json.loads(proc.stdout.strip().splitlines()[-1])
+    # Parsed back out of the *written* certificate, so this covers both
+    # directions of the round trip.
+    assert summary["first_atom_z3"] == "lean_verified"
+    assert summary["first_atom_z3_result_class"] == "unknown"
+    assert summary["first_atom_escalation_reason"] == "z3_unknown"
+    assert summary["first_atom_logic_fragment_tags"] == tags
+
+    written = json.loads(summary["written_json"])
+    for atom in written["atoms"]:
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["z3_result_class"] == "unknown"
+        assert atom["escalation_reason"] == "z3_unknown"
+        assert atom["logic_fragment_tags"] == tags

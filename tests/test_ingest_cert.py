@@ -735,6 +735,9 @@ def test_main_writes_files(tmp_path: Path):
 POLY_BOUND_FIXTURE = FIXTURES / "std_math_patterns_poly_bound.proof-cert.json"
 EXISTS_PIVOT_FIXTURE = FIXTURES / "std_list_exists_pivot_partition.proof-cert.json"
 SUM_NONNEG_FIXTURE = FIXTURES / "std_math_patterns_sum_nonneg.proof-cert.json"
+FF_COMMUTATIVITY_FIXTURE = (
+    FIXTURES / "std_algebra_finite_field_ff_mul_commutative.proof-cert.json"
+)
 
 
 def test_render_theorem_nonlinear_monic_uses_body_semantics():
@@ -783,4 +786,35 @@ def test_render_theorem_int_nonnegative_induction_uses_backing_lemma():
     # `forall(k, 0, n, k * (k + 1) >= 0)` ensures, not a single instance at `n`.
     assert "∀ k : Int, 0 ≤ k → 0 ≤ k * (k + 1)" in rendered
     assert "nlinarith" in rendered
+    assert "sorry" not in rendered
+
+
+def test_render_theorem_finite_field_commutativity_uses_bridge_lemma():
+    """Live path 10: swapped finite-field operands are discharged by the
+    ``ff_mul_comm_eq`` bridge lemma instead of a manual proof."""
+    payload = json.loads(FF_COMMUTATIVITY_FIXTURE.read_text())
+    [atom] = collect_unknown_atoms(payload)
+    assert atom.is_partial_translation is False
+    rendered = render_theorem(atom)
+    assert "def ffMulCommutativeResult" in rendered
+    assert "MumeiLean.Algebra.mumei_ff_mul a b p" in rendered
+    assert "theorem ff_mul_commutative_correct" in rendered
+    assert "exact MumeiLean.Algebra.ff_mul_comm_eq a b p" in rendered
+    assert "mumei_escalation_reason: z3_unknown" in rendered
+    assert "mumei_logic_fragment_tags: finite_field,nonlinear_arithmetic" in rendered
+    assert "sorry" not in rendered
+
+
+def test_render_theorem_finite_field_addition_commutativity_uses_bridge_lemma():
+    """The same lowering covers ``ff_add`` with swapped operands."""
+    payload = json.loads(FF_COMMUTATIVITY_FIXTURE.read_text())
+    payload["atoms"][0]["body_expr"] = "{ ff_add(a, b, p) }"
+    payload["atoms"][0]["body_summary"] = "{ ff_add(a, b, p) }"
+    payload["atoms"][0]["ensures"] = "ff_eq(result, ff_add(b, a, p), p)"
+    payload["atoms"][0]["translator_ir"]["theorem_goal"] = (
+        "(p > 0) -> (ff_eq(result, ff_add(b, a, p), p))"
+    )
+    [atom] = collect_unknown_atoms(payload)
+    rendered = render_theorem(atom)
+    assert "exact MumeiLean.Algebra.ff_add_comm_eq a b p" in rendered
     assert "sorry" not in rendered

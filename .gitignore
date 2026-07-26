@@ -28,3 +28,6 @@ __pycache__/
 .idea/
 .DS_Store
 *.swp
+
+# Automatic tactic search probe modules (scripts/tactic_search.py)
+/.tactic_search/

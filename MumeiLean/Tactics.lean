@@ -110,4 +110,32 @@ macro "mumei_field" : tactic =>
      | omega
      | simp))
 
+/-- Modular normalisation for finite-field goals stated through the
+`MumeiLean.Algebra.mumei_ff_*` helpers over `Int` residues.
+
+The helpers reduce modulo `p` at every step, so goals such as finite-field
+distributivity and associativity carry one `% p` per operation, which `ring_nf`
+alone cannot merge. This stage unfolds the helpers and collapses every inner
+reduction with the `MumeiLean.Algebra.emod_{mul,add}_emod_*` lemmas, leaving a
+single `polynomial % p` on each side, then compares the two polynomials.
+
+It is the `mumei_ff_mod` entry of the automatic tactic search ladder
+(`docs/LEAN_TRANSLATOR_SPEC.md` §12.2). -/
+macro "mumei_ff_mod" : tactic =>
+  `(tactic|
+    (simp only [MumeiLean.Algebra.mumei_ff_eq, MumeiLean.Algebra.mumei_ff_add,
+       MumeiLean.Algebra.mumei_ff_sub, MumeiLean.Algebra.mumei_ff_mul,
+       Int.emod_emod_of_dvd _ (dvd_refl _),
+       MumeiLean.Algebra.emod_mul_emod_left,
+       MumeiLean.Algebra.emod_mul_emod_right,
+       MumeiLean.Algebra.emod_add_emod_left,
+       MumeiLean.Algebra.emod_add_emod_right]
+     first
+     | done
+     | rfl
+     | (ring_nf; done)
+     | (rw [mul_assoc]; done)
+     | (rw [mul_add]; done)
+     | omega))
+
 end MumeiLean

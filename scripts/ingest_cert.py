@@ -122,6 +122,14 @@ class IngestedAtom:
     manual_lemma_reason: Optional[str]
     translator_ir: dict
 
+    auto_tactic: Optional[str] = None
+    """Tactic adopted by the automatic tactic search (spec §12).
+
+    Set by ``scripts/tactic_search.py`` once a candidate has closed the
+    rendered goal in a probe build. It replaces the generic
+    ``mumei_arith`` / ``mumei_arith_deep`` fallback in the emitted proof;
+    promotion still requires the real ``lake build`` to succeed."""
+
     @property
     def has_custom_bridge_proof(self) -> bool:
         """True when a dedicated bridge-lemma generator handles this atom.
@@ -170,7 +178,24 @@ class IngestedAtom:
             self.requires_translation.is_partial
             or self.ensures_translation.is_partial
             or body_partial
-            or self.manual_lemma_reason is not None
+            or (self.manual_lemma_reason is not None and self.auto_tactic is None)
+        )
+
+    @property
+    def has_faithful_statement(self) -> bool:
+        """True when the rendered statement is a faithful translation.
+
+        ``manual_lemma_reason`` alone does not make a statement unfaithful:
+        it marks an obligation the template catalog cannot discharge. Only a
+        partial ``requires`` / ``ensures`` / body translation does.
+        """
+        body_partial = (
+            self.body_translation.is_partial if self.body_translation else False
+        )
+        return not (
+            self.requires_translation.is_partial
+            or self.ensures_translation.is_partial
+            or body_partial
         )
 
 
@@ -1225,11 +1250,16 @@ def render_theorem(atom: IngestedAtom) -> str:
     if finite_field_body is not None:
         body = finite_field_body
     elif use_body_semantics:
-        body = f"  rw [h_body]\n  unfold {result_name}\n  mumei_arith_deep"
+        tactic = atom.auto_tactic or "mumei_arith_deep"
+        body = f"  rw [h_body]\n  unfold {result_name}\n  {tactic}"
     else:
-        body = "  mumei_arith"
+        body = f"  {atom.auto_tactic or 'mumei_arith'}"
     notes: List[str] = []
-    if req.is_partial or ens.is_partial or atom.manual_lemma_reason:
+    if atom.auto_tactic is not None:
+        notes.append(f"  -- tactic_search_adopted: {atom.auto_tactic}")
+    if req.is_partial or ens.is_partial or (
+        atom.manual_lemma_reason and atom.auto_tactic is None
+    ):
         notes.append(
             "  -- manual_lemma_required: "
             f"{atom.manual_lemma_reason or req.manual_lemma_reason or ens.manual_lemma_reason}"
@@ -1294,6 +1324,22 @@ def _render_known_witness_delegate(atom: IngestedAtom) -> Optional[str]:
             "  exact MumeiLean.StdMathAbs.abs_saturating_correct x result h_body\n"
         )
     return None
+
+
+def uses_generic_fallback_tactic(atom: IngestedAtom) -> bool:
+    """True when ``atom``'s proof body is only the generic tactic cascade.
+
+    Atoms handled by a bridge-lemma template (spec §5.11-§5.15) or by a known
+    witness delegate render a dedicated proof; the remaining ones fall back to
+    ``mumei_arith`` / ``mumei_arith_deep`` and are the automatic tactic search's
+    ``build_failure`` stage candidates (spec §12.1).
+    """
+    if atom.has_custom_bridge_proof:
+        return False
+    lines = [line for line in render_theorem(atom).splitlines() if line.strip()]
+    if not lines:
+        return False
+    return lines[-1].strip() in {"mumei_arith", "mumei_arith_deep"}
 
 
 def render_module(module_key: str, prefix: str, atoms: List[IngestedAtom]) -> str:

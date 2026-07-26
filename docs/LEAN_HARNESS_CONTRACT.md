@@ -30,7 +30,7 @@ Field handling is fixed:
 | `manual_lemma_reason` | Stable reason a generated theorem needs human lemma work; dry runs should emit `manual_lemma_required`, not `lean_verified`. |
 | `stale_translator` | mumei-side rejection when `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract. |
 
-Current contract constants are `translator_version = mumei-lean-translator-ir-v2` and `bridge_lemma_hash = fec31244e29b7d6bd4790b0a25bceb7fce6bdf8f0b18d74d1c0ccdec8ecdc49d`.
+Current contract constants are `translator_version = mumei-lean-translator-ir-v2` and `bridge_lemma_hash = ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347`.
 
 ## Bridge acceptance invariant
 
@@ -61,7 +61,7 @@ hand-written `MumeiLean.StdMathAbs` witness.
 
 ### Live generated theorem paths
 
-The bridge ships eight live generated theorem paths. Each lowers a Z3 `unknown`
+The bridge ships ten live generated theorem paths. Each lowers a Z3 `unknown`
 (or spurious-candidate) atom to a generated Lean theorem that Lake builds with
 `known_witness_used = false`:
 
@@ -108,6 +108,18 @@ The bridge ships eight live generated theorem paths. Each lowers a Z3 `unknown`
   `MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern` with
   `known_witness_used = false` and no bridge lemma hash change. This is the
   eighth live generated theorem path.
+- `std/settlement.mm::rtgs_transfer_conservation`: the RTGS conservation path
+  emits `Generated.Std.Settlement.rtgs_transfer_conservation_correct`; Lake
+  discharges the balance-conservation goal with `mumei_arith`,
+  `known_witness_used = false` and no bridge lemma hash change. This is the
+  ninth live generated theorem path.
+- `std/algebra/finite_field.mm::ff_mul_commutative`: the finite-field
+  commutativity path emits
+  `Generated.Std.Algebra.Finite_field.ff_mul_commutative_correct`; Lake
+  discharges `ff_eq(result, ff_mul(b, a, p), p)` through
+  `MumeiLean.Algebra.ff_mul_comm_eq` with `known_witness_used = false`. This is
+  the tenth live generated theorem path, and its two commutativity lemmas are
+  new catalog entries, so it bumps `bridge_lemma_hash`.
 
 ## Scope
 

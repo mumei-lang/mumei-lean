@@ -194,6 +194,20 @@ theorem commitment_same_inputs (v₁ v₂ r₁ r₂ : Int)
     commitment_hash v₁ r₁ = commitment_hash v₂ r₂ := by
   simp [hv, hr]
 
+theorem hmac_modulus_bounds (key message : Int) :
+    0 ≤ hmac key message ∧ hmac key message < 2147483647 := by
+  unfold hmac mumei_mod
+  have hpos : (0 : Int) < 2147483647 := by norm_num
+  constructor
+  · exact Int.emod_nonneg _ (ne_of_gt hpos)
+  · exact Int.emod_lt_of_pos _ hpos
+
+theorem commitment_modulus_bounds (value randomness : Int) :
+    0 ≤ commitment_hash value randomness ∧
+      commitment_hash value randomness < 2147483647 := by
+  unfold commitment_hash
+  exact hash_modulus_bounds _ _
+
 theorem zk_verify_stable_under_equal_inputs
     (p₁ p₂ i₁ i₂ c₁ c₂ : Int)
     (hp : p₁ = p₂) (hi : i₁ = i₂) (hc : c₁ = c₂)

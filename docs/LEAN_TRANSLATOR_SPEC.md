@@ -245,6 +245,16 @@ same as Lean's dependent `List.get`.
 - **Lean 4**: mathlib4 finite-field support through helper lemmas.
 - **Lowering Rule**: `finite_field_lowering`, `mathlib4_bridge`.
 
+Goals stated over the field carrier itself (rather than over closure bounds) are
+discharged by the `mumei_field` tactic cascade: `ring1`, then a `simp only` over
+the `MumeiLean.Algebra` carrier definitions followed by `ring_nf`, then `group`,
+`field_simp`, `ring_nf`, `omega`, and finally `simp`. `mumei_arith` and
+`mumei_arith_deep` additionally try `ring1` and `field_simp` so crypto and
+finite-field obligations reaching the generic body-semantics path are closed
+without a manual lemma. The cascade uses `ring1` rather than `ring` because
+mathlib's `ring` succeeds after normalising an unclosed goal, which would
+swallow the remaining stages.
+
 ### 5.7 Group Theory Lowering
 
 - **Mumei**: `group_mul`, `group_inv`, and related group helpers.
@@ -433,6 +443,49 @@ Both §5.12 and §5.13 are dedicated `render_theorem` branches selected by
 atom is marked as a custom bridge proof so partial body/ensures translation
 never routes it to the generic contract-only fallback.
 
+### 5.14 Finite-field commutativity bridge
+
+An atom whose body is a single commutative finite-field helper call and whose
+`ensures` compares the result to the same call with swapped operands, e.g.
+
+```text
+body_expr: { ff_mul(a, b, p) }
+ensures:   ff_eq(result, ff_mul(b, a, p), p)
+```
+
+is a Lean escalation candidate: the operands are equal only modulo `p`, so Z3
+reports `unknown` on the nonlinear `%` interaction. The translator lowers the
+braced body through the finite-field helpers, exactly as for a bare call:
+
+```lean
+def ffMulCommutativeResult (p b a : Int) : Int :=
+  (MumeiLean.Algebra.mumei_ff_mul a b p)
+```
+
+and the generated theorem is discharged by the matching commutativity bridge
+lemma:
+
+```lean
+theorem ff_mul_commutative_correct (p b a : Int) (result : Int)
+    (h_body : result = ffMulCommutativeResult p b a) :
+    (p > 0) → ((MumeiLean.Algebra.mumei_ff_eq result
+        (MumeiLean.Algebra.mumei_ff_mul b a p) p)) := by
+  rw [h_body]
+  unfold ffMulCommutativeResult
+  intro _hp
+  exact MumeiLean.Algebra.ff_mul_comm_eq a b p
+```
+
+`ff_add` is handled identically through `MumeiLean.Algebra.ff_add_comm_eq`. This
+is the tenth live generated theorem path
+(`std/algebra/finite_field.mm::ff_mul_commutative`) and keeps
+`known_witness_used = false`. Both bridge lemmas are new catalog entries (§10),
+so this path bumps `bridge_lemma_hash`.
+
+Lowering rule: `finite_field_commutativity_lowering`
+Bridge lemmas: `MumeiLean.Algebra.ff_add_comm_eq`,
+`MumeiLean.Algebra.ff_mul_comm_eq`
+
 ## 6. Loop invariant and recursion encoding
 
 Mumei loop invariants are encoded as Lean propositions over explicit integer
@@ -588,6 +641,7 @@ emitted in `TranslatorIR.lowering_rules`.
 | `refinement_predicate_lowering` | Refinement predicate or quantifier predicate preservation is required. | §3, §5.5, §6 |
 | `integer_overflow_bridge` | Integer arithmetic needs explicit machine-range assumptions. | §1, §2, §5.1 |
 | `finite_field_lowering` | Finite-field helper call appears. | §1, §4, §5.6 |
+| `finite_field_commutativity_lowering` | `ff_eq` appears together with `ff_add` / `ff_mul`; `requires_bridge_lemmas` must include `MumeiLean.Algebra.ff_add_comm_eq` and `MumeiLean.Algebra.ff_mul_comm_eq`. | §5.6, §5.14 |
 | `group_theory_lowering` | Group helper call appears. | §4, §5.7 |
 | `mathlib4_bridge` | Generated expression relies on mathlib-backed helpers or tactics. | §1, §4, §5.6, §5.7 |
 | `sort_ascending_bridge` | Sort body with ascending-preservation `forall` ensures; delegates to `MumeiLean.Sort.insertion_sort_ascending_bridge`. | §5.11 |
@@ -618,7 +672,7 @@ Certificate atom field handling is fixed:
 | `manual_lemma_reason` | Stable reason a generated theorem needs human lemma work; dry runs should emit `manual_lemma_required`, not `lean_verified`. |
 | `stale_translator` | mumei-side rejection when `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract. |
 
-Current contract constants are `translator_version = mumei-lean-translator-ir-v2` and `bridge_lemma_hash = fec31244e29b7d6bd4790b0a25bceb7fce6bdf8f0b18d74d1c0ccdec8ecdc49d`. These are also pinned in [`LEAN_HARNESS_CONTRACT.md`](LEAN_HARNESS_CONTRACT.md). `tests/test_contract_vocabulary.py` anchors both the constant-defining scripts (`scripts/export_cert.py`, `scripts/expr_translator.py`) and every pinned doc (this file, `LEAN_HARNESS_CONTRACT.md`, `BRIDGE_HARNESS_SPEC.md`, `INTEGRATION.md`) to the same expected literals, so any bump must update all of them in a single diff.
+Current contract constants are `translator_version = mumei-lean-translator-ir-v2` and `bridge_lemma_hash = ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347`. These are also pinned in [`LEAN_HARNESS_CONTRACT.md`](LEAN_HARNESS_CONTRACT.md). `tests/test_contract_vocabulary.py` anchors both the constant-defining scripts (`scripts/export_cert.py`, `scripts/expr_translator.py`) and every pinned doc (this file, `LEAN_HARNESS_CONTRACT.md`, `BRIDGE_HARNESS_SPEC.md`, `INTEGRATION.md`) to the same expected literals, so any bump must update all of them in a single diff.
 
 `bridge_lemma_hash` is derived from the obligation-class bridge lemma catalog
 (§10) by `expr_translator.compute_bridge_lemma_hash()`: the canonical pre-image
@@ -642,10 +696,10 @@ extend it for Solidity trace obligations and route to `MumeiLean.SmartContract`.
 
 | Obligation class | Lean modules | Bridge lemma entry points |
 |---|---|---|
-| `quantifier_obligation` | `MumeiLean.Quantifiers`, `MumeiLean.AdvancedPatterns` | `skolemize_exists`, `herbrand_forall`, `bounded_forall_of_unrestricted`, `bounded_exists_of_witness`, `forall_and_intro`, `nested_forall_intro`, `nested_exists_intro`, `forall_exists_swap_of_finite`, `bounded_forall_split_at`, `bounded_forall_shift`, `bounded_exists_of_nonempty_forall`, `bounded_forall_weaken`, `bounded_exists_map`, `nested_forall_swap`, `int_nonnegative_induction_pattern` |
-| `finite_field_obligation` | `MumeiLean.Algebra`, `MumeiLean.AdvancedPatterns` | `ff_add_in_field`, `ff_mul_in_field`, `ff_sub_in_field`, `ff_neg_in_field`, `ff_zero_in_field`, `ff_one_in_field`, `ff_eq_refl`, `ff_eq_symm`, `ff_eq_trans`, `ff_add_comm`, `ff_mul_comm`, `ff_add_zero`, `ff_mul_one`, `ff_sub_self_eq_zero_mod`, `finite_field_binary_closed`, `finite_field_obligation_closure` |
-| `group_theory_obligation` | `MumeiLean.Algebra`, `MumeiLean.AdvancedPatterns` | `group_mul_assoc`, `group_left_inv`, `group_right_inv`, `group_mul_one`, `group_one_mul`, `group_inv_inv`, `group_mul_inv_rev`, `mumei_group_comm_int`, `group_mul_left_cancel`, `group_hom_preserves_mul`, `group_theory_obligation_assoc_law` |
-| `crypto_primitive_obligation` | `MumeiLean.Crypto`, `MumeiLean.AdvancedPatterns` | `hash_deterministic`, `hash_modulus_bounds`, `encryption_roundtrip`, `rsa_signature_correct`, `signature_verify_sound`, `kdf_deterministic`, `hmac_deterministic`, `commitment_binding_pattern`, `zk_verify_soundness`, `commitment_deterministic`, `commitment_same_inputs`, `zk_verify_stable_under_equal_inputs`, `hash_stability_under_equal_inputs`, `signature_pattern`, `encryption_pattern`, `crypto_obligation_roundtrip` |
+| `quantifier_obligation` | `MumeiLean.Quantifiers`, `MumeiLean.AdvancedPatterns` | `skolemize_exists`, `herbrand_forall`, `bounded_forall_of_unrestricted`, `bounded_exists_of_witness`, `forall_and_intro`, `nested_forall_intro`, `nested_exists_intro`, `forall_exists_swap_of_finite`, `bounded_forall_split_at`, `bounded_forall_shift`, `bounded_exists_of_nonempty_forall`, `bounded_forall_weaken`, `bounded_exists_map`, `nested_forall_swap`, `int_nonnegative_induction_pattern`, `bounded_forall_imp`, `bounded_forall_of_field_range`, `nested_bounded_forall_intro` |
+| `finite_field_obligation` | `MumeiLean.Algebra`, `MumeiLean.AdvancedPatterns` | `ff_add_in_field`, `ff_mul_in_field`, `ff_sub_in_field`, `ff_neg_in_field`, `ff_zero_in_field`, `ff_one_in_field`, `ff_eq_refl`, `ff_eq_symm`, `ff_eq_trans`, `ff_add_comm`, `ff_mul_comm`, `ff_add_zero`, `ff_mul_one`, `ff_sub_self_eq_zero_mod`, `ff_add_comm_eq`, `ff_mul_comm_eq`, `ff_add_assoc_mod`, `ff_mul_assoc_mod`, `ff_pow_zero`, `ff_inv_zero`, `finite_field_binary_closed`, `finite_field_commutativity_pattern`, `finite_field_obligation_closure` |
+| `group_theory_obligation` | `MumeiLean.Algebra`, `MumeiLean.AdvancedPatterns` | `group_mul_assoc`, `group_left_inv`, `group_right_inv`, `group_mul_one`, `group_one_mul`, `group_inv_inv`, `group_mul_inv_rev`, `mumei_group_comm_int`, `group_mul_left_cancel`, `group_pow_zero`, `group_pow_add`, `group_conj_inv`, `mumei_group_pow_zero_int`, `group_conjugation_pattern`, `group_hom_preserves_mul`, `group_theory_obligation_assoc_law` |
+| `crypto_primitive_obligation` | `MumeiLean.Crypto`, `MumeiLean.AdvancedPatterns` | `hash_deterministic`, `hash_modulus_bounds`, `encryption_roundtrip`, `rsa_signature_correct`, `signature_verify_sound`, `kdf_deterministic`, `hmac_deterministic`, `commitment_binding_pattern`, `zk_verify_soundness`, `commitment_deterministic`, `commitment_same_inputs`, `zk_verify_stable_under_equal_inputs`, `hash_stability_under_equal_inputs`, `hmac_modulus_bounds`, `commitment_modulus_bounds`, `signature_pattern`, `encryption_pattern`, `crypto_obligation_roundtrip` |
 | `arithmetic_obligation` | `MumeiLean.Algebra`, `MumeiLean.AdvancedPatterns` | `sc_subtraction_nonnegative`, `arith_add_upper_bound`, `arith_add_monotone`, `arith_mul_nonneg_of_nonneg`, `arith_square_nonneg`, `arith_bounded_of_interval`, `arithmetic_obligation_bounded_combination`, `arithmetic_obligation_monotone_step` |
 | `smart_contract_obligation` | `MumeiLean.AdvancedPatterns` | `sc_withdraw_allowed_intro`, `sc_no_negative_after_withdraw`, `smart_contract_obligation_guard_preserved`, `smart_contract_obligation_balance_preserved` |
 | `rtgs_obligation` | `MumeiLean.AdvancedPatterns`, `MumeiLean.Algebra` | `rtgs_balance_conserved_refl`, `rtgs_trace_safe_intro`, `rtgs_obligation_conservation`, `rtgs_obligation_trace_safe`, `rtgs_transfer_conserves_sum`, `rtgs_transfer_conserves_sum_of_amounts`, `rtgs_debit_leaves_nonnegative` |

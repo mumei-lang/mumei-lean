@@ -145,6 +145,29 @@ theorem bounded_exists_of_nonempty_forall (lo hi : Int) (P : Int → Prop)
     ∃ i : Int, lo ≤ i ∧ i < hi ∧ P i :=
   ⟨lo, le_refl lo, hne, hall lo (le_refl lo) hne⟩
 
+/-! ### Bounded quantification over a finite-field range -/
+
+theorem bounded_forall_imp (lo hi : Int) (P Q : Int → Prop)
+    (hall : ∀ i : Int, lo ≤ i → i < hi → P i)
+    (himp : ∀ i : Int, P i → Q i) :
+    ∀ i : Int, lo ≤ i → i < hi → Q i := by
+  intro i hlo hhi
+  exact himp i (hall i hlo hhi)
+
+/-- Instantiate a `[0, p)` bounded quantifier at a finite-field element:
+`0 ≤ x ∧ x < p` is exactly `MumeiLean.Algebra.mumei_ff_in_field x p`, so this is
+the quantifier entry point for finite-field membership obligations. -/
+theorem bounded_forall_of_field_range (p : Int) (P : Int → Prop)
+    (hall : ∀ x : Int, 0 ≤ x → x < p → P x)
+    (x : Int) (hmem : 0 ≤ x ∧ x < p) : P x :=
+  hall x hmem.1 hmem.2
+
+theorem nested_bounded_forall_intro (lo hi : Int) (P : Int → Int → Prop)
+    (h : ∀ i : Int, lo ≤ i → i < hi → ∀ j : Int, lo ≤ j → j < hi → P i j) :
+    ∀ i j : Int, lo ≤ i → i < hi → lo ≤ j → j < hi → P i j := by
+  intro i j hilo hihi hjlo hjhi
+  exact h i hilo hihi j hjlo hjhi
+
 /-! ### Implication as Prop -/
 
 theorem mumei_implies_intro (P Q : Prop) (h : P → Q) : P → Q := h

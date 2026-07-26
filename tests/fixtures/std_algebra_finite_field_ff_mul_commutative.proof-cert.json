@@ -1,0 +1,162 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-26T00:00:00Z",
+  "mumei_version": "0.6.12",
+  "z3_version": "Z3 version 4.8.12 - 64 bit",
+  "file": "std/algebra/finite_field.mm",
+  "atoms": [
+    {
+      "name": "ff_mul_commutative",
+      "z3_check_result": "unknown",
+      "content_hash": "3d0f1a5d1b1a4c1c8f2ce6ac8de1e6b7e5b2a0cbbc32c9b8ee1b98f4c4a7d211",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "unknown_fragment",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "std/algebra/finite_field.mm"
+        },
+        "traceability_hash": "1f0cbb28aa4ff3a2fdd5b8b4d0f78e2c5cbfb64f3a4a86baf1f0a9dc7dbb5e63",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 0,
+        "checked_refinements": 0,
+        "ensures_implication_checks": 0,
+        "diagnostics": [
+          "finite_field commutativity is checked by the Lean bridge after Z3 unknown routing"
+        ]
+      },
+      "proof_hash": "a2f1c74c2f8b1f2f0b74d5d8e18b6a8a2a3f4d9c7e5b1c3a2d4e6f8091a2b3c4",
+      "dependencies": [
+        "ff_mul"
+      ],
+      "effects": [],
+      "requires": "p > 0",
+      "ensures": "ff_eq(result, ff_mul(b, a, p), p)",
+      "body_expr": "{ ff_mul(a, b, p) }",
+      "body_summary": "{ ff_mul(a, b, p) }",
+      "z3_result_class": "unknown",
+      "escalation_reason": "z3_unknown",
+      "logic_fragment_tag": "finite_field",
+      "logic_fragment_tags": [
+        "finite_field",
+        "nonlinear_arithmetic"
+      ],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "result": "result",
+        "a": "a",
+        "b": "b",
+        "p": "p"
+      },
+      "bridge_lemma_hash": "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347",
+      "translator_ir": {
+        "sort": "contract_obligation",
+        "binders": [
+          {
+            "mumei_name": "a",
+            "lean_name": "a",
+            "mumei_type": "field",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "b",
+            "lean_name": "b",
+            "mumei_type": "field",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "p",
+            "lean_name": "p",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "field",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(p > 0) -> (ff_eq(result, ff_mul(b, a, p), p))",
+        "provenance_span": {
+          "file": "std/algebra/finite_field.mm",
+          "line": 24,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "type_system_mapping",
+          "contract_lowering",
+          "finite_field_lowering",
+          "mathlib4_bridge",
+          "finite_field_commutativity_lowering"
+        ],
+        "semantic_gap_notes": [
+          "finite_field_lowering: GF(p)-style helpers are lowered through mathlib4 modular arithmetic and ZMod bridge lemmas.",
+          "finite_field_commutativity_lowering: ff_eq goals over swapped ff_add / ff_mul operands are closed by the mod-normalising commutativity bridge lemmas rather than by SMT rewriting."
+        ],
+        "proof_trace_hints": [
+          "try finite-field closure lemmas before falling back to manual proof",
+          "close swapped finite-field operands with ff_add_comm_eq / ff_mul_comm_eq before the mumei_field cascade"
+        ],
+        "requires_bridge_lemmas": [
+          "mumei_finite_field_bridge",
+          "MumeiLean.Algebra.ff_add_comm_eq",
+          "MumeiLean.Algebra.ff_mul_comm_eq",
+          "MumeiLean.Algebra.ff_add_in_field",
+          "MumeiLean.Algebra.ff_mul_in_field",
+          "MumeiLean.Algebra.ff_sub_in_field",
+          "MumeiLean.Algebra.ff_neg_in_field",
+          "MumeiLean.Algebra.ff_zero_in_field",
+          "MumeiLean.Algebra.ff_one_in_field",
+          "MumeiLean.Algebra.ff_eq_refl",
+          "MumeiLean.Algebra.ff_eq_symm",
+          "MumeiLean.Algebra.ff_eq_trans",
+          "MumeiLean.Algebra.ff_add_comm",
+          "MumeiLean.Algebra.ff_mul_comm",
+          "MumeiLean.Algebra.ff_add_zero",
+          "MumeiLean.Algebra.ff_mul_one",
+          "MumeiLean.Algebra.ff_sub_self_eq_zero_mod",
+          "MumeiLean.Algebra.ff_add_assoc_mod",
+          "MumeiLean.Algebra.ff_mul_assoc_mod",
+          "MumeiLean.Algebra.ff_pow_zero",
+          "MumeiLean.Algebra.ff_inv_zero",
+          "MumeiLean.AdvancedPatterns.finite_field_binary_closed",
+          "MumeiLean.AdvancedPatterns.finite_field_commutativity_pattern",
+          "MumeiLean.AdvancedPatterns.finite_field_obligation_closure"
+        ]
+      },
+      "symbol_provenance": [
+        {
+          "symbol_name": "ff_eq",
+          "source": "uninterpreted_function",
+          "location": null
+        },
+        {
+          "symbol_name": "ff_mul",
+          "source": "uninterpreted_function",
+          "location": null
+        }
+      ],
+      "solver_process_metadata": {
+        "task_id": null,
+        "cache_key": "9b1c2e7d8f3a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+        "generation_id": "",
+        "solver_config_fingerprint": "4eb8092c0cb08dd4c8d6494173a480c7fae3ce88feef61311d32f80092aad8dc",
+        "timeout_ms": 10000,
+        "cancel_reason": null,
+        "process_start_time": "",
+        "process_end_time": "2026-07-26T09:12:31Z",
+        "process_exit_time": ""
+      }
+    }
+  ],
+  "certificate_hash": "fixture-std-algebra-finite-field-ff-mul-commutative",
+  "all_verified": false
+}

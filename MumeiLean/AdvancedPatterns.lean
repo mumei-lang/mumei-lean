@@ -1,6 +1,7 @@
 import Mathlib.Tactic
 import MumeiLean.Algebra
 import MumeiLean.Crypto
+import MumeiLean.Tactics
 
 /-!
 # MumeiLean.AdvancedPatterns
@@ -211,5 +212,21 @@ theorem rtgs_obligation_trace_safe (validated settled : Int)
 theorem unknown_obligation_discharged_by_manual_lemma (P : Prop) (witness : Int)
     (hmanual : P) :
     mumei_unknown_obligation witness ∧ P := ⟨trivial, hmanual⟩
+
+/-! ### `mumei_field` automation patterns
+
+These obligations are stated exactly as the finite-field and group-theory
+lowering rules emit them, and are discharged by the `mumei_field` cascade so the
+tactic itself stays covered by `lake build`. -/
+
+theorem finite_field_commutativity_pattern (a b p : Int) :
+    MumeiLean.Algebra.mumei_ff_eq
+      (MumeiLean.Algebra.mumei_ff_mul a b p)
+      (MumeiLean.Algebra.mumei_ff_mul b a p) p := by
+  mumei_field
+
+theorem group_conjugation_pattern {G : Type} [Group G] (a b : G) :
+    (a * b * a⁻¹)⁻¹ = a * b⁻¹ * a⁻¹ := by
+  mumei_field
 
 end MumeiLean.AdvancedPatterns

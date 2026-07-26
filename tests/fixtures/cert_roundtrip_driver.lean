@@ -45,6 +45,18 @@ def main (args : List String) : IO UInt32 := do
             match cert2.atoms.head? with
             | some a => Json.str a.translatorVersion
             | none   => Json.null),
+          ("first_atom_z3_result_class",
+            match cert2.atoms.head? with
+            | some a => Json.str a.z3ResultClass
+            | none   => Json.null),
+          ("first_atom_escalation_reason",
+            match cert2.atoms.head? with
+            | some a => Json.str a.escalationReason
+            | none   => Json.null),
+          ("first_atom_logic_fragment_tags",
+            match cert2.atoms.head? with
+            | some a => Json.arr (a.logicFragmentTags.map Json.str).toArray
+            | none   => Json.null),
           ("first_atom_lean_solver_time_s",
             match cert2.atoms.head? with
             | some a =>

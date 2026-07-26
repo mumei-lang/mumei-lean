@@ -1240,3 +1240,82 @@ def test_obligation_bridge_lemmas_cover_all_documented_classes():
 
 def test_translator_version_is_v2():
     assert expr_translator.TRANSLATOR_VERSION == "mumei-lean-translator-ir-v2"
+
+
+def test_finite_field_commutativity_lowering_rule_and_bridge_lemmas():
+    # Swapped ff_add / ff_mul operands under ff_eq get their own lowering rule
+    # and route to the mod-normalising commutativity bridge lemmas.
+    result = translate_contract("(p > 0) -> (ff_eq(result, ff_mul(b, a, p), p))")
+    assert result.translator_ir is not None
+    rules = result.translator_ir.lowering_rules
+    assert "finite_field_commutativity_lowering" in rules
+    assert (
+        "MumeiLean.Algebra.ff_mul_comm_eq"
+        in result.translator_ir.requires_bridge_lemmas
+    )
+    assert (
+        "MumeiLean.Algebra.ff_add_comm_eq"
+        in result.translator_ir.requires_bridge_lemmas
+    )
+    assert any(
+        "finite_field_commutativity_lowering:" in note
+        for note in result.translator_ir.semantic_gap_notes
+    )
+
+
+def test_finite_field_commutativity_lowering_not_emitted_without_ff_eq():
+    result = translate_contract("ff_mul(a, b, p) >= 0")
+    assert result.translator_ir is not None
+    assert (
+        "finite_field_commutativity_lowering"
+        not in result.translator_ir.lowering_rules
+    )
+
+
+def test_translate_body_lowers_braced_finite_field_call():
+    # mumei bodies arrive brace-wrapped; the finite-field helper call must lower
+    # to the same term as the bare call instead of staying partial.
+    braced = expr_translator.translate_body("{ ff_mul(a, b, p) }")
+    bare = expr_translator.translate_body("ff_mul(a, b, p)")
+    assert braced.is_partial is False
+    assert braced.lean_expr == bare.lean_expr
+    assert "MumeiLean.Algebra.mumei_ff_mul a b p" in braced.lean_expr
+
+
+def test_obligation_bridge_lemmas_include_algebra_and_crypto_extensions():
+    ff_lemmas = obligation_bridge_lemmas(OBLIGATION_CLASS_FINITE_FIELD)
+    for lemma in (
+        "MumeiLean.Algebra.ff_add_comm_eq",
+        "MumeiLean.Algebra.ff_mul_comm_eq",
+        "MumeiLean.Algebra.ff_add_assoc_mod",
+        "MumeiLean.Algebra.ff_mul_assoc_mod",
+        "MumeiLean.Algebra.ff_pow_zero",
+        "MumeiLean.Algebra.ff_inv_zero",
+        "MumeiLean.AdvancedPatterns.finite_field_commutativity_pattern",
+    ):
+        assert lemma in ff_lemmas
+
+    group_lemmas = obligation_bridge_lemmas(OBLIGATION_CLASS_GROUP_THEORY)
+    for lemma in (
+        "MumeiLean.Algebra.group_pow_zero",
+        "MumeiLean.Algebra.group_pow_add",
+        "MumeiLean.Algebra.group_conj_inv",
+        "MumeiLean.Algebra.mumei_group_pow_zero_int",
+        "MumeiLean.AdvancedPatterns.group_conjugation_pattern",
+    ):
+        assert lemma in group_lemmas
+
+    crypto_lemmas = obligation_bridge_lemmas(OBLIGATION_CLASS_CRYPTO)
+    for lemma in (
+        "MumeiLean.Crypto.hmac_modulus_bounds",
+        "MumeiLean.Crypto.commitment_modulus_bounds",
+    ):
+        assert lemma in crypto_lemmas
+
+    quantifier_lemmas = obligation_bridge_lemmas(OBLIGATION_CLASS_QUANTIFIER)
+    for lemma in (
+        "MumeiLean.Quantifiers.bounded_forall_imp",
+        "MumeiLean.Quantifiers.bounded_forall_of_field_range",
+        "MumeiLean.Quantifiers.nested_bounded_forall_intro",
+    ):
+        assert lemma in quantifier_lemmas

@@ -274,4 +274,63 @@ theorem group_mul_left_cancel {G : Type u} [Group G] (a b c : G)
     (h : a * b = a * c) : b = c :=
   mul_left_cancel h
 
+/-! ### Finite-field commutativity and associativity modulo `p`
+
+These close the `mumei_ff_eq` / `mumei_ff_add` / `mumei_ff_mul` obligations the
+ring-normalising stages of `mumei_arith` reach but cannot finish, and back the
+finite-field commutativity generated theorem path (spec §5.14). -/
+
+theorem ff_add_comm_eq (a b p : Int) :
+    mumei_ff_eq (mumei_ff_add a b p) (mumei_ff_add b a p) p := by
+  unfold mumei_ff_eq mumei_ff_add
+  ring_nf
+
+theorem ff_mul_comm_eq (a b p : Int) :
+    mumei_ff_eq (mumei_ff_mul a b p) (mumei_ff_mul b a p) p := by
+  unfold mumei_ff_eq mumei_ff_mul
+  ring_nf
+
+theorem ff_add_assoc_mod (a b c p : Int) :
+    mumei_ff_add (mumei_ff_add a b p) c p =
+      mumei_ff_add a (mumei_ff_add b c p) p := by
+  unfold mumei_ff_add
+  rw [Int.emod_add_emod, Int.add_emod_emod, add_assoc]
+
+theorem ff_mul_assoc_mod (a b c p : Int) :
+    mumei_ff_mul (mumei_ff_mul a b p) c p =
+      mumei_ff_mul a (mumei_ff_mul b c p) p := by
+  unfold mumei_ff_mul
+  conv_lhs => rw [Int.mul_emod, Int.emod_emod_of_dvd _ (dvd_refl p)]
+  conv_rhs => rw [Int.mul_emod, Int.emod_emod_of_dvd _ (dvd_refl p)]
+  rw [← Int.mul_emod, ← Int.mul_emod, mul_assoc]
+
+theorem ff_pow_zero (a p : Int) :
+    mumei_ff_pow a 0 p = 1 % p := by
+  unfold mumei_ff_pow
+  norm_num
+
+theorem ff_inv_zero (p : Int) :
+    mumei_ff_inv 0 p = 0 := by
+  unfold mumei_ff_inv
+  simp
+
+/-! ### Group power and conjugation bridge lemmas -/
+
+theorem group_pow_zero {G : Type u} [Group G] (a : G) :
+    a ^ (0 : Nat) = 1 :=
+  pow_zero a
+
+theorem group_pow_add {G : Type u} [Group G] (a : G) (m n : Nat) :
+    a ^ (m + n) = a ^ m * a ^ n :=
+  pow_add a m n
+
+theorem group_conj_inv {G : Type u} [Group G] (a b : G) :
+    (a * b * a⁻¹)⁻¹ = a * b⁻¹ * a⁻¹ := by
+  group
+
+theorem mumei_group_pow_zero_int (a : Int) :
+    mumei_group_pow a 0 = 1 := by
+  unfold mumei_group_pow
+  norm_num
+
 end MumeiLean.Algebra

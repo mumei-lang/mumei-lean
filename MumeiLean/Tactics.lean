@@ -1,4 +1,5 @@
 import Mathlib.Tactic
+import MumeiLean.Algebra
 
 /-!
 # MumeiLean.Tactics
@@ -32,7 +33,10 @@ namespace MumeiLean
 /-- Combined tactic for mumei arithmetic obligations.
 
 Tries `omega`, then `linarith`, then `nlinarith`, then `norm_num`, then
-`ring_nf`, then `decide`, then `simp`. The `decide` stage discharges finite-state machine properties
+`ring1` / `ring_nf`, then `field_simp`, then `decide`, then `simp`. The
+`ring1` and `field_simp` stages close the commutative-ring and
+finite-field/division-shaped goals emitted by the finite-field and
+crypto lowering rules. The `decide` stage discharges finite-state machine properties
 when all relevant propositions have `Decidable` instances. The final
 `simp` always succeeds (it may simplify rather than close the goal),
 which means `mumei_arith` itself never fails — it just leaves unsolved
@@ -46,7 +50,9 @@ macro "mumei_arith" : tactic =>
      | linarith
      | nlinarith
      | norm_num
+     | ring1
      | ring_nf
+     | field_simp
      | decide
      | split
      | (cases ‹_›)
@@ -63,7 +69,9 @@ macro "mumei_arith_deep" : tactic =>
      | nlinarith
      | (repeat' constructor <;> first | positivity | nlinarith | ring)
      | norm_num
+     | ring1
      | ring_nf
+     | field_simp
      | decide
      | (simp; omega)
      | (simp; repeat' constructor <;> first | positivity | nlinarith | ring)
@@ -80,6 +88,26 @@ macro "mumei_mathlib" : tactic =>
      | field_simp
      | group
      | aesop
+     | simp))
+
+/-- Finite-field / group automation for generated theorems whose goal is stated
+through the `MumeiLean.Algebra` helpers.
+
+The helpers are definitions over `Int` residues, so the cascade first unfolds
+the finite-field carrier and then normalises with `ring1` / `field_simp`; the
+`group` stage covers goals stated in a mathlib `Group`. Like `mumei_arith` the
+final `simp` always succeeds, so the tactic never fails outright. -/
+macro "mumei_field" : tactic =>
+  `(tactic|
+    (intros
+     first
+     | ring1
+     | (simp only [MumeiLean.Algebra.mumei_ff_eq, MumeiLean.Algebra.mumei_ff_add,
+          MumeiLean.Algebra.mumei_ff_mul] <;> ring_nf)
+     | group
+     | field_simp
+     | ring_nf
+     | omega
      | simp))
 
 end MumeiLean

@@ -43,7 +43,7 @@ HARNESS_CONTRACT_DOC = REPO_ROOT / "docs" / "LEAN_HARNESS_CONTRACT.md"
 # pinned doc in the same diff — that is precisely what these tests enforce.
 EXPECTED_TRANSLATOR_VERSION = "mumei-lean-translator-ir-v2"
 EXPECTED_BRIDGE_LEMMA_HASH = (
-    "a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11"
+    "fec31244e29b7d6bd4790b0a25bceb7fce6bdf8f0b18d74d1c0ccdec8ecdc49d"
 )
 
 # Every Python script that defines the contract constants as module globals.

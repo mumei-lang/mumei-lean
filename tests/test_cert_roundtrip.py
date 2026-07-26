@@ -28,6 +28,8 @@ from pathlib import Path
 
 import pytest
 
+import expr_translator
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PARSER_LEAN = REPO_ROOT / "MumeiLean" / "CertParser.lean"
 WRITER_LEAN = REPO_ROOT / "MumeiLean" / "CertWriter.lean"
@@ -136,3 +138,59 @@ def test_lean_parser_and_writer_round_trip(tmp_path: Path):
     for atom in written["atoms"]:
         assert atom["z3_check_result"] == "lean_verified"
         assert atom["status"] == "verified"
+
+
+@pytest.mark.skipif(not _have_lake(),
+                    reason="lake not on PATH; skipping live Lean round-trip")
+@pytest.mark.skipif(os.environ.get("MUMEI_LEAN_SKIP_LIVE") == "1",
+                    reason="MUMEI_LEAN_SKIP_LIVE=1 set")
+def test_lean_round_trip_preserves_python_bridge_metadata(tmp_path: Path):
+    """Contract metadata and escalation timing survive the native path.
+
+    The Python bridge (`scripts/bridge.py`) attaches `translator_version`,
+    `bridge_lemma_hash`, and the measured `lean_solver_time_s` to each
+    atom; the native parser/writer pair must forward all three so a
+    certificate can be regenerated in Lean without losing the harness
+    contract or the escalation cost mumei's benchmark consumes.
+    """
+    cert = json.loads(PILOT_FIXTURE.read_text())
+    for atom in cert["atoms"]:
+        atom["translator_version"] = expr_translator.TRANSLATOR_VERSION
+        atom["bridge_lemma_hash"] = expr_translator.BRIDGE_LEMMA_HASH
+        atom["lean_result_metadata"] = {
+            "status": "lean_verified",
+            "theorem_name": f"{atom['name']}_correct",
+            "translator_version": expr_translator.TRANSLATOR_VERSION,
+            "bridge_lemma_hash": expr_translator.BRIDGE_LEMMA_HASH,
+            "proof_path": f"lean/{atom['name']}.lean",
+            "lean_solver_time_s": 1.25,
+            "diagnostics": ["escalation_reason=quantified_reasoning"],
+        }
+    cert_path = tmp_path / "with_metadata.proof-cert.json"
+    cert_path.write_text(json.dumps(cert))
+
+    proc = subprocess.run(
+        ["lake", "env", "lean", "--run", str(DRIVER_LEAN), str(cert_path)],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    assert proc.returncode == 0, (
+        f"lake env lean exited {proc.returncode}\n"
+        f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+    summary = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert (
+        summary["first_atom_translator_version"]
+        == expr_translator.TRANSLATOR_VERSION
+    )
+    assert float(summary["first_atom_lean_solver_time_s"]) == pytest.approx(1.25)
+
+    written = json.loads(summary["written_json"])
+    for atom in written["atoms"]:
+        assert atom["translator_version"] == expr_translator.TRANSLATOR_VERSION
+        assert atom["bridge_lemma_hash"] == expr_translator.BRIDGE_LEMMA_HASH
+        metadata = atom["lean_result_metadata"]
+        assert metadata["lean_solver_time_s"] == pytest.approx(1.25)
+        assert metadata["status"] == "lean_verified"

@@ -32,7 +32,7 @@
         "a": "a",
         "b": "b"
       },
-      "bridge_lemma_hash": "a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11",
+      "bridge_lemma_hash": "fec31244e29b7d6bd4790b0a25bceb7fce6bdf8f0b18d74d1c0ccdec8ecdc49d",
       "translator_ir": {
         "sort": "contract_obligation",
         "binders": [

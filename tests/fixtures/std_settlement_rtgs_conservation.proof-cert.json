@@ -1,0 +1,46 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-26T00:00:00Z",
+  "mumei_version": "0.6.12",
+  "z3_version": "Z3 version 4.8.12 - 64 bit",
+  "file": "std/settlement.mm",
+  "atoms": [
+    {
+      "name": "rtgs_transfer_conservation",
+      "z3_check_result": "unknown",
+      "content_hash": "fixture-rtgs-transfer-conservation",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true
+      },
+      "proof_hash": "fixture-proof-rtgs-transfer-conservation",
+      "dependencies": [],
+      "effects": [],
+      "requires": "debit == credit && debit >= 0",
+      "ensures": "(before - debit) + credit == before",
+      "z3_result_class": "unknown",
+      "escalation_reason": "rtgs_conservation_obligation",
+      "logic_fragment_tag": "linear_arithmetic",
+      "logic_fragment_tags": [
+        "linear_arithmetic",
+        "settlement"
+      ],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "before": "before",
+        "debit": "debit",
+        "credit": "credit"
+      },
+      "bridge_lemma_hash": "fec31244e29b7d6bd4790b0a25bceb7fce6bdf8f0b18d74d1c0ccdec8ecdc49d",
+      "symbol_provenance": [],
+      "solver_process_metadata": {
+        "timeout_ms": 10000,
+        "cancel_reason": null
+      },
+      "body_summary": "RTGS transfer keeps the two-account sum constant when debit equals credit"
+    }
+  ],
+  "certificate_hash": "fixture-rtgs-transfer-conservation-cert",
+  "all_verified": false
+}

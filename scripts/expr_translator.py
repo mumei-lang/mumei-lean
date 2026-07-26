@@ -26,6 +26,7 @@ theorem then carries a ``-- TODO: unproven`` marker which
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -238,7 +239,11 @@ _SCALAR_CALL_FUNCTIONS = (
 )
 
 TRANSLATOR_VERSION = "mumei-lean-translator-ir-v2"
-BRIDGE_LEMMA_HASH = "a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11"
+# SHA-256 of the canonical obligation-class bridge lemma catalog below; see
+# ``compute_bridge_lemma_hash``. Adding or renaming a backing lemma changes
+# this value, which mumei treats as ``stale_translator`` for certificates
+# produced by an older catalog.
+BRIDGE_LEMMA_HASH = "fec31244e29b7d6bd4790b0a25bceb7fce6bdf8f0b18d74d1c0ccdec8ecdc49d"
 
 # Obligation class taxonomy for escalated atoms.
 # Each class maps to a set of Lean bridge lemma entry points.
@@ -268,6 +273,9 @@ _OBLIGATION_CLASS_BRIDGE_LEMMAS: Dict[str, List[str]] = {
         "MumeiLean.Quantifiers.nested_forall_intro",
         "MumeiLean.Quantifiers.nested_exists_intro",
         "MumeiLean.Quantifiers.forall_exists_swap_of_finite",
+        "MumeiLean.Quantifiers.bounded_forall_split_at",
+        "MumeiLean.Quantifiers.bounded_forall_shift",
+        "MumeiLean.Quantifiers.bounded_exists_of_nonempty_forall",
         "MumeiLean.AdvancedPatterns.bounded_forall_weaken",
         "MumeiLean.AdvancedPatterns.bounded_exists_map",
         "MumeiLean.AdvancedPatterns.nested_forall_swap",
@@ -287,7 +295,9 @@ _OBLIGATION_CLASS_BRIDGE_LEMMAS: Dict[str, List[str]] = {
         "MumeiLean.Algebra.ff_mul_comm",
         "MumeiLean.Algebra.ff_add_zero",
         "MumeiLean.Algebra.ff_mul_one",
+        "MumeiLean.Algebra.ff_sub_self_eq_zero_mod",
         "MumeiLean.AdvancedPatterns.finite_field_binary_closed",
+        "MumeiLean.AdvancedPatterns.finite_field_obligation_closure",
     ],
     OBLIGATION_CLASS_GROUP_THEORY: [
         "MumeiLean.Algebra.group_mul_assoc",
@@ -298,7 +308,9 @@ _OBLIGATION_CLASS_BRIDGE_LEMMAS: Dict[str, List[str]] = {
         "MumeiLean.Algebra.group_inv_inv",
         "MumeiLean.Algebra.group_mul_inv_rev",
         "MumeiLean.Algebra.mumei_group_comm_int",
+        "MumeiLean.Algebra.group_mul_left_cancel",
         "MumeiLean.AdvancedPatterns.group_hom_preserves_mul",
+        "MumeiLean.AdvancedPatterns.group_theory_obligation_assoc_law",
     ],
     OBLIGATION_CLASS_CRYPTO: [
         "MumeiLean.Crypto.hash_deterministic",
@@ -310,16 +322,29 @@ _OBLIGATION_CLASS_BRIDGE_LEMMAS: Dict[str, List[str]] = {
         "MumeiLean.Crypto.hmac_deterministic",
         "MumeiLean.Crypto.commitment_binding_pattern",
         "MumeiLean.Crypto.zk_verify_soundness",
+        "MumeiLean.Crypto.commitment_deterministic",
+        "MumeiLean.Crypto.commitment_same_inputs",
+        "MumeiLean.Crypto.zk_verify_stable_under_equal_inputs",
         "MumeiLean.AdvancedPatterns.hash_stability_under_equal_inputs",
         "MumeiLean.AdvancedPatterns.signature_pattern",
         "MumeiLean.AdvancedPatterns.encryption_pattern",
+        "MumeiLean.AdvancedPatterns.crypto_obligation_roundtrip",
     ],
     OBLIGATION_CLASS_ARITHMETIC: [
         "MumeiLean.Algebra.sc_subtraction_nonnegative",
+        "MumeiLean.Algebra.arith_add_upper_bound",
+        "MumeiLean.Algebra.arith_add_monotone",
+        "MumeiLean.Algebra.arith_mul_nonneg_of_nonneg",
+        "MumeiLean.Algebra.arith_square_nonneg",
+        "MumeiLean.Algebra.arith_bounded_of_interval",
+        "MumeiLean.AdvancedPatterns.arithmetic_obligation_bounded_combination",
+        "MumeiLean.AdvancedPatterns.arithmetic_obligation_monotone_step",
     ],
     OBLIGATION_CLASS_SMART_CONTRACT: [
         "MumeiLean.AdvancedPatterns.sc_withdraw_allowed_intro",
         "MumeiLean.AdvancedPatterns.sc_no_negative_after_withdraw",
+        "MumeiLean.AdvancedPatterns.smart_contract_obligation_guard_preserved",
+        "MumeiLean.AdvancedPatterns.smart_contract_obligation_balance_preserved",
     ],
     OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE: [
         "MumeiLean.SmartContract.no_external_call_without_lock",
@@ -333,12 +358,32 @@ _OBLIGATION_CLASS_BRIDGE_LEMMAS: Dict[str, List[str]] = {
     OBLIGATION_CLASS_RTGS: [
         "MumeiLean.AdvancedPatterns.rtgs_balance_conserved_refl",
         "MumeiLean.AdvancedPatterns.rtgs_trace_safe_intro",
+        "MumeiLean.AdvancedPatterns.rtgs_obligation_conservation",
+        "MumeiLean.AdvancedPatterns.rtgs_obligation_trace_safe",
         "MumeiLean.Algebra.rtgs_transfer_conserves_sum",
+        "MumeiLean.Algebra.rtgs_transfer_conserves_sum_of_amounts",
+        "MumeiLean.Algebra.rtgs_debit_leaves_nonnegative",
     ],
     OBLIGATION_CLASS_UNKNOWN: [
         "MumeiLean.AdvancedPatterns.unknown_obligation_intro",
+        "MumeiLean.AdvancedPatterns.unknown_obligation_discharged_by_manual_lemma",
     ],
 }
+
+
+def compute_bridge_lemma_hash() -> str:
+    """Derive ``BRIDGE_LEMMA_HASH`` from the bridge lemma catalog.
+
+    The canonical pre-image is one ``<obligation_class>:<lemma>`` line per
+    catalog entry, sorted by class then lemma, so the hash is stable across
+    dictionary ordering and changes exactly when the backing lemma set does.
+    """
+    canonical = "\n".join(
+        f"{obligation_class}:{lemma}"
+        for obligation_class in sorted(_OBLIGATION_CLASS_BRIDGE_LEMMAS)
+        for lemma in sorted(_OBLIGATION_CLASS_BRIDGE_LEMMAS[obligation_class])
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 @dataclass

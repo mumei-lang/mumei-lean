@@ -618,7 +618,61 @@ Certificate atom field handling is fixed:
 | `manual_lemma_reason` | Stable reason a generated theorem needs human lemma work; dry runs should emit `manual_lemma_required`, not `lean_verified`. |
 | `stale_translator` | mumei-side rejection when `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract. |
 
-Current contract constants are `translator_version = mumei-lean-translator-ir-v2` and `bridge_lemma_hash = a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11`. These are also pinned in [`LEAN_HARNESS_CONTRACT.md`](LEAN_HARNESS_CONTRACT.md). `tests/test_contract_vocabulary.py` anchors both the constant-defining scripts (`scripts/export_cert.py`, `scripts/expr_translator.py`) and every pinned doc (this file, `LEAN_HARNESS_CONTRACT.md`, `BRIDGE_HARNESS_SPEC.md`, `INTEGRATION.md`) to the same expected literals, so any bump must update all of them in a single diff.
+Current contract constants are `translator_version = mumei-lean-translator-ir-v2` and `bridge_lemma_hash = fec31244e29b7d6bd4790b0a25bceb7fce6bdf8f0b18d74d1c0ccdec8ecdc49d`. These are also pinned in [`LEAN_HARNESS_CONTRACT.md`](LEAN_HARNESS_CONTRACT.md). `tests/test_contract_vocabulary.py` anchors both the constant-defining scripts (`scripts/export_cert.py`, `scripts/expr_translator.py`) and every pinned doc (this file, `LEAN_HARNESS_CONTRACT.md`, `BRIDGE_HARNESS_SPEC.md`, `INTEGRATION.md`) to the same expected literals, so any bump must update all of them in a single diff.
+
+`bridge_lemma_hash` is derived from the obligation-class bridge lemma catalog
+(§10) by `expr_translator.compute_bridge_lemma_hash()`: the canonical pre-image
+is one `<obligation_class>:<lemma>` line per catalog entry, sorted by class and
+then by lemma, hashed with SHA-256. Adding, renaming, or removing a backing
+lemma therefore changes the constant, and certificates produced by the previous
+catalog are `stale_translator` rather than silently reusable. Consumers that
+mint certificates with this contract — currently mumei-agent's Solidity
+guard-trace path (`_SOLIDITY_GUARD_TRACE_BRIDGE_LEMMA_HASH`) — must be bumped in
+lockstep.
+
+## 10. Obligation class bridge lemma catalog
+
+Every escalated atom is classified by `classify_obligation()` into exactly one
+obligation class, and `obligation_bridge_lemmas()` maps the class to the Lean
+entry points that may discharge it. The eight base classes below are the
+documented taxonomy; the three `smart_contract_*` trace classes
+(`smart_contract_guard_trace_obligation`,
+`smart_contract_access_control_obligation`, `smart_contract_cei_obligation`)
+extend it for Solidity trace obligations and route to `MumeiLean.SmartContract`.
+
+| Obligation class | Lean modules | Bridge lemma entry points |
+|---|---|---|
+| `quantifier_obligation` | `MumeiLean.Quantifiers`, `MumeiLean.AdvancedPatterns` | `skolemize_exists`, `herbrand_forall`, `bounded_forall_of_unrestricted`, `bounded_exists_of_witness`, `forall_and_intro`, `nested_forall_intro`, `nested_exists_intro`, `forall_exists_swap_of_finite`, `bounded_forall_split_at`, `bounded_forall_shift`, `bounded_exists_of_nonempty_forall`, `bounded_forall_weaken`, `bounded_exists_map`, `nested_forall_swap`, `int_nonnegative_induction_pattern` |
+| `finite_field_obligation` | `MumeiLean.Algebra`, `MumeiLean.AdvancedPatterns` | `ff_add_in_field`, `ff_mul_in_field`, `ff_sub_in_field`, `ff_neg_in_field`, `ff_zero_in_field`, `ff_one_in_field`, `ff_eq_refl`, `ff_eq_symm`, `ff_eq_trans`, `ff_add_comm`, `ff_mul_comm`, `ff_add_zero`, `ff_mul_one`, `ff_sub_self_eq_zero_mod`, `finite_field_binary_closed`, `finite_field_obligation_closure` |
+| `group_theory_obligation` | `MumeiLean.Algebra`, `MumeiLean.AdvancedPatterns` | `group_mul_assoc`, `group_left_inv`, `group_right_inv`, `group_mul_one`, `group_one_mul`, `group_inv_inv`, `group_mul_inv_rev`, `mumei_group_comm_int`, `group_mul_left_cancel`, `group_hom_preserves_mul`, `group_theory_obligation_assoc_law` |
+| `crypto_primitive_obligation` | `MumeiLean.Crypto`, `MumeiLean.AdvancedPatterns` | `hash_deterministic`, `hash_modulus_bounds`, `encryption_roundtrip`, `rsa_signature_correct`, `signature_verify_sound`, `kdf_deterministic`, `hmac_deterministic`, `commitment_binding_pattern`, `zk_verify_soundness`, `commitment_deterministic`, `commitment_same_inputs`, `zk_verify_stable_under_equal_inputs`, `hash_stability_under_equal_inputs`, `signature_pattern`, `encryption_pattern`, `crypto_obligation_roundtrip` |
+| `arithmetic_obligation` | `MumeiLean.Algebra`, `MumeiLean.AdvancedPatterns` | `sc_subtraction_nonnegative`, `arith_add_upper_bound`, `arith_add_monotone`, `arith_mul_nonneg_of_nonneg`, `arith_square_nonneg`, `arith_bounded_of_interval`, `arithmetic_obligation_bounded_combination`, `arithmetic_obligation_monotone_step` |
+| `smart_contract_obligation` | `MumeiLean.AdvancedPatterns` | `sc_withdraw_allowed_intro`, `sc_no_negative_after_withdraw`, `smart_contract_obligation_guard_preserved`, `smart_contract_obligation_balance_preserved` |
+| `rtgs_obligation` | `MumeiLean.AdvancedPatterns`, `MumeiLean.Algebra` | `rtgs_balance_conserved_refl`, `rtgs_trace_safe_intro`, `rtgs_obligation_conservation`, `rtgs_obligation_trace_safe`, `rtgs_transfer_conserves_sum`, `rtgs_transfer_conserves_sum_of_amounts`, `rtgs_debit_leaves_nonnegative` |
+| `unknown_obligation` | `MumeiLean.AdvancedPatterns` | `unknown_obligation_intro`, `unknown_obligation_discharged_by_manual_lemma` |
+
+Catalog rules:
+
+1. A lemma may only be listed after it exists in the corresponding Lean module
+   and `lake build` proves it without `sorry`.
+2. Listing a lemma does not promote an atom by itself; promotion still requires
+   a generated theorem that builds (§5) with current contract constants (§9).
+3. `unknown_obligation` entries are triage scaffolding: they keep the generated
+   theorem traceable while `manual_lemma_reason` stays set.
+
+## 11. Escalation timing
+
+The bridge records how long the Lean escalation took so callers can budget it:
+
+| Field | Location | Meaning |
+|---|---|---|
+| `lean_solver_time_s` | each atom's `lean_result_metadata` (and `lean_metadata`) | Wall-clock seconds of the `lake build` that decided this atom's status; `null` on dry runs (`--no-build`) and when `lake` is missing. |
+| `lean_solver_time_s` | bridge summary JSON under `lean_fallback` | Same measurement at run scope, so scan/bundle runs report one aggregate escalation cost. |
+
+`mumei`'s benchmark runner consumes the same field name in
+`benchmarks/run_benchmarks.py` (`details.lean_solver_time_s`) and reports `SKIP`
+with zero cost when no Lean escalation candidate exists, so the timing surface
+is identical on both sides of the bridge.
 
 ## README translator contract
 

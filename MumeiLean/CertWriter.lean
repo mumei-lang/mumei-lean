@@ -33,6 +33,32 @@ list — used by Python at debug time. -/
 def renderResults (rs : List (String × ProofResult)) : List String :=
   rs.map fun (n, r) => s!"{n}: {r.toStatus} ({r.toZ3CheckResult})"
 
+/-- Optional-string → JSON: `none` becomes `Json.null`. -/
+private def optStr : Option String → Json
+  | none   => Json.null
+  | some s => Json.str s
+
+/-- Optional-float → JSON: `none` becomes `Json.null`. -/
+private def optFloat : Option Float → Json
+  | none   => Json.null
+  | some x =>
+    match Lean.JsonNumber.fromFloat? x with
+    | .inr n => Json.num n
+    | .inl _ => Json.null
+
+/-- Serialise Lean result metadata, preserving the escalation cost the
+Python bridge measured in `lean_solver_time_s`. -/
+def leanResultMetadataToJson (m : LeanResultMetadataData) : Json :=
+  Json.mkObj [
+    ("status",             Json.str m.status),
+    ("theorem_name",       Json.str m.theoremName),
+    ("translator_version", Json.str m.translatorVersion),
+    ("bridge_lemma_hash",  Json.str m.bridgeLemmaHash),
+    ("proof_path",         Json.str m.proofPath),
+    ("lean_solver_time_s", optFloat m.leanSolverTimeS),
+    ("diagnostics",        Json.arr (m.diagnostics.map Json.str).toArray),
+  ]
+
 /-- Serialise an `AtomCertificateData` back to JSON. -/
 def atomToJson (a : AtomCertificateData) : Json :=
   Json.mkObj [
@@ -49,6 +75,13 @@ def atomToJson (a : AtomCertificateData) : Json :=
     ("logic_fragment_tags", Json.arr (a.logicFragmentTags.map Json.str).toArray),
     ("dependencies",    Json.arr (a.dependencies.map Json.str).toArray),
     ("effects",         Json.arr (a.effects.map Json.str).toArray),
+    ("translator_version", Json.str a.translatorVersion),
+    ("bridge_lemma_hash",  Json.str a.bridgeLemmaHash),
+    ("manual_lemma_reason", optStr a.manualLemmaReason),
+    ("lean_result_metadata",
+      match a.leanResultMetadata with
+      | none   => Json.null
+      | some m => leanResultMetadataToJson m),
   ]
 
 /-- Apply a single `(name, result)` pair to an atom: when the proof
@@ -68,13 +101,11 @@ def applyResult
     { a with
         z3CheckResult := ProofResult.verified.toZ3CheckResult,
         z3ResultClass := ProofResult.verified.toZ3CheckResult,
-        status        := ProofResult.verified.toStatus }
+        status        := ProofResult.verified.toStatus,
+        leanResultMetadata :=
+          a.leanResultMetadata.map fun m =>
+            { m with status := ProofResult.verified.toZ3CheckResult } }
   | _ => a
-
-/-- Optional-string → JSON: `none` becomes `Json.null`. -/
-private def optStr : Option String → Json
-  | none   => Json.null
-  | some s => Json.str s
 
 /-- Compute the `all_verified` field after applying `results`: true iff
 every atom in `cert` ends up with `z3_check_result ∈ {"unsat", "lean_verified"}`.

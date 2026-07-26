@@ -41,6 +41,20 @@ def main (args : List String) : IO UInt32 := do
             match cert2.atoms.head? with
             | some a => Json.str a.z3CheckResult
             | none   => Json.null),
+          ("first_atom_translator_version",
+            match cert2.atoms.head? with
+            | some a => Json.str a.translatorVersion
+            | none   => Json.null),
+          ("first_atom_lean_solver_time_s",
+            match cert2.atoms.head? with
+            | some a =>
+              match a.leanResultMetadata with
+              | some m =>
+                match m.leanSolverTimeS with
+                | some t => Json.str (toString t)
+                | none   => Json.null
+              | none => Json.null
+            | none => Json.null),
           ("written_json",      Json.str out),
         ]
         IO.println summary.compress

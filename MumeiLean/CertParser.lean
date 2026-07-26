@@ -21,6 +21,21 @@ namespace MumeiLean
 
 open Lean (Json)
 
+/-- Lean-side mirror of mumei `LeanResultMetadata`.
+
+The Python exporter (`scripts/export_cert.py`) writes this object into
+both `lean_metadata` and `lean_result_metadata`; `leanSolverTimeS`
+carries the escalation cost measured by `scripts/bridge.py`. -/
+structure LeanResultMetadataData where
+  status            : String
+  theoremName       : String
+  translatorVersion : String
+  bridgeLemmaHash   : String
+  proofPath         : String
+  leanSolverTimeS   : Option Float
+  diagnostics       : List String
+  deriving Repr, Inhabited
+
 /-- Lean-side mirror of mumei `AtomCertificate` (subset of fields used
 by the bridge). -/
 structure AtomCertificateData where
@@ -37,6 +52,10 @@ structure AtomCertificateData where
   logicFragmentTags : List String
   dependencies      : List String
   effects           : List String
+  translatorVersion : String
+  bridgeLemmaHash   : String
+  manualLemmaReason : Option String
+  leanResultMetadata : Option LeanResultMetadataData
   deriving Repr, Inhabited
 
 /-- Lean-side mirror of mumei `ProofCertificate` (subset of fields used
@@ -96,6 +115,39 @@ private def getStrArrOr (j : Json) (key : String) : List String :=
         | .ok s    => s :: acc
         | .error _ => acc
 
+/-- Look up `key` and decode it as a `Float`, accepting integral JSON
+numbers. Missing, null, or non-numeric values yield `none`. -/
+private def getOptFloat (j : Json) (key : String) : Option Float :=
+  match j.getObjVal? key with
+  | .ok v =>
+    match v.getNum? with
+    | .ok n    => some n.toFloat
+    | .error _ => none
+  | .error _ => none
+
+/-- Decode a `lean_result_metadata` (or `lean_metadata`) object. -/
+def parseLeanResultMetadata (j : Json) : LeanResultMetadataData :=
+  {
+    status            := getStrOr j "status" "",
+    theoremName       := getStrOr j "theorem_name" "",
+    translatorVersion := getStrOr j "translator_version" "",
+    bridgeLemmaHash   := getStrOr j "bridge_lemma_hash" "",
+    proofPath         := getStrOr j "proof_path" "",
+    leanSolverTimeS   := getOptFloat j "lean_solver_time_s",
+    diagnostics       := getStrArrOr j "diagnostics",
+  }
+
+/-- Decode the Lean result metadata attached to an atom, accepting both
+the canonical `lean_result_metadata` key and the `lean_metadata` alias
+the Python exporter writes alongside it. -/
+private def getLeanResultMetadata (j : Json) : Option LeanResultMetadataData :=
+  match j.getObjVal? "lean_result_metadata" with
+  | .ok v => some (parseLeanResultMetadata v)
+  | .error _ =>
+    match j.getObjVal? "lean_metadata" with
+    | .ok v    => some (parseLeanResultMetadata v)
+    | .error _ => none
+
 /-- Decode a single `AtomCertificate` JSON object. -/
 def parseAtomCertificate (j : Json) : Except String AtomCertificateData := do
   let name          ← getStr j "name"
@@ -114,6 +166,10 @@ def parseAtomCertificate (j : Json) : Except String AtomCertificateData := do
     logicFragmentTags := getStrArrOr j "logic_fragment_tags",
     dependencies   := getStrArrOr j "dependencies",
     effects        := getStrArrOr j "effects",
+    translatorVersion := getStrOr j "translator_version" "",
+    bridgeLemmaHash   := getStrOr j "bridge_lemma_hash" "",
+    manualLemmaReason := getOptStr j "manual_lemma_reason",
+    leanResultMetadata := getLeanResultMetadata j,
   }
 
 /-- Parse a mumei `.proof-cert.json` payload into a

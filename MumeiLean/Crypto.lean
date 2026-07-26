@@ -184,4 +184,22 @@ theorem sc_receipt_hash_stable (payload salt : Int) :
       domainSeparatedHash 83 payload salt := by
   rfl
 
+/-! ### Crypto obligation bridge lemmas -/
+
+theorem commitment_deterministic (value randomness : Int) :
+    commitment_hash value randomness = commitment_hash value randomness := rfl
+
+theorem commitment_same_inputs (v₁ v₂ r₁ r₂ : Int)
+    (hv : v₁ = v₂) (hr : r₁ = r₂) :
+    commitment_hash v₁ r₁ = commitment_hash v₂ r₂ := by
+  simp [hv, hr]
+
+theorem zk_verify_stable_under_equal_inputs
+    (p₁ p₂ i₁ i₂ c₁ c₂ : Int)
+    (hp : p₁ = p₂) (hi : i₁ = i₂) (hc : c₁ = c₂)
+    (h : zk_verify p₁ i₁ c₁) :
+    zk_verify p₂ i₂ c₂ := by
+  subst hp; subst hi; subst hc
+  exact h
+
 end MumeiLean.Crypto

@@ -631,10 +631,10 @@ def test_main_scan_unknown_writes_empty_summary_when_dir_empty(tmp_path: Path):
 def _patch_lake(monkeypatch, rc: int, log: str) -> None:
     """Replace :func:`bridge._run_lake_build` with a deterministic stub."""
 
-    def fake_run(repo_dir: Path, log_path: Path) -> int:
+    def fake_run(repo_dir: Path, log_path: Path) -> tuple[int, float]:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.write_text(log)
-        return rc
+        return rc, 0.5
 
     monkeypatch.setattr(bridge, "_run_lake_build", fake_run)
 
@@ -659,7 +659,9 @@ def test_run_lake_build_uses_pinned_toolchain_when_elan_available(
     monkeypatch.setattr(bridge.shutil, "which", fake_which)
     monkeypatch.setattr(bridge.subprocess, "run", fake_run)
 
-    assert bridge._run_lake_build(tmp_path, log_path) == 0
+    rc, elapsed = bridge._run_lake_build(tmp_path, log_path)
+    assert rc == 0
+    assert elapsed is not None and elapsed >= 0
     assert calls == [["/mock/bin/elan", "run", "leanprover/lean4:v4.15.0", "lake", "build"]]
     assert log_path.read_text() == "ok\n"
 
@@ -680,9 +682,107 @@ def test_run_lake_build_falls_back_to_lake_without_toolchain(
     monkeypatch.setattr(bridge.shutil, "which", fake_which)
     monkeypatch.setattr(bridge.subprocess, "run", fake_run)
 
-    assert bridge._run_lake_build(tmp_path, log_path) == 0
+    rc, elapsed = bridge._run_lake_build(tmp_path, log_path)
+    assert rc == 0
+    assert elapsed is not None and elapsed >= 0
     assert calls == [["lake", "build"]]
     assert log_path.read_text() == "done\n"
+
+
+def test_run_lake_build_reports_no_timing_when_lake_missing(
+    tmp_path: Path, monkeypatch
+):
+    log_path = tmp_path / "lake_build.log"
+    monkeypatch.setattr(bridge.shutil, "which", lambda name: None)
+
+    rc, elapsed = bridge._run_lake_build(tmp_path, log_path)
+
+    assert rc == 127
+    assert elapsed is None
+
+
+def test_escalation_timing_propagates_to_metadata_and_summary(
+    tmp_path: Path, monkeypatch
+):
+    """The measured `lake build` time reaches mumei's benchmark surface."""
+    bundle_path = tmp_path / "vstd_settlement.escalation-bundle.json"
+    bundle_path.write_text(
+        json.dumps(
+            {
+                "version": "1.0",
+                "file": "std/settlement.mm",
+                "summary": {},
+                "candidates": [
+                    {
+                        **_atom("balance_conservation", z3="unknown"),
+                        "requires": "amount > 0 && from_balance >= amount",
+                        "ensures": "from_balance - amount >= 0",
+                        "z3_result_class": "unknown",
+                        "escalation_reason": "z3_unknown",
+                        "logic_fragment_tags": ["linear_arithmetic"],
+                    }
+                ],
+            }
+        )
+    )
+    out_cert = tmp_path / "out.lean-cert.json"
+    summary = tmp_path / "summary.json"
+    _patch_lake(monkeypatch, rc=0, log="")
+
+    rc = main(
+        [
+            "--escalation-bundle", str(bundle_path),
+            "--out-dir", str(tmp_path / "generated"),
+            "--module-prefix", "Generated",
+            "--lean-cert-out", str(out_cert),
+            "--summary-json", str(summary),
+        ]
+    )
+
+    assert rc == 0
+    candidate = json.loads(out_cert.read_text())["candidates"][0]
+    assert candidate["lean_result_metadata"]["lean_solver_time_s"] == 0.5
+    assert json.loads(summary.read_text())["lean_fallback"][
+        "lean_solver_time_s"
+    ] == 0.5
+
+
+def test_escalation_timing_is_none_on_dry_run(tmp_path: Path):
+    bundle_path = tmp_path / "vstd_settlement.escalation-bundle.json"
+    bundle_path.write_text(
+        json.dumps(
+            {
+                "version": "1.0",
+                "file": "std/settlement.mm",
+                "summary": {},
+                "candidates": [
+                    {
+                        **_atom("balance_conservation", z3="unknown"),
+                        "requires": "amount > 0",
+                        "ensures": "amount >= 0",
+                        "z3_result_class": "unknown",
+                        "escalation_reason": "z3_unknown",
+                    }
+                ],
+            }
+        )
+    )
+    summary = tmp_path / "summary.json"
+
+    rc = main(
+        [
+            "--escalation-bundle", str(bundle_path),
+            "--out-dir", str(tmp_path / "generated"),
+            "--module-prefix", "Generated",
+            "--summary-json", str(summary),
+            "--no-build",
+            "--no-export",
+        ]
+    )
+
+    assert rc == 0
+    payload = json.loads(summary.read_text())
+    assert payload["lean_fallback"]["lean_solver_time_s"] is None
 
 
 def test_verify_known_witnesses_requires_canonical_module(

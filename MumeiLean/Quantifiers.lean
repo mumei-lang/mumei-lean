@@ -121,6 +121,30 @@ theorem forall_exists_swap_of_finite (P : Int → Int → Prop)
     (hchoice : ∃ f : Int → Int, ∀ x : Int, P x (f x)) :
     ∃ f : Int → Int, ∀ x : Int, P x (f x) := hchoice
 
+/-! ### Bounded range decomposition -/
+
+theorem bounded_forall_split_at (lo mid hi : Int) (P : Int → Prop)
+    (hlow : ∀ i : Int, lo ≤ i → i < mid → P i)
+    (hhigh : ∀ i : Int, mid ≤ i → i < hi → P i) :
+    ∀ i : Int, lo ≤ i → i < hi → P i := by
+  intro i hlo hhi
+  by_cases hmid : i < mid
+  · exact hlow i hlo hmid
+  · exact hhigh i (by omega) hhi
+
+theorem bounded_forall_shift (lo hi d : Int) (P : Int → Prop)
+    (h : ∀ i : Int, lo ≤ i → i < hi → P (i + d)) :
+    ∀ j : Int, lo + d ≤ j → j < hi + d → P j := by
+  intro j hlo hhi
+  have hshift := h (j - d) (by omega) (by omega)
+  have hj : j - d + d = j := by ring
+  rwa [hj] at hshift
+
+theorem bounded_exists_of_nonempty_forall (lo hi : Int) (P : Int → Prop)
+    (hne : lo < hi) (hall : ∀ i : Int, lo ≤ i → i < hi → P i) :
+    ∃ i : Int, lo ≤ i ∧ i < hi ∧ P i :=
+  ⟨lo, le_refl lo, hne, hall lo (le_refl lo) hne⟩
+
 /-! ### Implication as Prop -/
 
 theorem mumei_implies_intro (P Q : Prop) (h : P → Q) : P → Q := h

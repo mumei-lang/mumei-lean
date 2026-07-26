@@ -28,6 +28,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -118,6 +119,7 @@ def _candidate_metadata(
     status: str,
     harness_stage: Optional[dict] = None,
     known_witness_used: bool = False,
+    lean_solver_time_s: Optional[float] = None,
 ) -> dict:
     rel = module_to_path(atom.module_key, module_prefix)
     lean_module = ".".join(rel.with_suffix("").parts)
@@ -163,6 +165,7 @@ def _candidate_metadata(
         "proof_strategy": proof_strategy,
         "mathlib_imports": mathlib_imports,
         "known_witness_used": known_witness_used,
+        "lean_solver_time_s": lean_solver_time_s,
     }
     if heatmap_data is not None:
         metadata["solver_heatmap"] = heatmap_data
@@ -268,6 +271,7 @@ def _metadata_for_atoms(
     failed: List[str],
     harness_stage: Optional[dict] = None,
     known_witness_proved: Optional[Set[AtomKey]] = None,
+    lean_solver_time_s: Optional[float] = None,
 ) -> Dict[str, dict]:
     metadata_by_atom: Dict[str, dict] = {}
     known_witness_proved = known_witness_proved or set()
@@ -279,6 +283,7 @@ def _metadata_for_atoms(
             _candidate_status(atom, proved, failed, known_witness_proved=known_witness_proved),
             harness_stage,
             _atom_key(atom) in known_witness_proved,
+            lean_solver_time_s,
         )
         if _atom_key(atom) in known_witness_proved:
             metadata = _known_witness_metadata(atom, metadata, harness_stage)
@@ -355,12 +360,13 @@ def _mirror_generated_modules(out_dir: Path, repo_dir: Path, module_prefix: str)
         shutil.copy2(source, target)
 
 
-def _run_lake_build(repo_dir: Path, log_path: Path) -> int:
+def _run_lake_build(repo_dir: Path, log_path: Path) -> Tuple[int, Optional[float]]:
     """Run ``lake build`` and capture its combined output to ``log_path``.
 
-    Returns the process exit code. Returns ``127`` when ``lake`` is not
-    on ``$PATH`` so callers can distinguish "Lean toolchain missing"
-    from "build failed".
+    Returns the process exit code plus the wall-clock seconds the build
+    took (``None`` when no build ran). The exit code is ``127`` when
+    ``lake`` is not on ``$PATH`` so callers can distinguish "Lean
+    toolchain missing" from "build failed".
     """
     lake = shutil.which("lake")
     elan = shutil.which("elan")
@@ -372,15 +378,17 @@ def _run_lake_build(repo_dir: Path, log_path: Path) -> int:
             cmd = [elan, "run", toolchain, "lake", "build"]
     elif lake is None:
         log_path.write_text("error: `lake` not found on PATH\n")
-        return 127
+        return 127, None
+    started = time.monotonic()
     proc = subprocess.run(  # noqa: S603 - explicit lake invocation
         cmd,
         cwd=repo_dir,
         capture_output=True,
         text=True,
     )
+    elapsed = time.monotonic() - started
     log_path.write_text(proc.stdout + proc.stderr)
-    return proc.returncode
+    return proc.returncode, round(elapsed, 3)
 
 
 def _module_source_path(repo_dir: Path, module: str) -> Path:
@@ -698,6 +706,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             "attempted": len(all_candidate_atoms),
             "proved": 0,
             "known_witness_used": len(known_witness_proved),
+            "lean_solver_time_s": None,
         },
         "details": [],
     }
@@ -790,6 +799,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # 2. Build.
     log_path = args.out_dir / "lake_build.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    lean_solver_time_s: Optional[float] = None
     if not all_atoms and known_witness_proved:
         rc = 0
         log_path.write_text(
@@ -801,7 +811,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"candidate(s); log: {log_path}"
         )
     else:
-        rc = _run_lake_build(args.repo_dir, log_path)
+        rc, lean_solver_time_s = _run_lake_build(args.repo_dir, log_path)
+    summary_payload["lean_fallback"]["lean_solver_time_s"] = lean_solver_time_s
     lake_missing = rc == 127
     if lake_missing:
         print(
@@ -962,6 +973,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             failed,
             harness_stage,
             known_witness_proved,
+            lean_solver_time_s,
         )
         for atoms, proved, failed in zip(
             atoms_per_payload,
@@ -969,6 +981,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             per_payload_failed,
         )
     ]
+    if lean_solver_time_s is not None:
+        print(f"lean escalation took {lean_solver_time_s:.3f}s")
     summary_payload["metrics"] = _aggregate_metrics(
         metadata_per_payload,
         atoms_per_payload,

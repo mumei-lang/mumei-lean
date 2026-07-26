@@ -363,17 +363,18 @@ The module models the relevant body result explicitly and then proves:
 | Ownership 到達不可能性証明 | #5 | MumeiLean/Ownership.lean — no_transfer_without_accept 定理 |
 | mumei_arith に decide 追加 | #5 | 有限状態マシンの性質証明用 |
 | 実 std/ unknown atom の Lean 証明成功 | this PR | MumeiLean/StdMathAbs.lean — abs_saturating / fp_abs / fp_from_int / list_length |
+| ✅ SC 頻出パターン証明ライブラリ | — | `MumeiLean/Patterns.lean` / `AdvancedPatterns.lean` — 上限チェック・保存則・単調性・guard/CEI trace |
+| ✅ RTGS 残高保存の帰納的証明 | — | `MumeiLean/Settlement.lean` + `Algebra.rtgs_transfer_conserves_sum{,_of_amounts}` |
+| ✅ 契約式トランスレータ拡張 | — | 量化子・有限体・群論・暗号を `scripts/expr_translator.py` の obligation class 分類で網羅 |
+| ✅ mumei_arith 拡張 | — | `MumeiLean/Basic.lean` の算術補題 + `Algebra`/`Crypto` の mathlib タクティク経路 |
+| ✅ CertParser.lean / CertWriter.lean ネイティブ実装 | — | `Lean.Data.Json` ベースの parse/write。`translator_version` / `bridge_lemma_hash` / `lean_solver_time_s` を round-trip（`tests/test_cert_roundtrip.py`） |
+| ✅ 実 std/ unknown atom の Lean 証明成功 | 完了 | Pilot 以外の実用的な std 証明例を `MumeiLean.StdMathAbs` に追加 |
 
 ### Planned
 
 | 項目 | 優先度 | 備考 |
 |---|---|---|
-| SC 頻出パターン証明ライブラリ | 高 | 加算+上限チェック、保存則（a - x + (b + x) = a + b）、単調性 |
-| RTGS 残高保存の帰納的証明 | 高 | Phase 2 Demo。balance_conservation 定理。omega/linarith で自動証明可能 |
-| 契約式トランスレータ拡張 | 中 | 量化子・有限体・群論。ブリッジ v1 は算術+論理+整数のみ |
-| mumei_arith 拡張 | 中 | ring, field_simp 等の追加。暗号プリミティブ証明用 |
-| CertParser.lean / CertWriter.lean ネイティブ実装 | 低 | 現在はスケルトン。Python ブリッジが主要パス |
-| ✅ 実 std/ unknown atom の Lean 証明成功 | 完了 | Pilot 以外の実用的な std 証明例を `MumeiLean.StdMathAbs` に追加 |
+| 生成定理の自動タクティク探索 | 中 | 現在は obligation class ごとの bridge lemma テンプレート選択のみ。`manual_lemma_reason` が残る atom の自動探索は未実装 |
 
 ## Repository layout
 

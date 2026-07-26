@@ -84,10 +84,10 @@ def test_patterns_bridge_exports_lean_verified_certificate(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    def fake_lake_build(repo_dir: Path, log_path: Path) -> int:
+    def fake_lake_build(repo_dir: Path, log_path: Path) -> tuple[int, float]:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.write_text("")
-        return 0
+        return 0, 0.25
 
     monkeypatch.setattr(bridge, "_run_lake_build", fake_lake_build)
     cert_path = tmp_path / "patterns.proof.json"

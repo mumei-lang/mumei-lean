@@ -182,4 +182,34 @@ theorem group_theory_obligation_assoc_law (op : Int → Int → Int) (a b c : In
     (hassoc : ∀ x y z : Int, op (op x y) z = op x (op y z)) :
     op (op a b) c = op a (op b c) := hassoc a b c
 
+theorem arithmetic_obligation_bounded_combination
+    (f : Int → Int → Int) (a b lo hi : Int)
+    (hbounds : ∀ x y : Int, lo ≤ f x y ∧ f x y ≤ hi) :
+    lo ≤ f a b ∧ f a b ≤ hi := hbounds a b
+
+theorem arithmetic_obligation_monotone_step (f : Int → Int) (a b : Int)
+    (hmono : ∀ x y : Int, x ≤ y → f x ≤ f y) (hle : a ≤ b) :
+    f a ≤ f b := hmono a b hle
+
+theorem smart_contract_obligation_guard_preserved (locked phase : Int)
+    (hguard : locked = 1 → phase ≠ 0) :
+    sc_reentrancy_guard locked phase := hguard
+
+theorem smart_contract_obligation_balance_preserved (before after : Int)
+    (hpreserved : after = before) :
+    sc_balance_preserved before after := hpreserved
+
+theorem rtgs_obligation_conservation (before debit credit after : Int)
+    (hafter : after = before - debit + credit) :
+    rtgs_balance_conserved before debit credit after :=
+  rtgs_transfer_conserves_sum_of_amounts before debit credit after hafter
+
+theorem rtgs_obligation_trace_safe (validated settled : Int)
+    (htrace : settled = 1 → validated = 1) :
+    rtgs_trace_safe validated settled := htrace
+
+theorem unknown_obligation_discharged_by_manual_lemma (P : Prop) (witness : Int)
+    (hmanual : P) :
+    mumei_unknown_obligation witness ∧ P := ⟨trivial, hmanual⟩
+
 end MumeiLean.AdvancedPatterns

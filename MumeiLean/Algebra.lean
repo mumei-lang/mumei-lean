@@ -228,4 +228,50 @@ theorem sc_subtraction_nonnegative
     0 ≤ balance - amount := by
   omega
 
+/-! ### Arithmetic obligation bridge lemmas -/
+
+theorem arith_add_upper_bound (a b limit : Int) (h : a ≤ limit - b) :
+    a + b ≤ limit := by
+  omega
+
+theorem arith_add_monotone (a b c : Int) (h : a ≤ b) :
+    a + c ≤ b + c := by
+  omega
+
+theorem arith_mul_nonneg_of_nonneg (a b : Int) (ha : 0 ≤ a) (hb : 0 ≤ b) :
+    0 ≤ a * b :=
+  mul_nonneg ha hb
+
+theorem arith_square_nonneg (a : Int) : 0 ≤ a * a :=
+  mul_self_nonneg a
+
+theorem arith_bounded_of_interval (lo hi x : Int) (hlo : lo ≤ x) (hhi : x ≤ hi) :
+    lo ≤ x ∧ x ≤ hi :=
+  ⟨hlo, hhi⟩
+
+/-! ### RTGS obligation bridge lemmas -/
+
+theorem rtgs_debit_leaves_nonnegative (balance debit : Int)
+    (hSufficient : debit ≤ balance) (_hBalance : 0 ≤ balance) :
+    0 ≤ balance - debit := by
+  omega
+
+theorem rtgs_transfer_conserves_sum_of_amounts
+    (before debit credit after : Int)
+    (hAfter : after = before - debit + credit) :
+    mumei_conserved_sum before debit credit after := by
+  unfold mumei_conserved_sum
+  exact hAfter
+
+/-! ### Finite-field and group obligation bridge lemmas -/
+
+theorem ff_sub_self_eq_zero_mod (a p : Int) :
+    mumei_ff_sub a a p = 0 % p := by
+  unfold mumei_ff_sub
+  simp
+
+theorem group_mul_left_cancel {G : Type u} [Group G] (a b c : G)
+    (h : a * b = a * c) : b = c :=
+  mul_left_cancel h
+
 end MumeiLean.Algebra

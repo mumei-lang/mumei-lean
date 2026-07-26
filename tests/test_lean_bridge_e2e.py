@@ -21,6 +21,9 @@ GENERATED_PATTERNS = (
 GENERATED_CRYPTO_PRIMITIVES = (
     REPO_ROOT / "generated" / "Generated" / "Std" / "Crypto" / "Primitives.lean"
 )
+GENERATED_SETTLEMENT = (
+    REPO_ROOT / "generated" / "Generated" / "Std" / "Settlement.lean"
+)
 GENERATED_FINITE_FIELD = (
     REPO_ROOT / "generated" / "Generated" / "Std" / "Algebra" / "Finite_field.lean"
 )
@@ -100,6 +103,10 @@ def _cleanup_generated_patterns() -> None:
 
 def _cleanup_generated_crypto_primitives() -> None:
     _cleanup_generated_file(GENERATED_CRYPTO_PRIMITIVES)
+
+
+def _cleanup_generated_settlement() -> None:
+    _cleanup_generated_file(GENERATED_SETTLEMENT)
 
 
 def _cleanup_generated_finite_field() -> None:
@@ -455,7 +462,7 @@ def test_bridge_no_build_dry_run(tmp_path: Path):
     assert metadata["translator_version"] == "mumei-lean-translator-ir-v2"
     assert (
         metadata["bridge_lemma_hash"]
-        == "a3e9c1f4b7d2806e5f19347cab82d0963ef1a5bc70d4e8290f136d5ab7c84e11"
+        == "fec31244e29b7d6bd4790b0a25bceb7fce6bdf8f0b18d74d1c0ccdec8ecdc49d"
     )
     assert payload["all_verified"] is False
 
@@ -645,6 +652,51 @@ def test_sum_nonneg_inductive_upgrades_unknown_to_lean_verified(
         )
     finally:
         _cleanup_generated_patterns()
+
+
+@pytest.mark.lake_available
+def test_rtgs_transfer_conservation_upgrades_unknown_to_lean_verified(
+    lake_available, tmp_path: Path
+):
+    """9th live generated theorem path: RTGS balance conservation.
+
+    The obligation classifies as ``rtgs_obligation`` and is discharged by
+    ``mumei_arith`` against the conservation surface in
+    ``MumeiLean.Algebra`` / ``MumeiLean.AdvancedPatterns``. The exported atom
+    must also carry the measured escalation cost in
+    ``lean_result_metadata.lean_solver_time_s``, which mumei's benchmark
+    runner reads as ``details.lean_solver_time_s``.
+    """
+    out_cert = tmp_path / "std_settlement_rtgs.lean-cert.json"
+    out_dir = REPO_ROOT / "generated"
+    _cleanup_generated_settlement()
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "std_settlement_rtgs_conservation.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+
+        _assert_bridge_ok(proc)
+        assert GENERATED_SETTLEMENT.exists()
+        payload = json.loads(out_cert.read_text())
+        atom = next(
+            a
+            for a in payload["atoms"]
+            if a["name"] == "rtgs_transfer_conservation"
+        )
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["status"] == "verified"
+        assert atom["lean_metadata"]["known_witness_used"] is False
+        assert atom["lean_metadata"]["lean_theorem_name"] == (
+            "Generated.Std.Settlement.rtgs_transfer_conservation_correct"
+        )
+        assert atom["lean_result_metadata"]["lean_solver_time_s"] > 0
+    finally:
+        _cleanup_generated_settlement()
 
 
 @pytest.mark.lake_available

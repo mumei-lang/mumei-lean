@@ -1213,5 +1213,30 @@ def test_obligation_bridge_lemmas_include_new_backing_lemmas():
     )
 
 
+def test_bridge_lemma_hash_matches_catalog():
+    # The pinned constant must be the SHA-256 of the obligation-class
+    # bridge lemma catalog, so adding a backing lemma forces a bump.
+    assert (
+        expr_translator.BRIDGE_LEMMA_HASH
+        == expr_translator.compute_bridge_lemma_hash()
+    )
+
+
+def test_obligation_bridge_lemmas_cover_all_documented_classes():
+    for obligation_class in (
+        OBLIGATION_CLASS_QUANTIFIER,
+        OBLIGATION_CLASS_FINITE_FIELD,
+        OBLIGATION_CLASS_GROUP_THEORY,
+        OBLIGATION_CLASS_CRYPTO,
+        expr_translator.OBLIGATION_CLASS_ARITHMETIC,
+        expr_translator.OBLIGATION_CLASS_SMART_CONTRACT,
+        expr_translator.OBLIGATION_CLASS_RTGS,
+        expr_translator.OBLIGATION_CLASS_UNKNOWN,
+    ):
+        lemmas = obligation_bridge_lemmas(obligation_class)
+        assert lemmas, f"{obligation_class} has no bridge lemma template"
+        assert all(lemma.startswith("MumeiLean.") for lemma in lemmas)
+
+
 def test_translator_version_is_v2():
     assert expr_translator.TRANSLATOR_VERSION == "mumei-lean-translator-ir-v2"

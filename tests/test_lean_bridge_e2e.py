@@ -518,6 +518,94 @@ def test_finite_field_associativity_upgrades_unknown_to_lean_verified(
         _cleanup_generated_finite_field()
 
 
+@pytest.mark.lake_available
+def test_finite_field_distributivity_discharged_by_tactic_search(
+    lake_available, tmp_path: Path
+):
+    """Twelfth live path: `lean_verified` via automatic tactic search (spec §12).
+
+    No bridge lemma template covers modular distributivity, so the generic
+    fallback proof fails to build and the `build_failure` search stage adopts
+    `mumei_ff_mod`.
+    """
+    out_cert = tmp_path / "std_algebra_finite_field_distrib.lean-cert.json"
+    out_dir = REPO_ROOT / "generated"
+    _cleanup_generated_finite_field()
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(
+                FIXTURES
+                / "std_algebra_finite_field_ff_mul_add_distributive.proof-cert.json"
+            ),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+
+        _assert_bridge_ok(proc)
+        assert GENERATED_FINITE_FIELD.exists()
+        assert "mumei_ff_mod" in GENERATED_FINITE_FIELD.read_text()
+        payload = json.loads(out_cert.read_text())
+        atom = next(
+            a for a in payload["atoms"] if a["name"] == "ff_mul_add_distributive"
+        )
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["status"] == "verified"
+        metadata = atom["lean_metadata"]
+        assert metadata["status"] == "lean_verified"
+        assert metadata["known_witness_used"] is False
+        assert metadata["lean_theorem_name"] == (
+            "Generated.Std.Algebra.Finite_field.ff_mul_add_distributive_correct"
+        )
+        assert metadata["manual_lemma_reason"] is None
+        search = metadata["tactic_search"]
+        assert search["stage"] == "build_failure"
+        assert search["adopted_tactic"] == "mumei_ff_mod"
+        assert search["exhausted"] is False
+        assert search["timed_out"] is False
+        assert search["search_time_s"] > 0
+        # Search time is folded into the single `lean_solver_time_s` channel.
+        assert metadata["lean_solver_time_s"] > search["search_time_s"]
+    finally:
+        _cleanup_generated_finite_field()
+
+
+@pytest.mark.lake_available
+def test_tactic_search_can_be_disabled(lake_available, tmp_path: Path):
+    """`--no-tactic-search` keeps the pre-§12 conservative behaviour."""
+    out_cert = tmp_path / "std_algebra_finite_field_distrib_off.lean-cert.json"
+    out_dir = REPO_ROOT / "generated"
+    _cleanup_generated_finite_field()
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(
+                FIXTURES
+                / "std_algebra_finite_field_ff_mul_add_distributive.proof-cert.json"
+            ),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+            "--no-tactic-search",
+        )
+
+        payload = json.loads(out_cert.read_text())
+        atom = next(
+            a for a in payload["atoms"] if a["name"] == "ff_mul_add_distributive"
+        )
+        assert atom["z3_check_result"] == "unknown"
+        assert atom["status"] != "verified"
+        metadata = atom["lean_metadata"]
+        assert metadata["status"] != "lean_verified"
+        assert "tactic_search" not in metadata
+        assert proc.returncode != 0
+    finally:
+        _cleanup_generated_finite_field()
+
+
 def test_bridge_no_build_dry_run(tmp_path: Path):
     out_cert = tmp_path / "abs_saturating.no-build.lean-cert.json"
     proc = _run_bridge(

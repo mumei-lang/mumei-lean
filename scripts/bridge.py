@@ -62,6 +62,15 @@ try:
         _scan_unknown_certs,
     )
     from .bridge_strategy import resolve_mathlib_imports, select_proof_strategy
+    from .tactic_search import (
+        DEFAULT_TACTIC_SEARCH_TIMEOUT_S,
+        STAGE_BUILD_FAILURE,
+        STAGE_RESIDUAL,
+        TacticSearchResult,
+        apply_search_result,
+        is_search_eligible,
+        search_tactic,
+    )
     from .bridge_metrics import (
         _aggregate_metrics,
         _empty_metric_bucket,
@@ -102,6 +111,15 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
         resolve_mathlib_imports,
         select_proof_strategy,
     )
+    from tactic_search import (  # type: ignore
+        DEFAULT_TACTIC_SEARCH_TIMEOUT_S,
+        STAGE_BUILD_FAILURE,
+        STAGE_RESIDUAL,
+        TacticSearchResult,
+        apply_search_result,
+        is_search_eligible,
+        search_tactic,
+    )
     from bridge_metrics import (  # type: ignore
         _aggregate_metrics,
         _empty_metric_bucket,
@@ -120,6 +138,7 @@ def _candidate_metadata(
     harness_stage: Optional[dict] = None,
     known_witness_used: bool = False,
     lean_solver_time_s: Optional[float] = None,
+    tactic_search: Optional[dict] = None,
 ) -> dict:
     rel = module_to_path(atom.module_key, module_prefix)
     lean_module = ".".join(rel.with_suffix("").parts)
@@ -137,6 +156,13 @@ def _candidate_metadata(
         diagnostics.append("partial_translation")
     if atom.manual_lemma_reason:
         diagnostics.append(f"manual_lemma_reason={atom.manual_lemma_reason}")
+    if tactic_search is not None:
+        adopted = tactic_search.get("adopted_tactic")
+        diagnostics.append(
+            f"tactic_search_adopted={adopted}"
+            if adopted
+            else "tactic_search_exhausted"
+        )
     heatmap_data = _load_solver_heatmap(atom, out_dir)
     if heatmap_data is not None:
         diagnostics.append("solver_heatmap_available=true")
@@ -147,6 +173,20 @@ def _candidate_metadata(
     proof_strategy = select_proof_strategy(atom)
     mathlib_imports = resolve_mathlib_imports(atom)
     manual_reason = atom.manual_lemma_reason if not getattr(atom, "has_custom_bridge_proof", False) else None
+    if (
+        atom.auto_tactic is not None
+        and manual_reason is not None
+        and status == LEAN_VERIFIED
+    ):
+        # The automatic tactic search discharged the obligation the template
+        # catalog could not (spec §12.4): keep the reason as provenance under
+        # ``tactic_search`` instead of a promotion-blocking field.
+        if tactic_search is not None:
+            tactic_search = {
+                **tactic_search,
+                "supersedes_manual_lemma_reason": manual_reason,
+            }
+        manual_reason = None
     metadata = {
         "status": status,
         "theorem_name": f"{atom.name}_correct",
@@ -167,6 +207,8 @@ def _candidate_metadata(
         "known_witness_used": known_witness_used,
         "lean_solver_time_s": lean_solver_time_s,
     }
+    if tactic_search is not None:
+        metadata["tactic_search"] = tactic_search
     if heatmap_data is not None:
         metadata["solver_heatmap"] = heatmap_data
     if harness_stage is not None:
@@ -251,7 +293,11 @@ def _candidate_status(
         return LEAN_VERIFIED
     if _has_structural_partial_translation(atom):
         return "partial_translation"
-    if atom.manual_lemma_reason and not getattr(atom, "has_custom_bridge_proof", False):
+    if (
+        atom.manual_lemma_reason
+        and not getattr(atom, "has_custom_bridge_proof", False)
+        and atom.auto_tactic is None
+    ):
         return MANUAL_LEMMA_REQUIRED
     if (
         atom.translator_version != TRANSLATOR_VERSION
@@ -272,10 +318,18 @@ def _metadata_for_atoms(
     harness_stage: Optional[dict] = None,
     known_witness_proved: Optional[Set[AtomKey]] = None,
     lean_solver_time_s: Optional[float] = None,
+    tactic_search_results: Optional[Dict[AtomKey, TacticSearchResult]] = None,
 ) -> Dict[str, dict]:
     metadata_by_atom: Dict[str, dict] = {}
     known_witness_proved = known_witness_proved or set()
+    tactic_search_results = tactic_search_results or {}
     for atom in atoms:
+        search_result = tactic_search_results.get(_atom_key(atom))
+        atom_solver_time = lean_solver_time_s
+        if search_result is not None and atom_solver_time is not None:
+            atom_solver_time = round(
+                atom_solver_time + search_result.search_time_s, 3
+            )
         metadata = _candidate_metadata(
             atom,
             out_dir,
@@ -283,7 +337,8 @@ def _metadata_for_atoms(
             _candidate_status(atom, proved, failed, known_witness_proved=known_witness_proved),
             harness_stage,
             _atom_key(atom) in known_witness_proved,
-            lean_solver_time_s,
+            atom_solver_time,
+            search_result.as_metadata() if search_result is not None else None,
         )
         if _atom_key(atom) in known_witness_proved:
             metadata = _known_witness_metadata(atom, metadata, harness_stage)
@@ -393,6 +448,181 @@ def _run_lake_build(repo_dir: Path, log_path: Path) -> Tuple[int, Optional[float
 
 def _module_source_path(repo_dir: Path, module: str) -> Path:
     return repo_dir / (module.replace(".", "/") + ".lean")
+
+
+def _lake_command_prefix(repo_dir: Path) -> Optional[List[str]]:
+    """Command prefix that runs ``lake`` under the pinned toolchain."""
+    lake = shutil.which("lake")
+    elan = shutil.which("elan")
+    toolchain_path = repo_dir / "lean-toolchain"
+    if elan is not None and toolchain_path.exists():
+        toolchain = toolchain_path.read_text().strip()
+        if toolchain:
+            return [elan, "run", toolchain, "lake"]
+    if lake is not None:
+        return ["lake"]
+    return None
+
+
+def _run_tactic_search_stage(
+    atoms: List[IngestedAtom],
+    stage: str,
+    *,
+    lake_cmd: List[str],
+    timeout_s: float,
+    results: Dict[AtomKey, TacticSearchResult],
+    repo_dir: Path,
+) -> int:
+    """Search the tactic ladder for every eligible atom in ``atoms``.
+
+    Adopted tactics are written onto the atoms in place; the number of
+    adoptions is returned so callers know whether a rebuild is worthwhile.
+    """
+    adopted = 0
+    for atom in atoms:
+        if not is_search_eligible(atom, stage):
+            continue
+        result = search_tactic(
+            atom,
+            stage=stage,
+            lake_cmd=lake_cmd,
+            timeout_s=timeout_s,
+            probe_dir=repo_dir / ".tactic_search",
+        )
+        if result.skipped_reason is not None:
+            continue
+        results[_atom_key(atom)] = result
+        apply_search_result(atom, result)
+        if result.adopted_tactic is not None:
+            adopted += 1
+            print(
+                f"tactic search ({stage}) adopted `{result.adopted_tactic}` for "
+                f"atom {atom.name} in {result.search_time_s:.3f}s"
+            )
+        else:
+            print(
+                f"tactic search ({stage}) exhausted "
+                f"{len(result.candidates_tried)} candidate(s) for atom "
+                f"{atom.name}"
+                + (" (timed out)" if result.timed_out else "")
+            )
+    return adopted
+
+
+def _attribute_failures(
+    *,
+    build_log: str,
+    rc: int,
+    lake_missing: bool,
+    atoms_per_payload: List[List[IngestedAtom]],
+    proved_per_payload: List[List[str]],
+    known_witness_proved: Set[AtomKey],
+    out_dir: Path,
+    module_prefix: str,
+    repo_dir: Path,
+    verbose: bool = True,
+) -> List[List[str]]:
+    """Map a ``lake build`` log onto per-payload failed atom names."""
+    attributions = _failed_theorem_attributions(build_log, source_root=repo_dir)
+    # If the build log has a failure we couldn't attribute to a
+    # specific theorem (e.g. a file-level ``import`` error), we cannot
+    # safely tell which atoms succeeded — fall back to the same
+    # conservative behaviour as ``lake_missing``.
+    unattributable = (not lake_missing) and _has_unattributable_failures(
+        build_log,
+        source_root=repo_dir,
+    )
+    # ``lake build`` returned non-zero but neither sorry nor compile
+    # errors matched (e.g. infrastructure errors like ``error: cannot
+    # resolve dependency 'mathlib'`` whose ``error:`` is not preceded
+    # by a ``file:line:col`` location, lake itself crashing without a
+    # diagnostic, or an empty log). In those cases we have no way to
+    # attribute the failure but a non-zero ``rc`` *is* a hard signal
+    # that nothing was verified — be conservative.
+    unrecognised_failure = (
+        (not lake_missing)
+        and rc != 0
+        and not attributions
+        and not unattributable
+    )
+    if lake_missing or unattributable or unrecognised_failure:
+        if unattributable and verbose:
+            print(
+                "warning: build log contains failures that could not be "
+                "attributed to a specific theorem; treating all lifted "
+                "atoms as failed.",
+                file=sys.stderr,
+            )
+        elif unrecognised_failure and verbose:
+            print(
+                f"warning: `lake build` exited with status {rc} but no "
+                f"theorem-level failures could be parsed from the log; "
+                f"treating all lifted atoms as failed.",
+                file=sys.stderr,
+            )
+        # Treat every atom we would have lifted into Lean as failed
+        # in *every* payload so the resulting certificate is
+        # conservative (no false ``lean_verified``).
+        per_payload_failed: List[List[str]] = []
+        for atoms, proved in zip(atoms_per_payload, proved_per_payload):
+            local_known = _known_witness_names(atoms, known_witness_proved)
+            per_payload_failed.append(sorted(set(proved) - local_known))
+        return per_payload_failed
+
+    # Map each payload to the set of generated source files it
+    # owns. Failures whose Lake-reported file path matches one of
+    # those files are attributed to that payload only, which
+    # avoids cross-payload contamination when two certs contain
+    # atoms with the same name. Failures without a recoverable
+    # file path, or whose file path does not match any known
+    # payload, are applied to *every* payload that owns an atom
+    # by that name so we never silently drop a real failure.
+    payload_files: List[set] = []
+    for atoms in atoms_per_payload:
+        files: set = set()
+        for atom in atoms:
+            rel = module_to_path(atom.module_key, module_prefix)
+            files.add(str((out_dir / rel).as_posix()))
+            files.add(str(rel.as_posix()))
+        payload_files.append(files)
+
+    all_known_files: set = set().union(*payload_files) if payload_files else set()
+
+    per_payload_failed = []
+    for atoms, proved, files in zip(
+        atoms_per_payload,
+        proved_per_payload,
+        payload_files,
+    ):
+        local: set = set()
+        proved_set = set(proved)
+        for file_path, name in attributions:
+            if name not in proved_set:
+                continue
+            if file_path is None:
+                # No file context — apply to every payload that
+                # owns the name to stay conservative.
+                local.add(name)
+                continue
+            file_norm = str(Path(file_path).as_posix())
+            matched_known = any(
+                file_norm == f or file_norm.endswith(f)
+                for f in all_known_files
+            )
+            matched_local = any(
+                file_norm == f or file_norm.endswith(f) for f in files
+            )
+            if matched_local:
+                local.add(name)
+            elif not matched_known:
+                # File path doesn't correspond to any payload we
+                # generated; fall back to applying the failure
+                # globally rather than silently ignoring it.
+                local.add(name)
+        local_known = _known_witness_names(atoms, known_witness_proved)
+        local -= local_known
+        per_payload_failed.append(sorted(local))
+    return per_payload_failed
 
 
 def _lake_build_command(repo_dir: Path, target: str) -> Optional[List[str]]:
@@ -528,6 +758,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Skip writing the final .lean-cert.json (implies dry run).",
     )
     parser.add_argument(
+        "--no-tactic-search",
+        action="store_true",
+        help="Disable the automatic tactic search for residual obligations "
+        "(docs/LEAN_TRANSLATOR_SPEC.md §12).",
+    )
+    parser.add_argument(
+        "--tactic-search-timeout",
+        type=float,
+        default=DEFAULT_TACTIC_SEARCH_TIMEOUT_S,
+        metavar="SECONDS",
+        help="Per-obligation wall-clock budget for the automatic tactic "
+        f"search (default: {DEFAULT_TACTIC_SEARCH_TIMEOUT_S:.0f}s).",
+    )
+    parser.add_argument(
         "--repo-dir",
         type=Path,
         default=Path(__file__).resolve().parent.parent,
@@ -640,8 +884,25 @@ def main(argv: Optional[List[str]] = None) -> int:
     # produced atoms whose module keys collide after sanitisation
     # (e.g. ``math.mm`` vs ``Math.mm`` → ``Generated.Math``).
     all_candidate_atoms: List[IngestedAtom] = []
+    tactic_search_results: Dict[AtomKey, TacticSearchResult] = {}
+    lake_cmd = _lake_command_prefix(args.repo_dir)
+    tactic_search_enabled = (
+        not args.no_tactic_search and not args.no_build and lake_cmd is not None
+    )
     for src_path, payload in payloads:
         atoms = collect_unknown_atoms(payload)
+        if tactic_search_enabled:
+            # Stage ``residual``: obligations the template catalog left with a
+            # ``manual_lemma_reason`` are probed before they are emitted, so an
+            # adopted tactic makes them ordinary generated theorems.
+            _run_tactic_search_stage(
+                atoms,
+                STAGE_RESIDUAL,
+                lake_cmd=lake_cmd,
+                timeout_s=args.tactic_search_timeout,
+                results=tactic_search_results,
+                repo_dir=args.repo_dir,
+            )
         proof_atoms = [atom for atom in atoms if not atom.is_partial_translation]
         all_candidate_atoms.extend(atoms)
         proof_atoms_per_payload.append(proof_atoms)
@@ -822,6 +1083,58 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         if args.no_export:
             return 0
+
+    # Stage ``build_failure``: obligations whose generic-fallback proof did not
+    # build are probed for a tactic that closes them, then rebuilt once.
+    if tactic_search_enabled and rc != 0 and not lake_missing:
+        preliminary_failed = _attribute_failures(
+            build_log=log_path.read_text(),
+            rc=rc,
+            lake_missing=lake_missing,
+            atoms_per_payload=atoms_per_payload,
+            proved_per_payload=proved_per_payload,
+            known_witness_proved=known_witness_proved,
+            out_dir=args.out_dir,
+            module_prefix=args.module_prefix,
+            repo_dir=args.repo_dir,
+            verbose=False,
+        )
+        retry_atoms: List[IngestedAtom] = []
+        for atoms, failed in zip(atoms_per_payload, preliminary_failed):
+            failed_names = set(failed)
+            retry_atoms.extend(
+                atom for atom in atoms if atom.name in failed_names
+            )
+        adopted = _run_tactic_search_stage(
+            retry_atoms,
+            STAGE_BUILD_FAILURE,
+            lake_cmd=lake_cmd,
+            timeout_s=args.tactic_search_timeout,
+            results=tactic_search_results,
+            repo_dir=args.repo_dir,
+        )
+        if adopted:
+            write_modules(all_atoms, args.out_dir, args.module_prefix)
+            _mirror_generated_modules(
+                args.out_dir,
+                args.repo_dir,
+                args.module_prefix,
+            )
+            rc, retry_time = _run_lake_build(args.repo_dir, log_path)
+            if retry_time is not None:
+                lean_solver_time_s = round(
+                    (lean_solver_time_s or 0.0) + retry_time,
+                    3,
+                )
+                summary_payload["lean_fallback"][
+                    "lean_solver_time_s"
+                ] = lean_solver_time_s
+            lake_missing = rc == 127
+            print(
+                f"`lake build` after tactic search exited with status {rc}; "
+                f"log: {log_path}"
+            )
+
     if args.ci_mode and rc != 0:
         print(
             "warning: `lake build` failed in --ci-mode; preserving generated "
@@ -865,104 +1178,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not args.no_export and args.lean_cert_out is None:
         parser.error("--lean-cert-out is required unless --no-export is set")
 
-    attributions = _failed_theorem_attributions(build_log, source_root=args.repo_dir)
-    # If the build log has a failure we couldn't attribute to a
-    # specific theorem (e.g. a file-level ``import`` error), we cannot
-    # safely tell which atoms succeeded — fall back to the same
-    # conservative behaviour as ``lake_missing``.
-    unattributable = (not lake_missing) and _has_unattributable_failures(
-        build_log,
-        source_root=args.repo_dir,
+    per_payload_failed = _attribute_failures(
+        build_log=build_log,
+        rc=rc,
+        lake_missing=lake_missing,
+        atoms_per_payload=atoms_per_payload,
+        proved_per_payload=proved_per_payload,
+        known_witness_proved=known_witness_proved,
+        out_dir=args.out_dir,
+        module_prefix=args.module_prefix,
+        repo_dir=args.repo_dir,
     )
-    # ``lake build`` returned non-zero but neither sorry nor compile
-    # errors matched (e.g. infrastructure errors like ``error: cannot
-    # resolve dependency 'mathlib'`` whose ``error:`` is not preceded
-    # by a ``file:line:col`` location, lake itself crashing without a
-    # diagnostic, or an empty log). In those cases we have no way to
-    # attribute the failure but a non-zero ``rc`` *is* a hard signal
-    # that nothing was verified — be conservative.
-    unrecognised_failure = (
-        (not lake_missing)
-        and rc != 0
-        and not attributions
-        and not unattributable
-    )
-    if lake_missing or unattributable or unrecognised_failure:
-        if unattributable:
-            print(
-                "warning: build log contains failures that could not be "
-                "attributed to a specific theorem; treating all lifted "
-                "atoms as failed.",
-                file=sys.stderr,
-            )
-        elif unrecognised_failure:
-            print(
-                f"warning: `lake build` exited with status {rc} but no "
-                f"theorem-level failures could be parsed from the log; "
-                f"treating all lifted atoms as failed.",
-                file=sys.stderr,
-            )
-        # Treat every atom we would have lifted into Lean as failed
-        # in *every* payload so the resulting certificate is
-        # conservative (no false ``lean_verified``).
-        per_payload_failed: List[List[str]] = []
-        for atoms, proved in zip(atoms_per_payload, proved_per_payload):
-            local_known = _known_witness_names(atoms, known_witness_proved)
-            per_payload_failed.append(sorted(set(proved) - local_known))
-    else:
-        # Map each payload to the set of generated source files it
-        # owns. Failures whose Lake-reported file path matches one of
-        # those files are attributed to that payload only, which
-        # avoids cross-payload contamination when two certs contain
-        # atoms with the same name. Failures without a recoverable
-        # file path, or whose file path does not match any known
-        # payload, are applied to *every* payload that owns an atom
-        # by that name so we never silently drop a real failure.
-        payload_files: List[set] = []
-        for atoms in atoms_per_payload:
-            files: set = set()
-            for atom in atoms:
-                rel = module_to_path(atom.module_key, args.module_prefix)
-                files.add(str((args.out_dir / rel).as_posix()))
-                files.add(str(rel.as_posix()))
-            payload_files.append(files)
-
-        all_known_files: set = set().union(*payload_files) if payload_files else set()
-
-        per_payload_failed = []
-        for atoms, proved, files in zip(
-            atoms_per_payload,
-            proved_per_payload,
-            payload_files,
-        ):
-            local: set = set()
-            proved_set = set(proved)
-            for file_path, name in attributions:
-                if name not in proved_set:
-                    continue
-                if file_path is None:
-                    # No file context — apply to every payload that
-                    # owns the name to stay conservative.
-                    local.add(name)
-                    continue
-                file_norm = str(Path(file_path).as_posix())
-                matched_known = any(
-                    file_norm == f or file_norm.endswith(f)
-                    for f in all_known_files
-                )
-                matched_local = any(
-                    file_norm == f or file_norm.endswith(f) for f in files
-                )
-                if matched_local:
-                    local.add(name)
-                elif not matched_known:
-                    # File path doesn't correspond to any payload we
-                    # generated; fall back to applying the failure
-                    # globally rather than silently ignoring it.
-                    local.add(name)
-            local_known = _known_witness_names(atoms, known_witness_proved)
-            local -= local_known
-            per_payload_failed.append(sorted(local))
 
     metadata_per_payload = [
         _metadata_for_atoms(
@@ -974,6 +1200,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             harness_stage,
             known_witness_proved,
             lean_solver_time_s,
+            tactic_search_results,
         )
         for atoms, proved, failed in zip(
             atoms_per_payload,

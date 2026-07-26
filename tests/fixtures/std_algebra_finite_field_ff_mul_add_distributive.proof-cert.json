@@ -1,0 +1,148 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-26T15:43:56Z",
+  "mumei_version": "0.6.12",
+  "z3_version": "Z3 version 4.8.12 - 64 bit",
+  "file": "std/algebra/finite_field.mm",
+  "atoms": [
+    {
+      "name": "ff_mul_add_distributive",
+      "z3_check_result": "unknown",
+      "content_hash": "0a4eac6e5e19239ec4c0162d7e4667947bf924d1b35320dc2a447e4d70e32fcd",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "unknown_fragment",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "std/algebra/finite_field.mm"
+        },
+        "traceability_hash": "a8ef06847ede583702385227c3e1b2bf853ee6f7c1033818b4245066421d205d",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 0,
+        "checked_refinements": 0,
+        "ensures_implication_checks": 0,
+        "diagnostics": [
+          "finite_field helpers are checked by the Lean bridge after Z3 unknown routing"
+        ]
+      },
+      "proof_hash": "80df70dd0b8473e5a3c6fa9c6b5089f113a662711e645ebb1f7eeb0d67c024a1",
+      "dependencies": [
+        "ff_add",
+        "ff_mul"
+      ],
+      "effects": [],
+      "requires": "p > 0",
+      "ensures": "ff_eq(result, ff_add(ff_mul(a, b, p), ff_mul(a, c, p), p), p)",
+      "body_expr": "{ ff_mul(a, ff_add(b, c, p), p) }",
+      "body_summary": "{ ff_mul(a, ff_add(b, c, p), p) }",
+      "z3_result_class": "unknown",
+      "escalation_reason": "z3_unknown",
+      "logic_fragment_tag": "finite_field",
+      "logic_fragment_tags": [
+        "finite_field"
+      ],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "b": "b",
+        "a": "a",
+        "p": "p",
+        "c": "c",
+        "result": "result"
+      },
+      "bridge_lemma_hash": "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347",
+      "translator_ir": {
+        "sort": "contract_obligation",
+        "binders": [
+          {
+            "mumei_name": "a",
+            "lean_name": "a",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "b",
+            "lean_name": "b",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "c",
+            "lean_name": "c",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "p",
+            "lean_name": "p",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(p > 0) -> (ff_eq(result, ff_add(ff_mul(a, b, p), ff_mul(a, c, p), p), p))",
+        "provenance_span": {
+          "file": "std/algebra/finite_field.mm",
+          "line": 17,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "finite_field_lowering",
+          "mathlib4_bridge",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [
+          "finite_field_lowering: GF(p)-style helpers are lowered through MumeiLean.Algebra helpers."
+        ],
+        "proof_trace_hints": [
+          "try finite-field equality helpers before falling back to manual proof"
+        ],
+        "requires_bridge_lemmas": [
+          "mumei_finite_field_bridge"
+        ]
+      },
+      "symbol_provenance": [
+        {
+          "symbol_name": "ff_eq",
+          "source": "uninterpreted_function",
+          "location": null
+        },
+        {
+          "symbol_name": "ff_add",
+          "source": "uninterpreted_function",
+          "location": null
+        },
+        {
+          "symbol_name": "ff_mul",
+          "source": "uninterpreted_function",
+          "location": null
+        }
+      ],
+      "solver_process_metadata": {
+        "task_id": null,
+        "cache_key": "63b522b0b9a43678a296b330f74baa53d48eddfafc827baa3e0365bdb66a266c",
+        "generation_id": "",
+        "solver_config_fingerprint": "4eb8092c0cb08dd4c8d6494173a480c7fae3ce88feef61311d32f80092aad8dc",
+        "timeout_ms": 10000,
+        "cancel_reason": null,
+        "process_start_time": "",
+        "process_end_time": "2026-07-26T15:43:56Z"
+      }
+    }
+  ],
+  "certificate_hash": "4c5ffcfc4c70ecce9dbbfdb9bb43b8332eabc83e4cdcd61470e153c08c8b6ceb",
+  "all_verified": false
+}

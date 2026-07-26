@@ -779,6 +779,109 @@ The bridge records how long the Lean escalation took so callers can budget it:
 with zero cost when no Lean escalation candidate exists, so the timing surface
 is identical on both sides of the bridge.
 
+The automatic tactic search (§12) runs inside the same escalation window, so the
+seconds it consumes are added to the atom's `lean_solver_time_s`; there is no
+second timing channel.
+
+## 12. Automatic tactic search for residual obligations
+
+§5 selects a bridge lemma template per obligation class. Atoms no template
+matches fall back to the generic `mumei_arith` / `mumei_arith_deep` cascade, and
+atoms whose translation records a `manual_lemma_reason` (for example
+`unknown_obligation_requires_manual_lemma`) are not emitted at all — they wait
+for a hand-written lemma. `scripts/tactic_search.py` closes part of that residue
+automatically by *searching* for a tactic that discharges the already-rendered
+goal.
+
+### 12.1 Eligibility
+
+An atom is search-eligible iff all of the following hold:
+
+1. Its statement is faithful: neither `requires`, `ensures`, nor the body
+   translation is a partial translation (`is_partial`). A partially translated
+   statement does not represent the mumei obligation, so no tactic may promote
+   it.
+2. No custom bridge-proof generator (§5.11–§5.15) already owns the atom.
+3. Either a `manual_lemma_reason` is set (stage `residual`), or the atom's
+   generated proof failed `lake build` while using only the generic
+   `mumei_arith` / `mumei_arith_deep` fallback (stage `build_failure`).
+
+A `manual_lemma_reason` carried by the *certificate* (mumei's own
+`manual_lemma_reason` field) is a human-review marker and continues to block
+promotion in `scripts/export_cert.py` regardless of the search outcome.
+
+### 12.2 Candidate ladder
+
+The ladder is a fixed, ordered list; the search adopts the first entry that
+closes the goal, so the result is deterministic for a given goal and Lean
+toolchain:
+
+| # | Candidate id | Tactic |
+|---|---|---|
+| 1 | `omega` | `omega` |
+| 2 | `linarith` | `linarith` |
+| 3 | `nlinarith` | `nlinarith` |
+| 4 | `positivity` | `positivity` |
+| 5 | `norm_num` | `norm_num` |
+| 6 | `ring` | `ring1` |
+| 7 | `field_simp` | `field_simp` |
+| 8 | `decide` | `decide` |
+| 9 | `simp_arith` | `simp_all <;> omega` |
+| 10 | `mumei_field` | `mumei_field` |
+| 11 | `mumei_ff_mod` | `mumei_ff_mod` |
+| 12 | `aesop` | `aesop` |
+
+`mumei_ff_mod` (`MumeiLean/Tactics.lean`) is the modular-normalisation stage for
+finite-field goals stated through the `mumei_ff_*` helpers: it unfolds the
+helpers, collapses iterated `%` reductions with
+`Int.emod_emod_of_dvd _ (dvd_refl _)`, pushes the remaining `Int.mul_emod` /
+`Int.add_emod` rewrites through the product, and closes with `rfl` / `ring_nf` /
+`omega`. It is what discharges finite-field distributivity, the twelfth live
+generated theorem path (`ff_mul_add_distributive`).
+
+Every candidate is emitted as `(intros; <tactic>)` because generated statements
+are `requires → ensures` implications, exactly like the generic `mumei_arith`
+cascade it replaces.
+
+Candidates run against the *same rendered theorem* the bridge would emit: the
+probe module reuses `render_theorem()` with the candidate substituted for the
+fallback tactic, wrapped in a per-candidate namespace, so a probe success and
+the final emission agree by construction.
+
+### 12.3 Budget and determinism
+
+All candidates for one obligation are compiled in a single `lake env lean`
+invocation bounded by a per-obligation timeout
+(`--tactic-search-timeout`, default 300s) and
+`set_option maxHeartbeats 400000` per candidate. A candidate counts as
+successful only when the probe compile reports neither an error nor a `sorry`
+warning inside that candidate's line span. Timeout, missing `lake`, or an
+exhausted ladder all leave the atom exactly as it was.
+
+### 12.4 Metadata and soundness
+
+| Field | Meaning |
+|---|---|
+| `tactic_search.stage` | `residual` or `build_failure`. |
+| `tactic_search.adopted_tactic` | Candidate id adopted, or `null`. |
+| `tactic_search.candidates_tried` | Ladder entries considered up to and including the adopted one. |
+| `tactic_search.search_time_s` | Wall-clock seconds spent probing this obligation. |
+| `tactic_search.exhausted` | `true` when no candidate closed the goal. |
+| `tactic_search.timed_out` | `true` when the probe compile hit the per-obligation timeout. |
+| `diagnostics[]` | `tactic_search_adopted=<id>` on success, `tactic_search_exhausted` otherwise. |
+
+Soundness rules:
+
+1. An adopted tactic never promotes an atom on its own. The adopted tactic is
+   written into the generated module and the atom is promoted only if the real
+   `lake build` of that module then succeeds, with current contract constants
+   (§9).
+2. When no candidate succeeds, `manual_lemma_reason` is preserved verbatim and
+   the status stays `manual_lemma_required`; the search never rewrites or drops
+   the reason.
+3. The search does not add bridge lemmas to the catalog (§10), so it leaves
+   `translator_version` and `bridge_lemma_hash` unchanged.
+
 ## README translator contract
 
 External **Lean 4** proof backend for the [mumei](https://github.com/mumei-lang/mumei)

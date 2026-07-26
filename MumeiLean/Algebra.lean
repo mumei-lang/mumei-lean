@@ -304,6 +304,27 @@ theorem ff_mul_assoc_mod (a b c p : Int) :
   conv_rhs => rw [Int.mul_emod, Int.emod_emod_of_dvd _ (dvd_refl p)]
   rw [← Int.mul_emod, ← Int.mul_emod, mul_assoc]
 
+/-! ### Modular normalisation lemmas
+
+The `mumei_ff_*` helpers reduce modulo `p` at every step, so a generated
+finite-field goal carries one `% p` per operation. These lemmas pull an inner
+reduction out of a product / sum, which collapses an arbitrarily nested
+`mumei_ff_*` term into a single `polynomial % p`. `mumei_ff_mod`
+(`MumeiLean/Tactics.lean`) uses them as a `simp only` set, after which `ring_nf`
+compares the two polynomials. -/
+
+theorem emod_mul_emod_left (a b p : Int) : (a % p) * b % p = a * b % p := by
+  conv_lhs => rw [Int.mul_emod, Int.emod_emod_of_dvd _ (dvd_refl p), ← Int.mul_emod]
+
+theorem emod_mul_emod_right (a b p : Int) : a * (b % p) % p = a * b % p := by
+  conv_lhs => rw [Int.mul_emod, Int.emod_emod_of_dvd _ (dvd_refl p), ← Int.mul_emod]
+
+theorem emod_add_emod_left (a b p : Int) : ((a % p) + b) % p = (a + b) % p :=
+  Int.emod_add_emod a p b
+
+theorem emod_add_emod_right (a b p : Int) : (a + (b % p)) % p = (a + b) % p :=
+  Int.add_emod_emod a b p
+
 theorem ff_pow_zero (a p : Int) :
     mumei_ff_pow a 0 p = 1 % p := by
   unfold mumei_ff_pow

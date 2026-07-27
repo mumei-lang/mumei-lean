@@ -138,4 +138,73 @@ macro "mumei_ff_mod" : tactic =>
      | (rw [mul_add]; done)
      | omega))
 
+/-- List automation for generated goals stated through the `MumeiLean`
+list helpers (`mumei_count`, `mumei_sum`, `mumei_len`).
+
+The helpers are plain definitions, so neither `omega` nor `aesop` can see
+through them: the goal `0 ≤ mumei_count arr v` is an opaque atom for both. This
+stage unfolds the helpers together with the structural `List.length` /
+`List.mem` simp lemmas and closes the resulting arithmetic goal.
+
+It is the `mumei_list` entry of the automatic tactic search ladder
+(`docs/LEAN_TRANSLATOR_SPEC.md` §12.2). -/
+macro "mumei_list" : tactic =>
+  `(tactic|
+    (try simp only [ge_iff_le, MumeiLean.mumei_count, MumeiLean.mumei_sum,
+       MumeiLean.mumei_len, List.length_append, List.length_reverse,
+       List.length_cons, List.length_nil, List.mem_append, List.mem_cons]
+     first
+     | omega
+     | exact Int.ofNat_nonneg _
+     | positivity
+     | (simp_all; done)
+     | (simp; done)))
+
+/-- Order/lattice automation for generated goals whose shape is a `≤` / `<`
+chain rather than a linear-arithmetic identity.
+
+`omega` already decides linear `min` / `max` goals over `Int`, so this stage
+covers what it cannot: transitivity through hypotheses and monotonicity of
+products, where the ordering steps have to be applied structurally.
+
+It is the `mumei_order` entry of the automatic tactic search ladder
+(`docs/LEAN_TRANSLATOR_SPEC.md` §12.2). -/
+macro "mumei_order" : tactic =>
+  `(tactic|
+    (try simp only [ge_iff_le, min_def, max_def]
+     first
+     | omega
+     | (split_ifs <;> omega)
+     | (apply le_trans <;> assumption)
+     | (apply mul_le_mul <;>
+        first | assumption | positivity | omega | linarith)
+     | (gcongr <;> first | assumption | positivity | omega | linarith)))
+
+/-!
+## `mumei_induct`
+
+Structural induction for generated goals over a list or natural-number
+binder.
+
+Recursive helpers such as `mumei_count` only reduce once their list argument is
+in constructor form, so goals relating them to `List.length` need an induction
+step no closing tactic in the ladder performs. The binder is selected by type
+(`‹List Int›`, then `‹Nat›`), which keeps the tactic deterministic without
+naming the binder in the generated proof.
+
+It is the `mumei_induct` entry of the automatic tactic search ladder
+(`docs/LEAN_TRANSLATOR_SPEC.md` §12.2).
+
+`hygiene` is disabled for this macro only: `‹List Int›` has to resolve against
+the *caller's* local context to pick the binder to induct on. -/
+set_option hygiene false in
+macro "mumei_induct" : tactic =>
+  `(tactic|
+    (first
+     | (induction ‹List Int› <;>
+        simp_all [MumeiLean.mumei_count, MumeiLean.mumei_sum, List.filter] <;>
+        split <;> simp_all <;> omega)
+     | (induction ‹List Int› <;> simp_all <;> omega)
+     | (induction ‹Nat› <;> simp_all <;> omega)))
+
 end MumeiLean

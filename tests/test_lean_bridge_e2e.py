@@ -39,6 +39,9 @@ GENERATED_CEI = (
 GENERATED_SORT_LIST = (
     REPO_ROOT / "generated" / "Generated" / "Std" / "List.lean"
 )
+GENERATED_CORE_PREDICATES = (
+    REPO_ROOT / "generated" / "Generated" / "Std" / "Core_predicates.lean"
+)
 
 
 def _bridge_env() -> dict[str, str]:
@@ -111,6 +114,10 @@ def _cleanup_generated_settlement() -> None:
 
 def _cleanup_generated_finite_field() -> None:
     _cleanup_generated_file(GENERATED_FINITE_FIELD)
+
+
+def _cleanup_generated_core_predicates() -> None:
+    _cleanup_generated_file(GENERATED_CORE_PREDICATES)
 
 
 def _cleanup_generated_guard_trace() -> None:
@@ -570,6 +577,77 @@ def test_finite_field_distributivity_discharged_by_tactic_search(
         assert metadata["lean_solver_time_s"] > search["search_time_s"]
     finally:
         _cleanup_generated_finite_field()
+
+
+@pytest.mark.lake_available
+def test_predicate_guard_collapse_discharged_by_widened_ladder(
+    lake_available, tmp_path: Path
+):
+    """Thirteenth live path: `lean_verified` via the widened ladder (spec §12.2).
+
+    The obligation is a classically-valid, Peirce-shaped guard collapse over
+    predicate-parametric contracts: no bridge lemma template covers it, the
+    generic fallback proof fails to build, and none of the twelve arithmetic /
+    modular / field candidates close it — `tauto` does.
+    """
+    out_cert = tmp_path / "std_core_predicates_guard_collapse.lean-cert.json"
+    out_dir = REPO_ROOT / "generated"
+    _cleanup_generated_core_predicates()
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "std_core_predicates_guard_collapse.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+
+        _assert_bridge_ok(proc)
+        assert GENERATED_CORE_PREDICATES.exists()
+        assert "tauto" in GENERATED_CORE_PREDICATES.read_text()
+        payload = json.loads(out_cert.read_text())
+        atom = next(
+            a for a in payload["atoms"] if a["name"] == "predicate_guard_collapse"
+        )
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["status"] == "verified"
+        metadata = atom["lean_metadata"]
+        assert metadata["status"] == "lean_verified"
+        assert metadata["known_witness_used"] is False
+        assert metadata["lean_theorem_name"] == (
+            "Generated.Std.Core_predicates.predicate_guard_collapse_correct"
+        )
+        assert metadata["manual_lemma_reason"] is None
+        search = metadata["tactic_search"]
+        assert search["stage"] == "build_failure"
+        assert search["adopted_tactic"] == "tauto"
+        assert search["exhausted"] is False
+        assert search["timed_out"] is False
+        assert search["search_time_s"] > 0
+        # The pinned history (spec §12.5) records `tauto` for this class, so the
+        # ladder is probed in learned order and the adopted tactic is unchanged.
+        assert search["history_ranked"] is True
+        assert search["candidates_tried"] == ["tauto"]
+        # Search time is folded into the single `lean_solver_time_s` channel.
+        assert metadata["lean_solver_time_s"] > search["search_time_s"]
+    finally:
+        _cleanup_generated_core_predicates()
+
+
+@pytest.mark.lake_available
+def test_widened_ladder_goal_shapes_compile(lake_available):
+    """The new ladder entries close the goal shapes the spec claims (§12.2)."""
+    proc = subprocess.run(
+        ["lake", "env", "lean", str(FIXTURES / "tactic_ladder_driver.lean")],
+        cwd=str(REPO_ROOT),
+        env=_bridge_env(),
+        capture_output=True,
+        text=True,
+        timeout=900,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "error" not in proc.stdout
 
 
 @pytest.mark.lake_available

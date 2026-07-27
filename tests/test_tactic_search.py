@@ -60,6 +60,27 @@ def _residual_atom():
     return atom
 
 
+def test_ladder_widens_the_arithmetic_prefix_without_reordering_it():
+    """Spec §12.2: the new classes are appended, not interleaved."""
+    ladder = [candidate_id for candidate_id, _ in TACTIC_CANDIDATES]
+    assert ladder[:12] == [
+        "omega",
+        "linarith",
+        "nlinarith",
+        "positivity",
+        "norm_num",
+        "ring",
+        "field_simp",
+        "decide",
+        "simp_arith",
+        "mumei_field",
+        "mumei_ff_mod",
+        "aesop",
+    ]
+    assert ladder[12:] == ["tauto", "mumei_list", "mumei_order", "mumei_induct"]
+    assert len(set(ladder)) == len(ladder)
+
+
 def test_unfaithful_residual_atom_is_never_probed():
     """An untranslatable statement stays manual: probing it would be unsound."""
     atom = _residual_atom()

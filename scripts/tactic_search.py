@@ -37,11 +37,14 @@ from ingest_cert import (
     render_theorem,
     uses_generic_fallback_tactic,
 )
+from tactic_history import TacticSearchHistory
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 #: Ordered candidate ladder (spec §12.2). ``id`` is what lands in metadata,
-#: ``tactic`` is the Lean tactic emitted into the generated proof.
+#: ``tactic`` is the Lean tactic emitted into the generated proof. The first
+#: twelve entries cover arithmetic / modular / field goals; the tail widens the
+#: ladder to propositional, list, order and inductive goals.
 TACTIC_CANDIDATES: Tuple[Tuple[str, str], ...] = (
     ("omega", "omega"),
     ("linarith", "linarith"),
@@ -55,6 +58,10 @@ TACTIC_CANDIDATES: Tuple[Tuple[str, str], ...] = (
     ("mumei_field", "mumei_field"),
     ("mumei_ff_mod", "mumei_ff_mod"),
     ("aesop", "aesop"),
+    ("tauto", "tauto"),
+    ("mumei_list", "mumei_list"),
+    ("mumei_order", "mumei_order"),
+    ("mumei_induct", "mumei_induct"),
 )
 
 #: Per-candidate heartbeat bound, keeping a single candidate from eating the
@@ -86,6 +93,8 @@ class TacticSearchResult:
     exhausted: bool
     timed_out: bool
     skipped_reason: Optional[str] = None
+    history_ranked: bool = False
+    history_fingerprint: Optional[str] = None
 
     def as_metadata(self) -> dict:
         return {
@@ -95,7 +104,42 @@ class TacticSearchResult:
             "search_time_s": round(self.search_time_s, 3),
             "exhausted": self.exhausted,
             "timed_out": self.timed_out,
+            "history_ranked": self.history_ranked,
+            "history_fingerprint": self.history_fingerprint,
         }
+
+
+def obligation_class_of(atom: IngestedAtom) -> Optional[str]:
+    """Learning key for ``atom`` (spec §12.5).
+
+    The translator's ``obligation_class`` is preferred; certificates whose
+    translator IR predates it fall back to the goal's ``logic_fragment_tag``,
+    so goals of the same shape share a learned ranking.
+    """
+    if isinstance(atom.translator_ir, dict):
+        obligation_class = atom.translator_ir.get("obligation_class")
+        if isinstance(obligation_class, str) and obligation_class:
+            return obligation_class
+    if atom.logic_fragment_tag:
+        return atom.logic_fragment_tag
+    return None
+
+
+def ladder_for(
+    atom: IngestedAtom,
+    *,
+    stage: str,
+    history: Optional[TacticSearchHistory] = None,
+    candidates: Sequence[Tuple[str, str]] = TACTIC_CANDIDATES,
+) -> Tuple[Tuple[str, str], ...]:
+    """Ladder to probe for ``atom``, re-ranked by past runs when available."""
+    if history is None or history.is_empty:
+        return tuple(candidates)
+    return history.ordered_candidates(
+        candidates,
+        obligation_class=obligation_class_of(atom),
+        stage=stage,
+    )
 
 
 def is_search_eligible(atom: IngestedAtom, stage: str) -> bool:
@@ -191,12 +235,22 @@ def search_tactic(
     probe_dir: Optional[Path] = None,
     timeout_s: float = DEFAULT_TACTIC_SEARCH_TIMEOUT_S,
     candidates: Sequence[Tuple[str, str]] = TACTIC_CANDIDATES,
+    history: Optional[TacticSearchHistory] = None,
 ) -> TacticSearchResult:
     """Search the ladder for a tactic closing ``atom``'s generated goal.
 
     The atom is left untouched; callers apply ``adopted_tactic`` themselves.
+    When ``history`` is given the ladder is re-ranked by past successes for
+    this obligation class and stage (spec §12.5); the ranking is a pure
+    function of the pinned artifact, so the search stays deterministic.
     """
     started = time.monotonic()
+    declared = tuple(candidates)
+    # Spec §12.4: the flag reports a ranking that actually moved *this*
+    # obligation's ladder, not merely the presence of a history artifact.
+    candidates = ladder_for(atom, stage=stage, history=history, candidates=declared)
+    history_ranked = candidates != declared
+    history_fingerprint = history.fingerprint if history_ranked else None
     if not is_search_eligible(atom, stage):
         return TacticSearchResult(
             atom_name=atom.name,
@@ -207,8 +261,16 @@ def search_tactic(
             exhausted=False,
             timed_out=False,
             skipped_reason="not_eligible",
+            history_ranked=history_ranked,
+            history_fingerprint=history_fingerprint,
         )
 
+    candidates = ladder_for(
+        atom,
+        stage=stage,
+        history=history,
+        candidates=candidates,
+    )
     source, spans = build_probe_module(atom, candidates)
     probe_root = probe_dir or (REPO_ROOT / PROBE_DIR_NAME)
     probe_root.mkdir(parents=True, exist_ok=True)
@@ -233,6 +295,8 @@ def search_tactic(
             exhausted=False,
             timed_out=False,
             skipped_reason="lake_missing",
+            history_ranked=history_ranked,
+            history_fingerprint=history_fingerprint,
         )
     except subprocess.TimeoutExpired:
         return TacticSearchResult(
@@ -243,6 +307,8 @@ def search_tactic(
             search_time_s=time.monotonic() - started,
             exhausted=False,
             timed_out=True,
+            history_ranked=history_ranked,
+            history_fingerprint=history_fingerprint,
         )
 
     failed = _failed_candidates(proc.stdout + "\n" + proc.stderr, spans)
@@ -258,6 +324,8 @@ def search_tactic(
                 search_time_s=time.monotonic() - started,
                 exhausted=False,
                 timed_out=False,
+                history_ranked=history_ranked,
+                history_fingerprint=history_fingerprint,
             )
     return TacticSearchResult(
         atom_name=atom.name,
@@ -267,6 +335,8 @@ def search_tactic(
         search_time_s=time.monotonic() - started,
         exhausted=True,
         timed_out=False,
+        history_ranked=history_ranked,
+        history_fingerprint=history_fingerprint,
     )
 
 

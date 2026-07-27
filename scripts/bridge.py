@@ -69,7 +69,14 @@ try:
         TacticSearchResult,
         apply_search_result,
         is_search_eligible,
+        obligation_class_of,
         search_tactic,
+    )
+    from .tactic_history import (
+        HISTORY_PATH,
+        TacticSearchHistory,
+        load_history,
+        save_history,
     )
     from .bridge_metrics import (
         _aggregate_metrics,
@@ -118,7 +125,14 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
         TacticSearchResult,
         apply_search_result,
         is_search_eligible,
+        obligation_class_of,
         search_tactic,
+    )
+    from tactic_history import (  # type: ignore
+        HISTORY_PATH,
+        TacticSearchHistory,
+        load_history,
+        save_history,
     )
     from bridge_metrics import (  # type: ignore
         _aggregate_metrics,
@@ -472,6 +486,7 @@ def _run_tactic_search_stage(
     timeout_s: float,
     results: Dict[AtomKey, TacticSearchResult],
     repo_dir: Path,
+    history: Optional[TacticSearchHistory] = None,
 ) -> int:
     """Search the tactic ladder for every eligible atom in ``atoms``.
 
@@ -488,6 +503,7 @@ def _run_tactic_search_stage(
             lake_cmd=lake_cmd,
             timeout_s=timeout_s,
             probe_dir=repo_dir / ".tactic_search",
+            history=history,
         )
         if result.skipped_reason is not None:
             continue
@@ -507,6 +523,46 @@ def _run_tactic_search_stage(
                 + (" (timed out)" if result.timed_out else "")
             )
     return adopted
+
+
+def _record_tactic_search_history(
+    *,
+    history_path: Path,
+    atoms_per_payload: List[List[IngestedAtom]],
+    failed_per_payload: List[List[str]],
+    results: Dict[AtomKey, TacticSearchResult],
+) -> None:
+    """Persist the adopted tactics that actually built (spec §12.5).
+
+    Only adoptions whose regenerated theorem passed ``lake build`` are learned,
+    so the artifact never biases the ladder towards a tactic that merely
+    type-checked in the probe. The artifact is re-read here and this run's
+    successes are merged into it, so recording never drops earlier entries --
+    including when the run probed the declared order via
+    ``--no-tactic-search-history``.
+    """
+    history = load_history(history_path)
+    recorded = 0
+    for atoms, failed in zip(atoms_per_payload, failed_per_payload):
+        failed_names = set(failed)
+        for atom in atoms:
+            result = results.get(_atom_key(atom))
+            if result is None or result.adopted_tactic is None:
+                continue
+            if atom.name in failed_names:
+                continue
+            history.record_success(
+                obligation_class=obligation_class_of(atom),
+                stage=result.stage,
+                candidate=result.adopted_tactic,
+            )
+            recorded += 1
+    if recorded:
+        save_history(history, history_path)
+        print(
+            f"recorded {recorded} tactic search success(es) in {history_path} "
+            f"(fingerprint {history.fingerprint})"
+        )
 
 
 def _attribute_failures(
@@ -764,6 +820,25 @@ def main(argv: Optional[List[str]] = None) -> int:
         "(docs/LEAN_TRANSLATOR_SPEC.md §12).",
     )
     parser.add_argument(
+        "--tactic-search-history",
+        type=Path,
+        default=HISTORY_PATH,
+        metavar="PATH",
+        help="Pinned artifact whose recorded successes deterministically "
+        "re-rank the tactic search ladder (docs/LEAN_TRANSLATOR_SPEC.md §12.5).",
+    )
+    parser.add_argument(
+        "--no-tactic-search-history",
+        action="store_true",
+        help="Probe the declared ladder order, ignoring the learned ranking.",
+    )
+    parser.add_argument(
+        "--record-tactic-search-history",
+        action="store_true",
+        help="Write this run's adopted tactics back into the pinned history "
+        "artifact so the next run probes them first.",
+    )
+    parser.add_argument(
         "--tactic-search-timeout",
         type=float,
         default=DEFAULT_TACTIC_SEARCH_TIMEOUT_S,
@@ -889,6 +964,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     tactic_search_enabled = (
         not args.no_tactic_search and not args.no_build and lake_cmd is not None
     )
+    # Learned candidate order (spec §12.5): a pinned artifact, so the ranking
+    # is reproducible from the checkout alone.
+    tactic_search_history = (
+        TacticSearchHistory()
+        if args.no_tactic_search_history
+        else load_history(args.tactic_search_history)
+    )
+    if tactic_search_enabled and not tactic_search_history.is_empty:
+        print(
+            "tactic search ladder ranked by "
+            f"{args.tactic_search_history} "
+            f"(fingerprint {tactic_search_history.fingerprint})"
+        )
     for src_path, payload in payloads:
         atoms = collect_unknown_atoms(payload)
         if tactic_search_enabled:
@@ -902,6 +990,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 timeout_s=args.tactic_search_timeout,
                 results=tactic_search_results,
                 repo_dir=args.repo_dir,
+                history=tactic_search_history,
             )
         proof_atoms = [atom for atom in atoms if not atom.is_partial_translation]
         all_candidate_atoms.extend(atoms)
@@ -1112,6 +1201,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             timeout_s=args.tactic_search_timeout,
             results=tactic_search_results,
             repo_dir=args.repo_dir,
+            history=tactic_search_history,
         )
         if adopted:
             write_modules(all_atoms, args.out_dir, args.module_prefix)
@@ -1189,6 +1279,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         module_prefix=args.module_prefix,
         repo_dir=args.repo_dir,
     )
+
+    if args.record_tactic_search_history:
+        _record_tactic_search_history(
+            history_path=args.tactic_search_history,
+            atoms_per_payload=atoms_per_payload,
+            failed_per_payload=per_payload_failed,
+            results=tactic_search_results,
+        )
 
     metadata_per_payload = [
         _metadata_for_atoms(

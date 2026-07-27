@@ -10,7 +10,11 @@ import json
 import subprocess
 from pathlib import Path
 
-from bridge import _atom_key, _record_tactic_search_history
+from bridge import (
+    _atom_key,
+    _record_tactic_search_history,
+    _run_tactic_search_stage,
+)
 from ingest_cert import collect_unknown_atoms
 from tactic_history import (
     HISTORY_PATH,
@@ -263,6 +267,55 @@ def test_history_ranked_is_false_when_this_obligation_was_not_reordered(
     assert result.adopted_tactic == TACTIC_CANDIDATES[0][0]
     assert result.history_ranked is False
     assert result.history_fingerprint is None
+
+
+def _stage_run(atom, history, path: Path, monkeypatch, capsys) -> str:
+    class _Proc:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Proc())
+    _run_tactic_search_stage(
+        [atom],
+        STAGE_BUILD_FAILURE,
+        lake_cmd=["lake"],
+        timeout_s=5.0,
+        results={},
+        repo_dir=path,
+        history=history,
+        history_path=path / "history.json",
+    )
+    return capsys.readouterr().out
+
+
+def test_ranking_is_announced_only_when_an_obligation_was_reordered(
+    monkeypatch, tmp_path: Path, capsys
+):
+    """The log must not claim a ranking the search did not apply."""
+    unrelated = _history(
+        {
+            "obligation_class": "finite_field",
+            "stage": STAGE_BUILD_FAILURE,
+            "candidate": "mumei_ff_mod",
+        }
+    )
+    assert not unrelated.is_empty
+    assert "ladder ranked by" not in _stage_run(
+        _atom(GUARD_COLLAPSE_FIXTURE), unrelated, tmp_path, monkeypatch, capsys
+    )
+
+    atom = _atom(GUARD_COLLAPSE_FIXTURE)
+    applicable = _history(
+        {
+            "obligation_class": obligation_class_of(atom),
+            "stage": STAGE_BUILD_FAILURE,
+            "candidate": "tauto",
+        }
+    )
+    out = _stage_run(atom, applicable, tmp_path, monkeypatch, capsys)
+    assert "ladder ranked by" in out
+    assert str(tmp_path / "history.json") in out
 
 
 def test_recording_merges_into_the_artifact_instead_of_replacing_it(tmp_path: Path):

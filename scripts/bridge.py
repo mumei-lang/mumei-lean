@@ -487,6 +487,7 @@ def _run_tactic_search_stage(
     results: Dict[AtomKey, TacticSearchResult],
     repo_dir: Path,
     history: Optional[TacticSearchHistory] = None,
+    history_path: Optional[Path] = None,
 ) -> int:
     """Search the tactic ladder for every eligible atom in ``atoms``.
 
@@ -507,6 +508,15 @@ def _run_tactic_search_stage(
         )
         if result.skipped_reason is not None:
             continue
+        # Announced from the first obligation the artifact actually reordered,
+        # so the log never claims a ranking that did not happen (spec §12.4).
+        if result.history_ranked and not any(
+            other.history_ranked for other in results.values()
+        ):
+            print(
+                f"tactic search ladder ranked by {history_path or HISTORY_PATH} "
+                f"(fingerprint {result.history_fingerprint})"
+            )
         results[_atom_key(atom)] = result
         apply_search_result(atom, result)
         if result.adopted_tactic is not None:
@@ -971,12 +981,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.no_tactic_search_history
         else load_history(args.tactic_search_history)
     )
-    if tactic_search_enabled and not tactic_search_history.is_empty:
-        print(
-            "tactic search ladder ranked by "
-            f"{args.tactic_search_history} "
-            f"(fingerprint {tactic_search_history.fingerprint})"
-        )
     for src_path, payload in payloads:
         atoms = collect_unknown_atoms(payload)
         if tactic_search_enabled:
@@ -991,6 +995,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 results=tactic_search_results,
                 repo_dir=args.repo_dir,
                 history=tactic_search_history,
+                history_path=args.tactic_search_history,
             )
         proof_atoms = [atom for atom in atoms if not atom.is_partial_translation]
         all_candidate_atoms.extend(atoms)
@@ -1202,6 +1207,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             results=tactic_search_results,
             repo_dir=args.repo_dir,
             history=tactic_search_history,
+            history_path=args.tactic_search_history,
         )
         if adopted:
             write_modules(all_atoms, args.out_dir, args.module_prefix)

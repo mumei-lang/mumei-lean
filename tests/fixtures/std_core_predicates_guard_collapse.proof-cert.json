@@ -1,0 +1,125 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-27T03:20:00Z",
+  "mumei_version": "0.6.12",
+  "z3_version": "Z3 version 4.8.12 - 64 bit",
+  "file": "std/core_predicates.mm",
+  "atoms": [
+    {
+      "name": "predicate_guard_collapse",
+      "z3_check_result": "unknown",
+      "content_hash": "f2b7d1c9a4e60358b1d3f5a7c9e0b2d4f6a8c0e2d4b6f8a0c2e4d6b8f0a2c4e6",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "unknown_fragment",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "std/core_predicates.mm"
+        },
+        "traceability_hash": "5e0c2a4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d6a8c0e2f4b6d8a01",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 0,
+        "checked_refinements": 0,
+        "ensures_implication_checks": 0,
+        "diagnostics": [
+          "predicate-parametric guard collapse is routed to the Lean bridge after Z3 unknown"
+        ]
+      },
+      "proof_hash": "9c3e5a7f1b0d2468a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d6",
+      "dependencies": [],
+      "effects": [],
+      "requires": "(holds(p, x) ==> holds(q, x)) ==> holds(p, x)",
+      "ensures": "holds(p, x)",
+      "body_expr": "x",
+      "body_summary": "x",
+      "z3_result_class": "unknown",
+      "escalation_reason": "z3_unknown",
+      "logic_fragment_tag": "propositional",
+      "logic_fragment_tags": [
+        "propositional",
+        "predicate_parametric"
+      ],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "p": "p",
+        "q": "q",
+        "x": "x",
+        "result": "result"
+      },
+      "bridge_lemma_hash": "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347",
+      "translator_ir": {
+        "sort": "contract_obligation",
+        "binders": [
+          {
+            "mumei_name": "p",
+            "lean_name": "p",
+            "mumei_type": "predicate",
+            "lean_type": "Int → Prop",
+            "role": "param"
+          },
+          {
+            "mumei_name": "q",
+            "lean_name": "q",
+            "mumei_type": "predicate",
+            "lean_type": "Int → Prop",
+            "role": "param"
+          },
+          {
+            "mumei_name": "x",
+            "lean_name": "x",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "((holds(p, x) ==> holds(q, x)) ==> holds(p, x)) -> (holds(p, x))",
+        "provenance_span": {
+          "file": "std/core_predicates.mm",
+          "line": 34,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "refinement_predicate_lowering",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [
+          "refinement_predicate_lowering: mumei `holds(p, x)` is lowered to the Lean application `p x`."
+        ],
+        "proof_trace_hints": [
+          "classical propositional reasoning is required: the guard collapse is Peirce-shaped"
+        ],
+        "requires_bridge_lemmas": []
+      },
+      "symbol_provenance": [
+        {
+          "symbol_name": "holds",
+          "source": "builtin_function",
+          "location": null
+        }
+      ],
+      "solver_process_metadata": {
+        "task_id": null,
+        "cache_key": "7d1f3b5a9c0e2f4b6d8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f21",
+        "generation_id": "",
+        "solver_config_fingerprint": "4eb8092c0cb08dd4c8d6494173a480c7fae3ce88feef61311d32f80092aad8dc",
+        "timeout_ms": 10000,
+        "cancel_reason": null,
+        "process_start_time": "",
+        "process_end_time": "2026-07-27T03:20:00Z"
+      }
+    }
+  ],
+  "certificate_hash": "8b0d2a4c6e8f0b2d4a6c8e0f2b4d6a8c0e2f4b6d8a1c3e5f709b2d4a6c8e0f24",
+  "all_verified": false
+}

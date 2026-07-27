@@ -1,0 +1,17 @@
+{
+  "schema": "mumei-lean.tactic_search_history/v1",
+  "entries": [
+    {
+      "obligation_class": "finite_field",
+      "stage": "build_failure",
+      "candidate": "mumei_ff_mod",
+      "successes": 1
+    },
+    {
+      "obligation_class": "propositional",
+      "stage": "build_failure",
+      "candidate": "tauto",
+      "successes": 1
+    }
+  ]
+}

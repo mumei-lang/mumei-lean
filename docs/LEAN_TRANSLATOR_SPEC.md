@@ -830,6 +830,33 @@ toolchain:
 | 10 | `mumei_field` | `mumei_field` |
 | 11 | `mumei_ff_mod` | `mumei_ff_mod` |
 | 12 | `aesop` | `aesop` |
+| 13 | `tauto` | `tauto` |
+| 14 | `mumei_list` | `mumei_list` |
+| 15 | `mumei_order` | `mumei_order` |
+| 16 | `mumei_induct` | `mumei_induct` |
+
+Entries 1–12 cover arithmetic, modular and field goals. Entries 13–16 widen the
+ladder to the goal classes those tactics leave open, and are appended rather
+than interleaved so the adopted tactic for every previously searched goal is
+unchanged:
+
+* `tauto` — propositional goals over predicate-parametric contracts
+  (`holds(p, x)`, `==>`), including classically-valid shapes such as the
+  Peirce-shaped guard collapse that `aesop` does not close. It discharges
+  `predicate_guard_collapse`, the thirteenth live generated theorem path.
+* `mumei_list` — goals stated through the recursive list helpers
+  (`mumei_len`, `mumei_sum`, `mumei_count`). The helpers are opaque to `omega`,
+  so the tactic unfolds them together with `List.filter` / `List.length`
+  simplification before closing arithmetically.
+* `mumei_order` — order goals (`min` / `max` normalisation, transitivity,
+  monotonicity of products) whose closing step is an ordering lemma rather than
+  a linear-arithmetic decision.
+* `mumei_induct` — goals relating a recursive helper to a structural measure,
+  which only reduce after an induction on the list (or `Nat`) binder. The
+  binder is picked by type, keeping the emitted proof free of generated names.
+
+The four new tactics are defined in `MumeiLean/Tactics.lean` and their goal
+shapes are pinned by `tests/fixtures/tactic_ladder_driver.lean`.
 
 `mumei_ff_mod` (`MumeiLean/Tactics.lean`) is the modular-normalisation stage for
 finite-field goals stated through the `mumei_ff_*` helpers: it unfolds the
@@ -868,6 +895,8 @@ exhausted ladder all leave the atom exactly as it was.
 | `tactic_search.search_time_s` | Wall-clock seconds spent probing this obligation. |
 | `tactic_search.exhausted` | `true` when no candidate closed the goal. |
 | `tactic_search.timed_out` | `true` when the probe compile hit the per-obligation timeout. |
+| `tactic_search.history_ranked` | `true` when the learned ranking of §12.5 reordered the ladder for this obligation. |
+| `tactic_search.history_fingerprint` | sha256 of the history artifact that produced the ranking, or `null`. |
 | `diagnostics[]` | `tactic_search_adopted=<id>` on success, `tactic_search_exhausted` otherwise. |
 
 Soundness rules:
@@ -880,7 +909,61 @@ Soundness rules:
    the status stays `manual_lemma_required`; the search never rewrites or drops
    the reason.
 3. The search does not add bridge lemmas to the catalog (§10), so it leaves
-   `translator_version` and `bridge_lemma_hash` unchanged.
+   `translator_version` and `bridge_lemma_hash` unchanged. Widening the ladder
+   (§12.2) and learning a ranking (§12.5) are likewise proof-search changes, not
+   contract changes: they cannot make a goal provable that `lake build` rejects.
+
+### 12.5 Learned candidate order
+
+Re-probing candidates that have never closed a goal of the obligation class at
+hand is the ladder's main cost. The search therefore *learns* an order from past
+runs, under a restriction that keeps §12.3 intact: learning may only permute the
+ladder, never extend, shrink or randomise it.
+
+The learned state is a pinned, version-controlled artifact,
+`data/tactic_search_history.json` (schema
+`mumei-lean.tactic_search_history/v1`):
+
+```json
+{
+  "schema": "mumei-lean.tactic_search_history/v1",
+  "entries": [
+    {
+      "obligation_class": "finite_field",
+      "stage": "build_failure",
+      "candidate": "mumei_ff_mod",
+      "successes": 1
+    }
+  ]
+}
+```
+
+Rules:
+
+1. **Key.** Entries are keyed by `(obligation_class, stage)`. The class is the
+   translator IR's `obligation_class`; certificates whose IR predates that field
+   fall back to the atom's `logic_fragment_tag`, and otherwise to
+   `unclassified`.
+2. **Ranking.** For a given key, candidates are sorted by descending recorded
+   `successes`; ties — including every candidate with no record — keep the
+   declared ladder order of §12.2. The ranking is a permutation of the ladder,
+   so a recorded candidate that has since left the ladder is ignored and no
+   candidate is ever skipped.
+3. **Determinism.** The ranking is a pure function of the checked-in artifact,
+   so a checkout fully determines the search order. A run never rewrites the
+   artifact unless it is asked to with `bridge.py
+   --record-tactic-search-history`; `--no-tactic-search-history` probes the
+   declared order.
+4. **What is recorded.** Only adoptions whose regenerated theorem then passed
+   the real `lake build` are recorded, so the ranking can never be biased
+   towards a tactic that merely type-checked in the probe module.
+5. **Malformed state.** A missing, unreadable, non-matching-schema or
+   structurally invalid artifact learns nothing and the declared ladder order is
+   used; the search never fails because of its history.
+6. **Soundness.** Because a permutation cannot make an unprovable goal provable,
+   the learned order changes only *which* tactic is found first (and how fast),
+   never whether promotion is allowed — that still requires the real `lake
+   build` of §12.4.
 
 ## README translator contract
 

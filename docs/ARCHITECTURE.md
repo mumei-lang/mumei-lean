@@ -44,12 +44,12 @@ remain an explicit fallback with `known_witness_used = true`.
 The reference live path is
 `Generated.Std.Math.Abs.abs_saturating_correct`, emitted from
 `std/math/abs.mm::abs_saturating` body semantics and exported with
-`known_witness_used = false`. There are twelve live generated theorem paths in
+`known_witness_used = false`. There are thirteen live generated theorem paths in
 total (`abs_saturating`, `bounded_mul_with_overflow_check`,
 `constant_time_eq_flag`, `ff_zero_eq_zero`, `verified_insertion_sort_ascending`,
 `poly_bound_monotone`, `exists_pivot_partition`, `sum_nonneg_inductive`,
 `rtgs_transfer_conservation`, `ff_mul_commutative`, `ff_mul_associative`,
-`ff_mul_add_distributive`); see
+`ff_mul_add_distributive`, `predicate_guard_collapse`); see
 `docs/LEAN_HARNESS_CONTRACT.md` and `docs/LEAN_TRANSLATOR_SPEC.md` §5 for the
 per-path lowering.
 
@@ -372,7 +372,8 @@ The module models the relevant body result explicitly and then proves:
 | ✅ 有限体結合律の live generated path | this PR | `finite_field_associativity` bridge pattern（§5.15）で 11 番目の live path `ff_mul_associative` を追加。既存 catalog 補題のみを使うため `bridge_lemma_hash` は不変 |
 | ✅ CertParser.lean / CertWriter.lean ネイティブ実装 | #3 | `Lean.Data.Json` ベースの parse/write。`translator_version` / `bridge_lemma_hash` / `lean_solver_time_s` に加え unknown-escalation メタデータ（`z3_result_class` / `escalation_reason` / `logic_fragment_tags`）を round-trip（`tests/test_cert_roundtrip.py`） |
 | ✅ 実 std/ unknown atom の Lean 証明成功 | 完了 | Pilot 以外の実用的な std 証明例を `MumeiLean.StdMathAbs` に追加 |
-| ✅ 生成定理の自動タクティク探索 | this PR | `scripts/tactic_search.py` — 決定的な 12 候補 ladder を per-obligation timeout（`--tactic-search-timeout`, 既定 300s）付きで探索。`residual` / `build_failure` の 2 stage で残余 atom を探索し、採用タクティクを bridge proof として emit。探索時間は既存 `lean_solver_time_s` チャネルに加算。12 番目の live path `ff_mul_add_distributive` を `mumei_ff_mod` で discharge（`docs/LEAN_TRANSLATOR_SPEC.md` §12） |
+| ✅ 生成定理の自動タクティク探索 | #103 | `scripts/tactic_search.py` — 決定的な 12 候補 ladder を per-obligation timeout（`--tactic-search-timeout`, 既定 300s）付きで探索。`residual` / `build_failure` の 2 stage で残余 atom を探索し、採用タクティクを bridge proof として emit。探索時間は既存 `lean_solver_time_s` チャネルに加算。12 番目の live path `ff_mul_add_distributive` を `mumei_ff_mod` で discharge（`docs/LEAN_TRANSLATOR_SPEC.md` §12） |
+| ✅ tactic ladder の拡張と候補順序の学習 | this PR | ladder を 16 候補に拡張（`tauto` / `mumei_list` / `mumei_order` / `mumei_induct`）し、arithmetic / modular / field 以外の命題論理・リスト・順序・帰納目標をカバー（§12.2）。候補順序は pinned artifact `data/tactic_search_history.json`（`mumei-lean.tactic_search_history/v1`）に基づく決定的な並べ替えのみで学習し、ladder の permutation を超えない（§12.5）。実際の `lake build` で昇格した採用のみを記録。13 番目の live path `predicate_guard_collapse` を `tauto` で discharge |
 
 ### Planned
 

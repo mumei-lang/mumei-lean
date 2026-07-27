@@ -245,7 +245,11 @@ def search_tactic(
     function of the pinned artifact, so the search stays deterministic.
     """
     started = time.monotonic()
-    history_ranked = history is not None and not history.is_empty
+    declared = tuple(candidates)
+    # Spec §12.4: the flag reports a ranking that actually moved *this*
+    # obligation's ladder, not merely the presence of a history artifact.
+    candidates = ladder_for(atom, stage=stage, history=history, candidates=declared)
+    history_ranked = candidates != declared
     history_fingerprint = history.fingerprint if history_ranked else None
     if not is_search_eligible(atom, stage):
         return TacticSearchResult(

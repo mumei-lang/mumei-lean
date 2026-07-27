@@ -527,7 +527,6 @@ def _run_tactic_search_stage(
 
 def _record_tactic_search_history(
     *,
-    history: TacticSearchHistory,
     history_path: Path,
     atoms_per_payload: List[List[IngestedAtom]],
     failed_per_payload: List[List[str]],
@@ -537,8 +536,12 @@ def _record_tactic_search_history(
 
     Only adoptions whose regenerated theorem passed ``lake build`` are learned,
     so the artifact never biases the ladder towards a tactic that merely
-    type-checked in the probe.
+    type-checked in the probe. The artifact is re-read here and this run's
+    successes are merged into it, so recording never drops earlier entries --
+    including when the run probed the declared order via
+    ``--no-tactic-search-history``.
     """
+    history = load_history(history_path)
     recorded = 0
     for atoms, failed in zip(atoms_per_payload, failed_per_payload):
         failed_names = set(failed)
@@ -1279,7 +1282,6 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.record_tactic_search_history:
         _record_tactic_search_history(
-            history=tactic_search_history,
             history_path=args.tactic_search_history,
             atoms_per_payload=atoms_per_payload,
             failed_per_payload=per_payload_failed,

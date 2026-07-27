@@ -956,7 +956,10 @@ Rules:
    declared order.
 4. **What is recorded.** Only adoptions whose regenerated theorem then passed
    the real `lake build` are recorded, so the ranking can never be biased
-   towards a tactic that merely type-checked in the probe module.
+   towards a tactic that merely type-checked in the probe module. Recording
+   re-reads the artifact and merges the run's successes into it, so it is
+   additive even when the run itself probed the declared order with
+   `--no-tactic-search-history`.
 5. **Malformed state.** A missing, unreadable, non-matching-schema or
    structurally invalid artifact learns nothing and the declared ladder order is
    used; the search never fails because of its history.

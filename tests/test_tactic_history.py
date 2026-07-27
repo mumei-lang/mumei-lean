@@ -10,6 +10,7 @@ import json
 import subprocess
 from pathlib import Path
 
+from bridge import _atom_key, _record_tactic_search_history
 from ingest_cert import collect_unknown_atoms
 from tactic_history import (
     HISTORY_PATH,
@@ -22,6 +23,7 @@ from tactic_search import (
     STAGE_BUILD_FAILURE,
     STAGE_RESIDUAL,
     TACTIC_CANDIDATES,
+    TacticSearchResult,
     ladder_for,
     obligation_class_of,
     search_tactic,
@@ -229,3 +231,74 @@ def test_search_without_history_probes_the_declared_ladder(monkeypatch, tmp_path
     assert result.adopted_tactic == TACTIC_CANDIDATES[0][0]
     assert result.history_ranked is False
     assert result.history_fingerprint is None
+
+
+def test_history_ranked_is_false_when_this_obligation_was_not_reordered(
+    monkeypatch, tmp_path: Path
+):
+    """Spec §12.4: the flag reports a ranking, not the mere existence of one."""
+    atom = _atom(FF_DISTRIB_FIXTURE)
+    history = _history(
+        {
+            "obligation_class": "propositional",
+            "stage": STAGE_BUILD_FAILURE,
+            "candidate": "tauto",
+        }
+    )
+    assert not history.is_empty
+
+    class _Proc:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Proc())
+    result = search_tactic(
+        atom,
+        stage=STAGE_BUILD_FAILURE,
+        probe_dir=tmp_path,
+        timeout_s=5.0,
+        history=history,
+    )
+    assert result.adopted_tactic == TACTIC_CANDIDATES[0][0]
+    assert result.history_ranked is False
+    assert result.history_fingerprint is None
+
+
+def test_recording_merges_into_the_artifact_instead_of_replacing_it(tmp_path: Path):
+    """Spec §12.5 rule 4: recording is additive, never a truncating rewrite."""
+    atom = _atom(GUARD_COLLAPSE_FIXTURE)
+    path = save_history(
+        _history(
+            {
+                "obligation_class": "finite_field",
+                "stage": STAGE_BUILD_FAILURE,
+                "candidate": "mumei_ff_mod",
+            }
+        ),
+        tmp_path / "history.json",
+    )
+    result = TacticSearchResult(
+        atom_name=atom.name,
+        stage=STAGE_BUILD_FAILURE,
+        adopted_tactic="tauto",
+        candidates_tried=["tauto"],
+        search_time_s=0.1,
+        exhausted=False,
+        timed_out=False,
+    )
+    # A run that probed the declared order (``--no-tactic-search-history``)
+    # still merges its successes into the pinned artifact.
+    _record_tactic_search_history(
+        history_path=path,
+        atoms_per_payload=[[atom]],
+        failed_per_payload=[[]],
+        results={_atom_key(atom): result},
+    )
+    merged = load_history(path)
+    assert merged.successes[("finite_field", STAGE_BUILD_FAILURE)] == {
+        "mumei_ff_mod": 1
+    }
+    assert merged.successes[
+        (obligation_class_of(atom), STAGE_BUILD_FAILURE)
+    ] == {"tauto": 1}

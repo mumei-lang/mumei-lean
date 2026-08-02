@@ -219,9 +219,9 @@ PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest \
 
 The Lake-marked sort ascending test should run and pass when `lake` is available; if it skips unexpectedly, check that `lake` is on `PATH` and that the fixture drivers compile with the pinned Lean toolchain.
 
-## Live Generated Theorem Paths (11 total)
+## Live Generated Theorem Paths (13 total)
 
-The bridge ships eleven live generated theorem paths. Each lowers a Z3 `unknown`
+The bridge ships thirteen live generated theorem paths. Each lowers a Z3 `unknown`
 (or `spurious_candidate`) atom to a generated Lean theorem that builds with
 `known_witness_used = false`:
 
@@ -236,6 +236,8 @@ The bridge ships eleven live generated theorem paths. Each lowers a Z3 `unknown`
 9. `rtgs_transfer_conservation` — RTGS balance conservation via `mumei_arith`.
 10. `ff_mul_commutative` — finite-field commutativity (`ff_eq` over swapped `ff_mul` operands) via `MumeiLean.Algebra.ff_mul_comm_eq`.
 11. `ff_mul_associative` — finite-field associativity (`ff_eq` over a re-associated `ff_mul` nesting) via `MumeiLean.Algebra.ff_mul_assoc_mod` + `ff_eq_refl`, selected by `translator_ir.bridge_pattern == "finite_field_associativity"`.
+12. `ff_mul_add_distributive` — finite-field distributivity with no bridge lemma template; the deterministic tactic search (`scripts/tactic_search.py`) adopts `mumei_ff_mod`.
+13. `predicate_guard_collapse` — predicate-parametric, classically-valid guard collapse; the widened ladder adopts `tauto`.
 
 Focused pytest coverage for paths 9–11, Lake required:
 

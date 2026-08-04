@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-02: Live path count synced to thirteen
+
+- Synced the live generated theorem path count from **eleven** to **thirteen** in `docs/LEAN_HARNESS_CONTRACT.md` and `.agents/skills/testing-mumei-lean-live-generated/SKILL.md`, matching `docs/ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/LEAN_TRANSLATOR_SPEC.md`, and the E2E fixtures. `translator_version` stays `mumei-lean-translator-ir-v2` and `bridge_lemma_hash` stays `ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347`.
+- Recorded the 12th live generated theorem path `std/algebra/finite_field.mm::ff_mul_add_distributive` (`tests/fixtures/std_algebra_finite_field_ff_mul_add_distributive.proof-cert.json`): a `finite_field_obligation` that no bridge lemma template covers, adopted by the deterministic tactic search (`scripts/tactic_search.py`, §12) as `mumei_ff_mod`, building `Generated.Std.Algebra.Finite_field.ff_mul_add_distributive_correct` with `known_witness_used = false`.
+- Recorded the 13th live generated theorem path `std/core_predicates.mm::predicate_guard_collapse` (`tests/fixtures/std_core_predicates_guard_collapse.proof-cert.json`): a predicate-parametric, classically-valid guard collapse discharged by `tauto` from the widened 16-candidate ladder (§12.2), building `Generated.Std.Core_predicates.predicate_guard_collapse_correct` with `known_witness_used = false`. Both search-adopted paths substitute tactics only, so `bridge_lemma_hash` is unchanged.
+
 ## 2026-07-26: Finite-field associativity bridge as 11th live generated theorem path
 
 - Added the 11th live generated theorem path `std/algebra/finite_field.mm::ff_mul_associative` (§5.15): an `ff_eq` obligation comparing a left-associated `ff_mul` body with its right-associated form (Z3 `unknown` on the nested `%` interaction), discharged by rewriting with `MumeiLean.Algebra.ff_mul_assoc_mod` and closing with `ff_eq_refl`, `known_witness_used = false`. `ff_add` is covered by the same lowering through `ff_add_assoc_mod`.

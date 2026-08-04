@@ -61,7 +61,7 @@ hand-written `MumeiLean.StdMathAbs` witness.
 
 ### Live generated theorem paths
 
-The bridge ships eleven live generated theorem paths. Each lowers a Z3 `unknown`
+The bridge ships thirteen live generated theorem paths. Each lowers a Z3 `unknown`
 (or spurious-candidate) atom to a generated Lean theorem that Lake builds with
 `known_witness_used = false`:
 
@@ -128,6 +128,23 @@ The bridge ships eleven live generated theorem paths. Each lowers a Z3 `unknown`
   `MumeiLean.Algebra.ff_eq_refl`, with `known_witness_used = false`. This is the
   eleventh live generated theorem path; both backing lemmas already exist, so it
   leaves `bridge_lemma_hash` unchanged.
+- `std/algebra/finite_field.mm::ff_mul_add_distributive`: the finite-field
+  distributivity path emits
+  `Generated.Std.Algebra.Finite_field.ff_mul_add_distributive_correct`; no
+  bridge lemma template covers the goal, so the deterministic tactic search
+  (`scripts/tactic_search.py`, `docs/LEAN_TRANSLATOR_SPEC.md` §12) adopts
+  `mumei_ff_mod` and Lake builds the regenerated theorem with
+  `known_witness_used = false`. This is the twelfth live generated theorem path;
+  the search only substitutes tactics, so `bridge_lemma_hash` is unchanged.
+- `std/core_predicates.mm::predicate_guard_collapse`: the predicate-parametric
+  guard-collapse path emits
+  `Generated.Std.Core_predicates.predicate_guard_collapse_correct`; the goal is
+  classically valid but closed by none of the arithmetic / modular / field
+  candidates, so the widened ladder (§12.2) adopts `tauto` and Lake builds the
+  regenerated theorem with `known_witness_used = false`. This is the thirteenth
+  live generated theorem path; candidate order is learned from the pinned
+  `data/tactic_search_history.json` as a deterministic permutation of the
+  declared ladder, and `bridge_lemma_hash` is unchanged.
 
 ## Scope
 

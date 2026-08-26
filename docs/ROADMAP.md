@@ -19,7 +19,7 @@ For a distributed bundle, locate the referenced certificate using its
 `artifact_paths`, inspect the matching `lean_provenance` entry, and confirm the
 atom has `z3_check_result == "lean_verified"`, current `translator_version` and
 `bridge_lemma_hash`, and an understood `manual_lemma_reason`. Re-run
-`mumei verify-cert <certificate> <source> --strict`; on an mumei acceptance path
+`mumei verify-cert <certificate> <source> --strict`; on a mumei acceptance path
 that permits Lean results, pass `--allow-lean-verified` explicitly. A mismatch
 remains `stale_translator` and is not promoted.
 

@@ -8,6 +8,23 @@ contract that callers can use to validate inputs, generated Lean, `lake build`,
 
 The cross-project roadmap is the sole upper roadmap. This contract uses the canonical field names `harness_contract`, `intent_fidelity`, `artifact_paths`, `budget_policy_fingerprint`, and `lean_verified` without aliases. The docs-sync and code-surface contract is pinned by `tests/test_contract_vocabulary.py` so `lean_verified`, `stale_translator`, `translator_version`, and `bridge_lemma_hash` do not drift. The test covers docs text, Python bridge code constants (`scripts/export_cert.py` `TRANSLATOR_VERSION` / `BRIDGE_LEMMA_HASH` ↔ document pinned values), and code-surface alias drift in docstrings, argparse help, and user-visible output strings across `scripts/export_cert.py`, `scripts/bridge.py`, `scripts/ingest_cert.py`, and `scripts/bridge_harness.py`.
 
+## Distributed bundle consumer procedure
+
+When consuming a distributed proof bundle, use `artifact_paths` to locate the
+per-module certificate and source, then select the module and atom from
+`lean_provenance`. Confirm `z3_check_result == "lean_verified"` and verify the
+entry's `translator_version`, `bridge_lemma_hash`, and `manual_lemma_reason`.
+Re-run the packaged certificate with:
+
+```bash
+mumei verify-cert <certificate> <source> --strict
+```
+
+If the mumei acceptance path is configured to accept Lean-proved atoms, pass
+`--allow-lean-verified` explicitly as well. The certificate and provenance must
+agree with the current translator contract; otherwise the result is
+`stale_translator` and must remain unproven.
+
 
 ## Unknown obligation bridge contract
 

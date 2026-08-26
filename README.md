@@ -4,6 +4,22 @@ External **Lean 4** proof backend for the [mumei](https://github.com/mumei-lang/
 
 For P9-G NLAE integration, mumei-lean is the Fidelity Checker: it confirms that reconstructed `.mm` obligations can become `lean_verified` certificates, including live generated theorem paths.
 
+## Distributed proof bundle verification
+
+mumei release bundles expose per-module certificates and a bundle-level
+`lean_provenance` index. Consumers use `artifact_paths` to locate each
+certificate and source, confirm `z3_check_result: "lean_verified"` together
+with the current `translator_version`, `bridge_lemma_hash`, and
+`manual_lemma_reason`, and re-run:
+
+```bash
+mumei verify-cert <certificate> <source> --strict
+```
+
+Use `--allow-lean-verified` explicitly on mumei acceptance paths that permit
+Lean results. A translator or bridge-lemma mismatch is `stale_translator`, not
+a successful proof.
+
 ## Unknown obligation bridge contract
 
 The promoted path is: select Z3 `unknown` atoms, translate them with typed metadata, build generated Lean, export a certificate with `translator_version` and `bridge_lemma_hash`, and let mumei accept only matching `lean_verified` results. Eight live theorem paths are covered: `abs_saturating`, `bounded_mul_with_overflow_check`, `constant_time_eq_flag`, `ff_zero_eq_zero`, `verified_insertion_sort_ascending`, `poly_bound_monotone`, `exists_pivot_partition`, and `sum_nonneg_inductive`. See [`docs/LEAN_HARNESS_CONTRACT.md`](docs/LEAN_HARNESS_CONTRACT.md) for per-path details.

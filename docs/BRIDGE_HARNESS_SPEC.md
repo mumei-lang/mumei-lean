@@ -11,6 +11,18 @@ For the artifact-level contract covering `.proof-cert.json`, generated Lean,
 
 Vocabulary is inherited from the cross-project roadmap: `harness_contract`, `intent_fidelity`, `artifact_paths`, `budget_policy_fingerprint`, and `lean_verified` are the only canonical field names.
 
+## Distributed bundle verification
+
+Consumers of a distributed `std-proof-bundle.json` should use its
+`artifact_paths` to locate the packaged per-module certificate and source, then
+check the corresponding `lean_provenance` entry. Promotion requires
+`z3_check_result == "lean_verified"` plus matching `translator_version` and
+`bridge_lemma_hash`; `manual_lemma_reason` must be inspected and must not hide an
+unresolved manual obligation. Re-run the packaged certificate with
+`mumei verify-cert <certificate> <source> --strict`. Where the mumei acceptance
+path allows Lean results, add `--allow-lean-verified` explicitly. Any metadata
+mismatch remains `stale_translator` and is not proven.
+
 
 ## Unknown obligation bridge contract
 

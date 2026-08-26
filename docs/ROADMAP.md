@@ -6,6 +6,23 @@
 
 Promotion to `lean_verified` requires a successful Lean build plus matching `translator_version` and `bridge_lemma_hash` in both the exported atom and `lean_result_metadata`; mismatches are `stale_translator`. PRs that update this roadmap should review the cross-project roadmap in the same diff and record relevant bridge regression commands from `tests/`.
 
+### Priority 17 bridge surface
+
+The mumei `docs/CROSS_PROJECT_ROADMAP.md` is canonical for the cross-project
+Priority 17 contract. This local checkpoint records only the Lean-relevant
+surface: distributed proof bundles expose `lean_provenance` entries whose
+`z3_check_result` is `"lean_verified"` together with `translator_version`,
+`bridge_lemma_hash`, and `manual_lemma_reason`. Consumers must preserve
+`stale_translator` as the signal for translator or bridge-lemma drift.
+
+For a distributed bundle, locate the referenced certificate using its
+`artifact_paths`, inspect the matching `lean_provenance` entry, and confirm the
+atom has `z3_check_result == "lean_verified"`, current `translator_version` and
+`bridge_lemma_hash`, and an understood `manual_lemma_reason`. Re-run
+`mumei verify-cert <certificate> <source> --strict`; on a mumei acceptance path
+that permits Lean results, pass `--allow-lean-verified` explicitly. A mismatch
+remains `stale_translator` and is not promoted.
+
 Run the local contract vocabulary gate before opening a PR that touches `README.md`, `docs/LEAN_HARNESS_CONTRACT.md`, `docs/INTEGRATION.md`, or the bridge scripts:
 
 ```bash

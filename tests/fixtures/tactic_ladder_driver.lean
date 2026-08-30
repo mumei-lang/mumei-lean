@@ -40,4 +40,23 @@ example (a b c d : Int) (h1 : a ≤ b) (h2 : 0 ≤ c) (h3 : c ≤ d) (h4 : 0 ≤
 example (arr : List Int) (v : Int) : mumei_count arr v ≤ (arr.length : Int) := by
   intros; mumei_induct
 
+/-- Finite-field exponentiation class (`mumei_ff_pow`): expanding a power into
+repeated modular multiplication needs the `Int.toNat` literal reduction and a
+reduction pulled out from under the exponent, neither of which `mumei_ff_mod`
+covers. -/
+example (a p : Int) :
+    p > 0 → MumeiLean.Algebra.mumei_ff_eq (MumeiLean.Algebra.mumei_ff_pow a 2 p)
+      (MumeiLean.Algebra.mumei_ff_mul a a p) p := by
+  intros; mumei_ff_pow
+
+/-- Finite-field exponentiation class (`mumei_ff_pow`): a power distributing
+over a modular product, where the reduction sits under the exponent on both
+sides. -/
+example (a b p : Int) :
+    MumeiLean.Algebra.mumei_ff_eq
+      (MumeiLean.Algebra.mumei_ff_pow (MumeiLean.Algebra.mumei_ff_mul a b p) 2 p)
+      (MumeiLean.Algebra.mumei_ff_mul (MumeiLean.Algebra.mumei_ff_pow a 2 p)
+        (MumeiLean.Algebra.mumei_ff_pow b 2 p) p) p := by
+  intros; mumei_ff_pow
+
 end TacticLadderDriver

@@ -636,6 +636,61 @@ def test_predicate_guard_collapse_discharged_by_widened_ladder(
 
 
 @pytest.mark.lake_available
+def test_finite_field_pow_expansion_discharged_by_tactic_search(
+    lake_available, tmp_path: Path
+):
+    """Fourteenth live path: `lean_verified` via the `mumei_ff_pow` stage (§12.2).
+
+    The obligation expands a modular square into repeated modular
+    multiplication. No bridge lemma template covers it, and `mumei_ff_mod` does
+    not reach under the exponent (`Int.toNat` literal, reduction below `^`), so
+    the ladder tail entry `mumei_ff_pow` is what closes it.
+    """
+    out_cert = tmp_path / "std_algebra_finite_field_pow.lean-cert.json"
+    out_dir = REPO_ROOT / "generated"
+    _cleanup_generated_finite_field()
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(
+                FIXTURES
+                / "std_algebra_finite_field_ff_pow_square_expands.proof-cert.json"
+            ),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+
+        _assert_bridge_ok(proc)
+        assert GENERATED_FINITE_FIELD.exists()
+        assert "mumei_ff_pow" in GENERATED_FINITE_FIELD.read_text()
+        payload = json.loads(out_cert.read_text())
+        atom = next(
+            a for a in payload["atoms"] if a["name"] == "ff_pow_square_expands"
+        )
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["status"] == "verified"
+        metadata = atom["lean_metadata"]
+        assert metadata["status"] == "lean_verified"
+        assert metadata["known_witness_used"] is False
+        assert metadata["lean_theorem_name"] == (
+            "Generated.Std.Algebra.Finite_field.ff_pow_square_expands_correct"
+        )
+        assert metadata["manual_lemma_reason"] is None
+        search = metadata["tactic_search"]
+        assert search["stage"] == "build_failure"
+        assert search["adopted_tactic"] == "mumei_ff_pow"
+        assert search["exhausted"] is False
+        assert search["timed_out"] is False
+        assert search["search_time_s"] > 0
+        # Search time is folded into the single `lean_solver_time_s` channel.
+        assert metadata["lean_solver_time_s"] > search["search_time_s"]
+    finally:
+        _cleanup_generated_finite_field()
+
+
+@pytest.mark.lake_available
 def test_widened_ladder_goal_shapes_compile(lake_available):
     """The new ladder entries close the goal shapes the spec claims (§12.2)."""
     proc = subprocess.run(

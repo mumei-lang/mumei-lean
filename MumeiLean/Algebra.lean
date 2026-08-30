@@ -325,6 +325,13 @@ theorem emod_add_emod_left (a b p : Int) : ((a % p) + b) % p = (a + b) % p :=
 theorem emod_add_emod_right (a b p : Int) : (a + (b % p)) % p = (a + b) % p :=
   Int.add_emod_emod a b p
 
+theorem emod_pow_emod (a p : Int) (n : Nat) : (a % p) ^ n % p = a ^ n % p := by
+  induction n with
+  | zero => simp
+  | succ k ih =>
+      rw [pow_succ, pow_succ, Int.mul_emod, ih, ← Int.mul_emod, Int.mul_emod,
+        Int.emod_emod_of_dvd _ (dvd_refl p), ← Int.mul_emod]
+
 theorem ff_pow_zero (a p : Int) :
     mumei_ff_pow a 0 p = 1 % p := by
   unfold mumei_ff_pow

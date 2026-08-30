@@ -44,7 +44,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #: Ordered candidate ladder (spec §12.2). ``id`` is what lands in metadata,
 #: ``tactic`` is the Lean tactic emitted into the generated proof. The first
 #: twelve entries cover arithmetic / modular / field goals; the tail widens the
-#: ladder to propositional, list, order and inductive goals.
+#: ladder to propositional, list, order, inductive and modular-exponentiation
+#: goals.
 TACTIC_CANDIDATES: Tuple[Tuple[str, str], ...] = (
     ("omega", "omega"),
     ("linarith", "linarith"),
@@ -62,6 +63,7 @@ TACTIC_CANDIDATES: Tuple[Tuple[str, str], ...] = (
     ("mumei_list", "mumei_list"),
     ("mumei_order", "mumei_order"),
     ("mumei_induct", "mumei_induct"),
+    ("mumei_ff_pow", "mumei_ff_pow"),
 )
 
 #: Per-candidate heartbeat bound, keeping a single candidate from eating the

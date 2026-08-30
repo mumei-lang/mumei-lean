@@ -834,8 +834,9 @@ toolchain:
 | 14 | `mumei_list` | `mumei_list` |
 | 15 | `mumei_order` | `mumei_order` |
 | 16 | `mumei_induct` | `mumei_induct` |
+| 17 | `mumei_ff_pow` | `mumei_ff_pow` |
 
-Entries 1–12 cover arithmetic, modular and field goals. Entries 13–16 widen the
+Entries 1–12 cover arithmetic, modular and field goals. Entries 13–17 widen the
 ladder to the goal classes those tactics leave open, and are appended rather
 than interleaved so the adopted tactic for every previously searched goal is
 unchanged:
@@ -854,8 +855,15 @@ unchanged:
 * `mumei_induct` — goals relating a recursive helper to a structural measure,
   which only reduce after an induction on the list (or `Nat`) binder. The
   binder is picked by type, keeping the emitted proof free of generated names.
+* `mumei_ff_pow` — finite-field goals containing `mumei_ff_pow`, i.e. modular
+  exponentiation. `mumei_ff_mod` normalises products and sums but leaves both
+  the `Int.toNat` exponent literal and a reduction sitting under the exponent
+  (`(a % p) ^ n % p`) in place; this stage adds `Int.reduceToNat` and
+  `MumeiLean.Algebra.emod_pow_emod` so a power term also collapses into a single
+  `polynomial % p`. It discharges `ff_pow_square_expands`, the fourteenth live
+  generated theorem path.
 
-The four new tactics are defined in `MumeiLean/Tactics.lean` and their goal
+The five new tactics are defined in `MumeiLean/Tactics.lean` and their goal
 shapes are pinned by `tests/fixtures/tactic_ladder_driver.lean`.
 
 `mumei_ff_mod` (`MumeiLean/Tactics.lean`) is the modular-normalisation stage for

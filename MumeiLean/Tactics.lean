@@ -138,6 +138,36 @@ macro "mumei_ff_mod" : tactic =>
      | (rw [mul_add]; done)
      | omega))
 
+/-- Modular normalisation for finite-field goals whose terms also contain
+`MumeiLean.Algebra.mumei_ff_pow` exponentiations.
+
+`mumei_ff_pow a e p` reduces to `a ^ e.toNat % p`, so a goal relating a power to
+its expansion carries both a `Int.toNat` literal and a reduction under the
+exponent. `mumei_ff_mod` leaves those in place: neither the literal nor
+`(a % p) ^ n % p` is covered by its rewrite set. This stage adds the `toNat`
+literal reduction and `MumeiLean.Algebra.emod_pow_emod` so that a power term
+also collapses into a single `polynomial % p`, then compares polynomials.
+
+It is the `mumei_ff_pow` entry of the automatic tactic search ladder
+(`docs/LEAN_TRANSLATOR_SPEC.md` §12.2). -/
+macro "mumei_ff_pow" : tactic =>
+  `(tactic|
+    (simp only [MumeiLean.Algebra.mumei_ff_eq, MumeiLean.Algebra.mumei_ff_add,
+       MumeiLean.Algebra.mumei_ff_sub, MumeiLean.Algebra.mumei_ff_mul,
+       MumeiLean.Algebra.mumei_ff_pow, MumeiLean.Algebra.mumei_ff_one,
+       MumeiLean.Algebra.mumei_ff_zero, Int.reduceToNat,
+       Int.emod_emod_of_dvd _ (dvd_refl _),
+       MumeiLean.Algebra.emod_mul_emod_left,
+       MumeiLean.Algebra.emod_mul_emod_right,
+       MumeiLean.Algebra.emod_add_emod_left,
+       MumeiLean.Algebra.emod_add_emod_right,
+       MumeiLean.Algebra.emod_pow_emod]
+     first
+     | done
+     | rfl
+     | (ring_nf; done)
+     | omega))
+
 /-- List automation for generated goals stated through the `MumeiLean`
 list helpers (`mumei_count`, `mumei_sum`, `mumei_len`).
 

@@ -78,7 +78,7 @@ hand-written `MumeiLean.StdMathAbs` witness.
 
 ### Live generated theorem paths
 
-The bridge ships thirteen live generated theorem paths. Each lowers a Z3 `unknown`
+The bridge ships fourteen live generated theorem paths. Each lowers a Z3 `unknown`
 (or spurious-candidate) atom to a generated Lean theorem that Lake builds with
 `known_witness_used = false`:
 
@@ -162,6 +162,14 @@ The bridge ships thirteen live generated theorem paths. Each lowers a Z3 `unknow
   live generated theorem path; candidate order is learned from the pinned
   `data/tactic_search_history.json` as a deterministic permutation of the
   declared ladder, and `bridge_lemma_hash` is unchanged.
+- `std/algebra/finite_field.mm::ff_pow_square_expands`: the modular
+  exponentiation path emits
+  `Generated.Std.Algebra.Finite_field.ff_pow_square_expands_correct`; no bridge
+  lemma template covers it and `mumei_ff_mod` does not reach under the exponent,
+  so the ladder tail entry `mumei_ff_pow` (§12.2) is adopted and Lake builds the
+  regenerated theorem with `known_witness_used = false`. This is the fourteenth
+  live generated theorem path; the search substitutes tactics only, so
+  `bridge_lemma_hash` is unchanged.
 
 ## Scope
 

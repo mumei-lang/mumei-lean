@@ -77,7 +77,13 @@ def test_ladder_widens_the_arithmetic_prefix_without_reordering_it():
         "mumei_ff_mod",
         "aesop",
     ]
-    assert ladder[12:] == ["tauto", "mumei_list", "mumei_order", "mumei_induct"]
+    assert ladder[12:] == [
+        "tauto",
+        "mumei_list",
+        "mumei_order",
+        "mumei_induct",
+        "mumei_ff_pow",
+    ]
     assert len(set(ladder)) == len(ladder)
 
 

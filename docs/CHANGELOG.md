@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-30: Modular exponentiation ladder stage as 14th live generated theorem path
+
+- Added the 17th tactic ladder candidate `mumei_ff_pow` (`MumeiLean/Tactics.lean`, `docs/LEAN_TRANSLATOR_SPEC.md` §12.2), appended after `mumei_induct` so no previously adopted candidate changes. It extends `mumei_ff_mod` with the `Int.toNat` exponent-literal reduction and the new supporting lemma `MumeiLean.Algebra.emod_pow_emod`, collapsing a `mumei_ff_pow` term into a single `polynomial % p`.
+- Recorded the 14th live generated theorem path `std/algebra/finite_field.mm::ff_pow_square_expands` (`tests/fixtures/std_algebra_finite_field_ff_pow_square_expands.proof-cert.json`): a Z3 `unknown` finite-field obligation that exhausted the 16-candidate ladder, now adopted as `mumei_ff_pow`, building `Generated.Std.Algebra.Finite_field.ff_pow_square_expands_correct` with `known_witness_used = false`.
+- `emod_pow_emod` is a supporting lemma, not an obligation-class catalog entry, so `translator_version` stays `mumei-lean-translator-ir-v2` and `bridge_lemma_hash` stays `ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347`.
+
 ## 2026-08-02: Live path count synced to thirteen
 
 - Synced the live generated theorem path count from **eleven** to **thirteen** in `docs/LEAN_HARNESS_CONTRACT.md` and `.agents/skills/testing-mumei-lean-live-generated/SKILL.md`, matching `docs/ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/LEAN_TRANSLATOR_SPEC.md`, and the E2E fixtures. `translator_version` stays `mumei-lean-translator-ir-v2` and `bridge_lemma_hash` stays `ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347`.

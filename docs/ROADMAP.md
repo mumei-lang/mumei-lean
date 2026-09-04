@@ -125,8 +125,11 @@ change to the contract constants must be synchronised across projects in the sam
   enumerated by `_unsupported_reasons` — wherever a sound lowering exists, so that fewer
   obligations end up as `partial_translation`. Every added construct updates
   [`docs/LEAN_TRANSLATOR_SPEC.md`](LEAN_TRANSLATOR_SPEC.md) §8 (`lowering_rules` catalog) and §10
-  (bridge lemma catalog), and requires recomputing `bridge_lemma_hash` via
-  `expr_translator.compute_bridge_lemma_hash()` and syncing every pinned copy of it.
+  (bridge lemma catalog). A change that adds catalog entries requires recomputing
+  `bridge_lemma_hash` via `expr_translator.compute_bridge_lemma_hash()` and syncing every pinned
+  copy of it; a lowering-only change leaves that hash untouched, so each extension must
+  separately assess whether the generated-Prop surface moved enough to warrant a
+  `translator_version` bump.
 - **(b) AI-generated proof ingestion path.** Add a new path in `scripts/ingest_cert.py` /
   `scripts/bridge.py` that accepts an AI-generated tactic script or witness lemma. Generalise the
   existing `IngestedAtom.auto_tactic` mechanism (which injects the tactic adopted by

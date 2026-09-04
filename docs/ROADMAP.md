@@ -94,3 +94,84 @@ PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest tests/test_contract_v
 PATH="$HOME/.elan/bin:$PATH" python -m pytest tests/test_cert_roundtrip.py tests/test_lean_bridge_e2e.py -q
 PATH="$HOME/.elan/bin:$PATH" lake build
 ```
+
+## AI-assisted proof ingestion and translator surface extension (proposed)
+
+Proposed / next task — not implemented. This is the `mumei-lean` receiving end of the
+mumei-agent task "Task 2-D: AI-driven Lean proof generation for unknown atoms", whose plan is
+still being written on the agent side; this section may be started in parallel with it or after
+it. As stated above, `mumei-lang/mumei/docs/CROSS_PROJECT_ROADMAP.md` owns the global order, so
+this work stays inside the narrow V1 rule for this repo (Z3 `unknown` complement only), and any
+change to the contract constants must be synchronised across projects in the same change set.
+
+### Background and motivation
+
+- Today a Z3 `unknown` obligation can only be discharged along three paths: deterministic
+  expression translation in `scripts/expr_translator.py`; the bridge-lemma templates in
+  `scripts/ingest_cert.py` together with the known witnesses in `scripts/known_witnesses.py`;
+  and the fixed tactic ladder in `scripts/tactic_search.py`
+  ([`docs/LEAN_TRANSLATOR_SPEC.md`](LEAN_TRANSLATOR_SPEC.md) §12). Everything else falls back to
+  a hand-written witness via `manual_lemma_reason` / `-- TODO: unproven`.
+- For the mumei-agent side to make AI-driven Lean proof generation work end to end, this repo
+  needs a path that accepts an externally (AI) supplied Lean proof body or tactic script and
+  promotes it only after a real `lake build` verifies it. No such receiving surface exists yet;
+  that is the gap.
+
+### Scope
+
+- **(a) Translator surface extension.** Incrementally lower the constructs that
+  `scripts/expr_translator.py` currently treats as partial — unsupported function calls,
+  `match` / inductive forms, regex, `==>` / implication, some `let` forms, i.e. the reasons
+  enumerated by `_unsupported_reasons` — wherever a sound lowering exists, so that fewer
+  obligations end up as `partial_translation`. Every added construct updates
+  [`docs/LEAN_TRANSLATOR_SPEC.md`](LEAN_TRANSLATOR_SPEC.md) §8 (`lowering_rules` catalog) and §10
+  (bridge lemma catalog). A change that adds catalog entries requires recomputing
+  `bridge_lemma_hash` via `expr_translator.compute_bridge_lemma_hash()` and syncing every pinned
+  copy of it; a lowering-only change leaves that hash untouched, so each extension must
+  separately assess whether the generated-Prop surface moved enough to warrant a
+  `translator_version` bump.
+- **(b) AI-generated proof ingestion path.** Add a new path in `scripts/ingest_cert.py` /
+  `scripts/bridge.py` that accepts an AI-generated tactic script or witness lemma. Generalise the
+  existing `IngestedAtom.auto_tactic` mechanism (which injects the tactic adopted by
+  `tactic_search`) so that an externally supplied proof body can be injected into
+  `render_theorem`. As with tactic search, an accepted proof is written into the generated module
+  and only promotes to `lean_verified` when a real `lake build` succeeds — it must not bypass any
+  of the `scripts/export_cert.py` gates.
+
+### Soundness guards
+
+- Never promote on trust in the AI output. Promotion keeps depending solely on
+  `_translator_contract_current` / `_lean_result_contract_current` in `scripts/export_cert.py`
+  plus a successful `lake build`. The regression baselines are the four Unknown-only bridge
+  acceptance conditions in [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) and the adversarial
+  "no false promotion" matrix in
+  `.agents/skills/testing-mumei-lean-live-generated/SKILL.md`.
+- A failed `lake build`, a remaining `sorry`, or an unresolved tactic leaves the atom as
+  `unknown` / `manual_lemma_required`, exactly as today.
+- The deterministic and fixture paths (`MUMEI_LEAN_SKIP_LIVE=1`, no Lake) skip the AI proof
+  generation path entirely and fall back to today's deterministic behaviour (known witnesses and
+  the tactic ladder only).
+- If the contract constants (`translator_version` / `bridge_lemma_hash`) change, update
+  `LEAN_TRANSLATOR_VERSION` / `LEAN_BRIDGE_LEMMA_HASH` in
+  `mumei-core/src/verification/types.rs` and the corresponding mumei-agent constants in the same
+  change set, and keep the drift guard in `tests/test_contract_vocabulary.py` green.
+
+### Iterative repair loop (downstream acceptance of AI proofs)
+
+- Under consideration: shape the `lake build` failure log (unsolved goals and friends, which the
+  build-log attribution in `scripts/export_cert.py` already attributes per atom) into structured
+  feedback returned to the AI side, so mumei-agent can run an iterative proof repair loop
+  (generate → build → error feedback → regenerate).
+
+### Positioning and dependencies
+
+- This task is the Lean-side counterpart of the mumei-agent "Task 2-D". Sub-task (a) is
+  worthwhile on its own, independently of any AI integration. Sub-task (b) advances together with
+  mumei-agent once the contract (escalation bundle / lean-cert schema) is agreed on both sides.
+- No implemented marker (✅) applies yet; this stays in proposed / next-task state. The existing
+  regression commands remain the reference gates:
+
+```bash
+PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest -q
+PATH="$HOME/.elan/bin:$PATH" lake build
+```

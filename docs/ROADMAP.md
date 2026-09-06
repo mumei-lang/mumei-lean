@@ -168,6 +168,7 @@ change to the contract constants must be synchronised across projects in the sam
 - This task is the Lean-side counterpart of the mumei-agent "Task 2-D". Sub-task (a) is
   worthwhile on its own, independently of any AI integration. Sub-task (b) advances together with
   mumei-agent once the contract (escalation bundle / lean-cert schema) is agreed on both sides.
+- Cross-repo ordering is fixed in [mumei `docs/CROSS_PROJECT_ROADMAP.md` Priority 25](https://github.com/mumei-lang/mumei/blob/develop/docs/CROSS_PROJECT_ROADMAP.md) (Track B). The mumei-lean items map as: sub-task (a) translator surface extension = **B-1** (Wave 1, may start immediately, one construct per PR, lowering-only so `bridge_lemma_hash` stays unchanged); sub-task (b) AI proof ingestion path = **B-2** (Wave 2, after the B-0 contract agreement: extended escalation-bundle schema, `ai_proof_used` / `ai_proof_attempts` lean-cert provenance); the iterative repair loop's structured `lake build` failure feedback = **B-3** (Wave 2, alongside B-2). The mumei-agent generation side (B-4 / B-5) starts only after B-2 / B-3 are on `develop`. B-2's acceptance gate extends the adversarial "no false promotion" matrix in `.agents/skills/testing-mumei-lean-live-generated/SKILL.md` with: AI proof containing `sorry`, failed `lake build`, unresolved tactic — none may promote to `lean_verified`.
 - No implemented marker (✅) applies yet; this stays in proposed / next-task state. The existing
   regression commands remain the reference gates:
 

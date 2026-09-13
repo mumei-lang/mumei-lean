@@ -354,6 +354,69 @@ def test_render_theorem_infers_result_type_through_block_body(
     assert ": Int :=" not in rendered.split(expected_def)[0], rendered
 
 
+@pytest.mark.parametrize(
+    ("body_expr", "ensures", "expected_def"),
+    [
+        ('{ if x == 0 { "a" } else { "b" } }', 'starts_with(result, "a")', "def condResult (x : Int) : String :="),
+        ("{ if x > 0 { [x] } else { [0] } }", "result[0] >= 0", "def condResult (x : Int) : List Int :="),
+        ("{ if x > 0 { true } else { false } }", "result", "def condResult (x : Int) : Prop :="),
+        ("{ if x > 0 { x } else { 0 } }", "result >= 0", "def condResult (x : Int) : Int :="),
+    ],
+)
+def test_render_theorem_types_conditional_body_from_its_branches(body_expr, ensures, expected_def):
+    cert = _make_certificate(
+        "m.mm",
+        [_make_atom("cond", requires="true", ensures=ensures, body_expr=body_expr)],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert expected_def in rendered, rendered
+    assert "body semantics unsupported" not in rendered
+
+
+def test_render_theorem_does_not_type_mismatched_conditional_body():
+    cert = _make_certificate(
+        "m.mm",
+        [_make_atom("cond", requires="true", ensures="result >= 0", body_expr='{ if x == 0 { "a" } else { 0 } }')],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    assert atom.body_translation is not None
+    assert atom.body_translation.is_partial is True
+    assert atom.is_partial_translation is True
+    rendered = render_theorem(atom)
+    assert "def condResult" not in rendered, rendered
+
+
+def test_certificate_binder_for_lowered_builtin_name_is_normalised_to_int():
+    # The certificate ships a stale `Nat` binder for `max`, which the
+    # translator lowers as a bare helper name to an `Int` binder.
+    raw = _make_atom("bare", requires="max >= 0", ensures="result >= max")
+    raw["translator_ir"] = {
+        "sort": "contract_obligation",
+        "theorem_goal": "True",
+        "binders": [
+            {"mumei_name": "max", "lean_name": "max", "mumei_type": "nat", "lean_type": "Nat"},
+            {"mumei_name": "result", "lean_name": "result", "mumei_type": "i64", "lean_type": "Int"},
+        ],
+        "lowering_rules": ["type_system_mapping"],
+    }
+    [atom] = collect_unknown_atoms(_make_certificate("m.mm", [raw]))
+    max_binders = [b for b in atom.translator_ir["binders"] if b["mumei_name"] == "max"]
+    assert len(max_binders) == 1
+    assert (max_binders[0]["mumei_type"], max_binders[0]["lean_type"]) == ("i64", "Int")
+    rendered = render_theorem(atom)
+    assert "(max result : Int)" in rendered, rendered
+    assert "Nat" not in rendered, rendered
+
+    # A certificate binder under another lean_name is not duplicated either.
+    raw["translator_ir"]["binders"][0]["lean_name"] = "max_"
+    [renamed] = collect_unknown_atoms(_make_certificate("m.mm", [raw]))
+    max_binders = [b for b in renamed.translator_ir["binders"] if b["mumei_name"] == "max"]
+    assert len(max_binders) == 1
+    assert max_binders[0]["lean_type"] == "Int"
+    assert "Nat" not in render_theorem(renamed)
+
+
 def test_builtin_name_binder_conflict_syncs_translator_ir():
     cert = _make_certificate(
         "m.mm",

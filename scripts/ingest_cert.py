@@ -46,13 +46,16 @@ try:
     from .proofcert import Z3CheckResult
     from .expr_translator import (
         BRIDGE_LEMMA_HASH,
+        BUILTIN_NAME_BINDER_TYPES,
         OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL,
         OBLIGATION_CLASS_SMART_CONTRACT_CEI,
         OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
         TRANSLATOR_VERSION,
         TranslationResult,
         builtin_name_binder_conflicts,
+        builtin_name_binders_lowered,
         contains_identifier,
+        infer_body_result_type,
         mark_builtin_name_binder_conflict,
         normalize_access_control_translator_ir,
         normalize_body_source,
@@ -70,13 +73,16 @@ except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py
     from proofcert import Z3CheckResult  # type: ignore
     from expr_translator import (  # type: ignore
         BRIDGE_LEMMA_HASH,
+        BUILTIN_NAME_BINDER_TYPES,
         OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL,
         OBLIGATION_CLASS_SMART_CONTRACT_CEI,
         OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
         TRANSLATOR_VERSION,
         TranslationResult,
         builtin_name_binder_conflicts,
+        builtin_name_binders_lowered,
         contains_identifier,
+        infer_body_result_type,
         mark_builtin_name_binder_conflict,
         normalize_access_control_translator_ir,
         normalize_body_source,
@@ -458,6 +464,23 @@ def _translator_ir_payload(atom: dict, *fallbacks: Optional[TranslationResult]) 
         if "provenance_span" not in result:
             result["provenance_span"] = {"file": "", "line": 0, "col": 0, "len": 0}
 
+        # Names the current translation lowered under
+        # ``builtin_name_binder_lowering`` are ``Int`` by construction; a
+        # certificate binder for such a name must not keep a stale type.
+        lowered_names: set[str] = set()
+        for fallback in fallbacks:
+            lowered_names |= builtin_name_binders_lowered(fallback)
+        mumei_type, lean_type = BUILTIN_NAME_BINDER_TYPES
+        supplied_names: set[str] = set()
+        for binder in result.get("binders", []):
+            if not isinstance(binder, dict):
+                continue
+            name = str(binder.get("mumei_name", ""))
+            supplied_names.add(name)
+            if name in lowered_names:
+                binder["mumei_type"] = mumei_type
+                binder["lean_type"] = lean_type
+
         seen_binders = {
             (
                 str(binder.get("mumei_name", "")),
@@ -475,11 +498,14 @@ def _translator_ir_payload(atom: dict, *fallbacks: Optional[TranslationResult]) 
             for binder in payload.get("binders", []):
                 if not isinstance(binder, dict):
                     continue
-                key = (
-                    str(binder.get("mumei_name", "")),
-                    str(binder.get("lean_name", "")),
-                )
+                name = str(binder.get("mumei_name", ""))
+                key = (name, str(binder.get("lean_name", "")))
                 if key in seen_binders:
+                    continue
+                if name in lowered_names and name in supplied_names:
+                    # The certificate already binds this name (normalised
+                    # above); a second binder under another lean_name would
+                    # split one parameter in two.
                     continue
                 seen_binders.add(key)
                 result["binders"].append(binder)
@@ -975,25 +1001,7 @@ def _decl_parts_for_identifiers(
 
 
 def _body_result_type(source: str, translation: TranslationResult) -> str:
-    stripped = normalize_body_source(source)
-    if not stripped:
-        return "Int"
-    if stripped.startswith('"'):
-        return "String"
-    if stripped.startswith("["):
-        return "List Int"
-    if stripped.startswith("forall") or stripped.startswith("exists"):
-        return "Prop"
-    if stripped in {"true", "false"}:
-        return "Prop"
-    if any(stripped.startswith(f"{name}(") for name in ("starts_with", "ends_with", "contains", "not_contains")):
-        return "Prop"
-    if any(stripped.startswith(f"{name}(") for name in translation.predicate_identifiers):
-        return "Prop"
-    if translation.string_identifiers and not translation.array_identifiers:
-        if stripped in translation.string_identifiers:
-            return "String"
-    return "Int"
+    return infer_body_result_type(source, translation)
 
 
 def _translator_ir_metadata(atom: IngestedAtom) -> List[str]:

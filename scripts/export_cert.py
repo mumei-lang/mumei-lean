@@ -64,6 +64,12 @@ _SORRY_RE = re.compile(r"declaration uses 'sorry'")
 # Any ``error:`` diagnostic in a generated theorem is treated as a
 # failure for that theorem (the proof did not type-check).
 _ERROR_RE = re.compile(r":\s*error:\s")
+# Current Lake prints the location *after* the severity::
+#   error: ./././generated/Generated/Foo.lean:42:7: <message>
+# Summary lines such as ``error: build failed`` / ``error: Lean exited
+# with code 1`` carry no location and are deliberately not matched (they
+# are covered by the non-zero exit code handling in ``bridge.py``).
+_LAKE_ERROR_RE = re.compile(r"(?:^|\s)error:\s+[^\s:]+\.lean:\d+:\d+:")
 # Lake prefixes every diagnostic line with the originating source
 # file, e.g. ``Generated/Std/Math.lean:12:0: warning: ...``.
 _FILE_PREFIX_RE = re.compile(r"(?:^|\s)([^\s:]+\.lean):(\d+):(\d+):")
@@ -74,6 +80,14 @@ _FILE_PREFIX_RE = re.compile(r"(?:^|\s)([^\s:]+\.lean):(\d+):(\d+):")
 # failure can be attributed to the originating atom rather than
 # triggering the unattributable-failure fallback.
 _DEF_RESULT_RE = re.compile(r"\bdef\s+([A-Za-z_][A-Za-z0-9_]*)Result\b")
+
+
+def _is_failure_diagnostic(line: str) -> bool:
+    return bool(
+        _SORRY_RE.search(line)
+        or _ERROR_RE.search(line)
+        or _LAKE_ERROR_RE.search(line)
+    )
 
 
 def _camel_to_snake(name: str) -> str:
@@ -191,7 +205,7 @@ def _failed_theorem_attributions(
     seen: set = set()
     lines = build_output.splitlines()
     for idx, line in enumerate(lines):
-        if not (_SORRY_RE.search(line) or _ERROR_RE.search(line)):
+        if not _is_failure_diagnostic(line):
             continue
         file_path, attribution = _diagnostic_attribution(lines, idx, source_root)
         if attribution is None:
@@ -202,6 +216,127 @@ def _failed_theorem_attributions(
         seen.add(key)
         failures.append(key)
     return failures
+
+
+FAILURE_KIND_SORRY = "sorry"
+FAILURE_KIND_UNSOLVED_GOALS = "unsolved_goals"
+FAILURE_KIND_TYPE_MISMATCH = "type_mismatch"
+FAILURE_KIND_IMPORT_ERROR = "import_error"
+FAILURE_KIND_UNKNOWN_IDENTIFIER = "unknown_identifier"
+FAILURE_KIND_OTHER = "other_error"
+
+# Ordered: the first matching pattern wins. Messages are the text after
+# ``error:`` / ``warning:`` on the diagnostic line only.
+_FAILURE_KIND_PATTERNS: Tuple[Tuple[str, "re.Pattern[str]"], ...] = (
+    (FAILURE_KIND_SORRY, _SORRY_RE),
+    (FAILURE_KIND_UNSOLVED_GOALS, re.compile(r"\bunsolved goals\b")),
+    (
+        FAILURE_KIND_TYPE_MISMATCH,
+        re.compile(
+            r"\btype mismatch\b|\bapplication type mismatch\b|"
+            r"\bfailed to synthesize\b|\bhas type\b.*\bbut is expected to have type\b"
+        ),
+    ),
+    (
+        FAILURE_KIND_IMPORT_ERROR,
+        re.compile(
+            r"\bunknown module prefix\b|\bunknown package\b|\bbad import\b|"
+            r"\bobject file .* does not exist\b|\bcould not resolve import\b|"
+            r"\bunknown module\b|\bimport .* failed\b|\bno such file or directory\b"
+        ),
+    ),
+    (
+        FAILURE_KIND_UNKNOWN_IDENTIFIER,
+        re.compile(r"\bunknown (?:identifier|constant|tactic)\b"),
+    ),
+)
+_DIAGNOSTIC_MESSAGE_RE = re.compile(
+    r"\b(?:error|warning):\s*(?:[^\s:]+\.lean:\d+:\d+:\s*)?(?P<message>.*)$"
+)
+
+
+def classify_failure_kind(message: str) -> str:
+    """Map one Lake diagnostic message onto a stable failure kind."""
+    for kind, pattern in _FAILURE_KIND_PATTERNS:
+        if pattern.search(message):
+            return kind
+    return FAILURE_KIND_OTHER
+
+
+def _diagnostic_message(line: str) -> str:
+    match = _DIAGNOSTIC_MESSAGE_RE.search(line)
+    return (match.group("message") if match else line).strip()
+
+
+def structured_build_failures(
+    build_output: str,
+    source_root: Optional[Path] = None,
+) -> List[dict]:
+    """Atom-level, deterministic view of every ``sorry`` / ``error:`` diagnostic.
+
+    Each entry is ``{"atom", "file", "line", "column", "kind", "message"}``
+    where ``atom`` is the de-suffixed atom name from the same attribution
+    walk as :func:`_failed_theorem_attributions` (``None`` when the
+    diagnostic is file-level, e.g. an ``import_error`` before the first
+    theorem). ``kind`` is one of the ``FAILURE_KIND_*`` constants. Entries
+    are de-duplicated and sorted by ``(file, line, column, atom, kind,
+    message)`` so identical logs always yield identical JSON.
+    """
+    entries: List[dict] = []
+    seen: set = set()
+    lines = build_output.splitlines()
+    for idx, line in enumerate(lines):
+        if not _is_failure_diagnostic(line):
+            continue
+        file_path, line_no = _diagnostic_location(line)
+        column: Optional[int] = None
+        match = _FILE_PREFIX_RE.search(line)
+        if match is not None:
+            column = int(match.group(3))
+        _attr_file, atom = _diagnostic_attribution(lines, idx, source_root)
+        message = _diagnostic_message(line)
+        entry = {
+            "atom": atom,
+            "file": file_path,
+            "line": line_no,
+            "column": column,
+            "kind": classify_failure_kind(message),
+            "message": message,
+        }
+        key = tuple(entry.values())
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append(entry)
+    entries.sort(
+        key=lambda e: (
+            e["file"] or "",
+            e["line"] if e["line"] is not None else -1,
+            e["column"] if e["column"] is not None else -1,
+            e["atom"] or "",
+            e["kind"],
+            e["message"],
+        )
+    )
+    return entries
+
+
+def build_failure_report(
+    build_output: str,
+    source_root: Optional[Path] = None,
+) -> dict:
+    """``{"schema": ..., "failures": [...], "unattributed": [...]}`` for a log.
+
+    ``failures`` holds atom-attributed entries; ``unattributed`` holds the
+    file-level ones (``atom`` is ``None``) that make the whole build
+    unsafe to promote (see :func:`_has_unattributable_failures`).
+    """
+    entries = structured_build_failures(build_output, source_root)
+    return {
+        "schema": "mumei-lean-build-failures-v1",
+        "failures": [e for e in entries if e["atom"] is not None],
+        "unattributed": [e for e in entries if e["atom"] is None],
+    }
 
 
 def _failed_theorem_names(build_output: str) -> List[str]:
@@ -248,7 +383,7 @@ def _has_unattributable_failures(
     """
     lines = build_output.splitlines()
     for idx, line in enumerate(lines):
-        if not (_SORRY_RE.search(line) or _ERROR_RE.search(line)):
+        if not _is_failure_diagnostic(line):
             continue
         _file_path, attribution = _diagnostic_attribution(lines, idx, source_root)
         if attribution is None:
@@ -340,9 +475,32 @@ def _atom_proved(
         return False
     if not _lean_result_contract_current(metadata):
         return False
-    if atom.get("manual_lemma_reason") and not known_witness:
-        return False
+    source_reason = atom.get("manual_lemma_reason")
+    if source_reason and not known_witness:
+        if not _manual_lemma_reason_superseded(str(source_reason), metadata):
+            return False
     return known_witness or name not in failed
+
+
+def _manual_lemma_reason_superseded(reason: str, metadata: Optional[dict]) -> bool:
+    """True when verified bridge metadata records that ``reason`` (a faithful
+    statement the template catalog could not discharge) was closed by an
+    external proof (spec §13) or the tactic search (spec §12.4).
+
+    Only an explicit ``supersedes_manual_lemma_reason`` equal to the source
+    reason counts; a metadata entry that merely omits the reason does not.
+    """
+    if not isinstance(metadata, dict):
+        return False
+    if str(metadata.get("status", "")) != LEAN_VERIFIED:
+        return False
+    for key in ("external_proof", "tactic_search"):
+        provenance = metadata.get(key)
+        if isinstance(provenance, dict) and (
+            provenance.get("supersedes_manual_lemma_reason") == reason
+        ):
+            return True
+    return False
 
 
 def _metadata_for_atom(

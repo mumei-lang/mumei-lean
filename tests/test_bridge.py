@@ -12,6 +12,7 @@ import pytest
 
 import bridge
 from bridge import _scan_unknown_certs, main
+from ingest_cert import collect_unknown_atoms
 
 
 def _atom(name: str, z3: str = "unknown") -> dict:
@@ -1306,3 +1307,148 @@ def test_sort_ascending_ingest_generates_bridge_theorem(tmp_path: Path):
     assert "List.insertionSort" in text
     assert "known_witness_used=true" not in text
     assert "sorry" not in text
+
+
+def test_main_dependency_failure_never_promotes_generated_atoms(
+    tmp_path: Path, monkeypatch
+):
+    """A non-zero build whose only diagnostics belong to files outside the
+    generated payloads (a dependency / library theorem) must fail every
+    lifted atom instead of exporting them as ``lean_verified``."""
+    cert_path = tmp_path / "cert.json"
+    cert_path.write_text(
+        json.dumps(_cert("std/math.mm", [_atom("inc", z3="unknown")]))
+    )
+    log = (
+        "./MumeiLean/Broken.lean:1:0: theorem unrelated_correct\n"
+        "error: ./MumeiLean/Broken.lean:2:2: type mismatch\n"
+        "error: Lean exited with code 1\n"
+        "error: build failed\n"
+    )
+    _patch_lake(monkeypatch, rc=1, log=log)
+    out = tmp_path / "out.lean-cert.json"
+    rc = main(
+        [
+            "--cert", str(cert_path),
+            "--out-dir", str(tmp_path / "generated"),
+            "--module-prefix", "Generated",
+            "--lean-cert-out", str(out),
+        ]
+    )
+    assert rc == 1
+    payload = json.loads(out.read_text())
+    assert {a["name"]: a["z3_check_result"] for a in payload["atoms"]} == {
+        "inc": "unknown"
+    }
+
+
+def test_attribute_failures_keeps_per_atom_attribution_for_generated_files():
+    """Same log shape, but the diagnostic belongs to a generated file: only
+    that atom fails and the rest of the payload stays attributable."""
+    atoms = collect_unknown_atoms(
+        _cert("std/math.mm", [_atom("inc", z3="unknown"), _atom("dec", z3="unknown")])
+    )
+    log = (
+        "Generated/Std/Math.lean:1:0: theorem inc_correct\n"
+        "error: ./././generated/Generated/Std/Math.lean:2:2: unsolved goals\n"
+        "error: build failed\n"
+    )
+    failed = bridge._attribute_failures(
+        build_log=log,
+        rc=1,
+        lake_missing=False,
+        atoms_per_payload=[atoms],
+        proved_per_payload=[["inc", "dec"]],
+        known_witness_proved=set(),
+        out_dir=Path("generated"),
+        module_prefix="Generated",
+        repo_dir=Path("."),
+        verbose=False,
+    )
+    assert failed == [["inc"]]
+
+
+def test_main_ci_mode_failure_still_writes_failure_report(
+    tmp_path: Path, monkeypatch
+):
+    cert_path = tmp_path / "cert.json"
+    cert_path.write_text(
+        json.dumps(_cert("std/math.mm", [_atom("inc", z3="unknown")]))
+    )
+    out_dir = tmp_path / "generated"
+    report = tmp_path / "failures.json"
+    log = (
+        "Generated/Std/Math.lean:1:0: theorem inc_correct\n"
+        "error: ./././generated/Generated/Std/Math.lean:2:2: unsolved goals\n"
+        "error: build failed\n"
+    )
+    _patch_lake(monkeypatch, rc=1, log=log)
+    summary = tmp_path / "summary.json"
+    rc = main(
+        [
+            "--cert", str(cert_path),
+            "--out-dir", str(out_dir),
+            "--module-prefix", "Generated",
+            "--lean-cert-out", str(tmp_path / "out.lean-cert.json"),
+            "--summary-json", str(summary),
+            "--failure-report", str(report),
+            "--ci-mode",
+        ]
+    )
+    assert rc == 0
+    assert not (tmp_path / "out.lean-cert.json").exists()
+    payload = json.loads(report.read_text())
+    assert payload["schema"] == "mumei-lean-build-failures-v1"
+    assert [(e["atom"], e["kind"]) for e in payload["failures"]] == [
+        ("inc", "unsolved_goals")
+    ]
+    assert json.loads(summary.read_text())["failure_report"] == str(report)
+
+
+def test_failures_for_atom_joins_on_module_path_not_only_name():
+    math = collect_unknown_atoms(_cert("std/math.mm", [_atom("inc", z3="unknown")]))
+    lst = collect_unknown_atoms(_cert("std/list.mm", [_atom("inc", z3="unknown")]))
+    failures = [
+        {"atom": "inc", "file": "./././generated/Generated/Std/Math.lean",
+         "line": 2, "column": 2, "kind": "unsolved_goals", "message": "unsolved goals"},
+        {"atom": "inc", "file": "./././generated/Generated/Std/List.lean",
+         "line": 7, "column": 4, "kind": "type_mismatch", "message": "type mismatch"},
+        {"atom": "inc", "file": None, "line": None, "column": None,
+         "kind": "other_error", "message": "no location"},
+    ]
+    out_dir = Path("generated")
+    math_meta = bridge._metadata_for_atoms(
+        math, out_dir, "Generated", ["inc"], ["inc"], build_failures=failures
+    )["inc"]
+    list_meta = bridge._metadata_for_atoms(
+        lst, out_dir, "Generated", ["inc"], ["inc"], build_failures=failures
+    )["inc"]
+    assert [e["kind"] for e in math_meta["build_failures"]] == ["unsolved_goals", "other_error"]
+    assert [e["kind"] for e in list_meta["build_failures"]] == ["type_mismatch", "other_error"]
+
+
+def test_foreign_file_diagnostic_naming_a_generated_atom_fails_everything():
+    """A dependency theorem that happens to share a generated atom's name
+    must not count as a generated-payload attribution: the sibling atom
+    `dec` would otherwise be promoted after a failed build."""
+    atoms = collect_unknown_atoms(
+        _cert("std/math.mm", [_atom("inc", z3="unknown"), _atom("dec", z3="unknown")])
+    )
+    log = (
+        "./MumeiLean/Broken.lean:1:0: theorem inc_correct\n"
+        "error: ./MumeiLean/Broken.lean:2:2: type mismatch\n"
+        "error: build failed\n"
+    )
+    failed = bridge._attribute_failures(
+        build_log=log,
+        rc=1,
+        lake_missing=False,
+        atoms_per_payload=[atoms],
+        proved_per_payload=[["inc", "dec"]],
+        known_witness_proved=set(),
+        out_dir=Path("generated"),
+        module_prefix="Generated",
+        repo_dir=Path("."),
+        verbose=False,
+    )
+    assert failed == [["dec", "inc"]]

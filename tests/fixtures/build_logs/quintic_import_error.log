@@ -1,0 +1,10 @@
+✖ [2550/2551] Building Generated.Std.Quintic
+trace: <elided>
+error: ./././generated/Generated/Std/Quintic.lean:2:0: unknown module prefix 'MumeiLeanMissing'
+
+No directory 'MumeiLeanMissing' or file 'MumeiLeanMissing.olean' in the search path entries:
+./.lake/build/lib
+error: Lean exited with code 1
+Some required builds logged failures:
+- Generated.Std.Quintic
+error: build failed

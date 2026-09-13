@@ -75,7 +75,7 @@ Top-level modules are `MumeiLean/` (Lean library), `scripts/` (translator and br
 
 Preserve the typed translator contract, keep mumei unchanged, use Python as the production bridge, retain the intentionally small supported expression surface, and target Z3-`unknown` rather than replace Z3. Details are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-AI-generated Lean proofs (mumei-agent Task 2-D, `--enable-lean-ai-proof`) already run against this repo: mumei-agent re-runs `scripts/ingest_cert.py` for the trusted theorem statement, lets an LLM write only the tactic script, and promotes to `lean_verified` solely after its own `lake build` in this checkout. The mumei-lean-side acceptance surface for such proofs (B-1 / B-2 / B-3 in [`docs/ROADMAP.md`](docs/ROADMAP.md)) is a follow-up and is not implemented yet.
+AI-generated Lean proofs (mumei-agent Task 2-D, `--enable-lean-ai-proof`) already run against this repo: mumei-agent re-runs `scripts/ingest_cert.py` for the trusted theorem statement, lets an LLM write only the tactic script, and promotes to `lean_verified` solely after its own `lake build` in this checkout. The mumei-lean-side acceptance surface for such proofs (B-1 / B-2 / B-3 in [`docs/ROADMAP.md`](docs/ROADMAP.md)) is implemented: `scripts/bridge.py --external-proofs proofs.json` injects a supplied tactic script / witness lemma as the proof body, promotes only through the regular `export_cert.py` gates, writes `ai_proof_used` provenance, and emits per-atom structured `lake build` failures (`lake_build_failures.json`).
 
 ## Documentation
 

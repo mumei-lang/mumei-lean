@@ -1,0 +1,15 @@
+⚠ [2542/2551] Replayed MumeiLean.AdvancedPatterns
+warning: ././././MumeiLean/AdvancedPatterns.lean:178:5: unused variable `hp`
+note: this linter can be disabled with `set_option linter.unusedVariables false`
+✖ [2550/2551] Building Generated.Std.Quintic
+trace: <elided>
+error: ./././generated/Generated/Std/Quintic.lean:30:2: type mismatch
+  hx
+has type
+  x > 0 : Prop
+but is expected to have type
+  result > 0 : Prop
+error: Lean exited with code 1
+Some required builds logged failures:
+- Generated.Std.Quintic
+error: build failed

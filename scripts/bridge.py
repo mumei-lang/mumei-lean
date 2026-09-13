@@ -41,6 +41,7 @@ try:
         write_modules,
     )
     from .export_cert import (
+        build_failure_report,
         _failed_theorem_attributions,
         _has_unattributable_failures,
         _normalise_atom_names,
@@ -99,6 +100,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
         write_modules,
     )
     from export_cert import (  # type: ignore
+        build_failure_report,
         _failed_theorem_attributions,
         _has_unattributable_failures,
         _normalise_atom_names,
@@ -163,6 +165,7 @@ def _candidate_metadata(
     known_witness_used: bool = False,
     lean_solver_time_s: Optional[float] = None,
     tactic_search: Optional[dict] = None,
+    build_failures: Optional[List[dict]] = None,
 ) -> dict:
     rel = module_to_path(atom.module_key, module_prefix)
     lean_module = ".".join(rel.with_suffix("").parts)
@@ -247,6 +250,10 @@ def _candidate_metadata(
     }
     if tactic_search is not None:
         metadata["tactic_search"] = tactic_search
+    if build_failures:
+        metadata["build_failures"] = [dict(entry) for entry in build_failures]
+        for kind in sorted({entry["kind"] for entry in build_failures}):
+            diagnostics.append(f"build_failure={kind}")
     if external_proof_meta is not None:
         # ``ai_proof_used`` is the provenance key mumei-agent already writes;
         # it is only true once the real build promoted the atom.
@@ -371,11 +378,18 @@ def _metadata_for_atoms(
     known_witness_proved: Optional[Set[AtomKey]] = None,
     lean_solver_time_s: Optional[float] = None,
     tactic_search_results: Optional[Dict[AtomKey, TacticSearchResult]] = None,
+    build_failures: Optional[List[dict]] = None,
 ) -> Dict[str, dict]:
     metadata_by_atom: Dict[str, dict] = {}
     known_witness_proved = known_witness_proved or set()
     tactic_search_results = tactic_search_results or {}
+    failed_names = set(failed)
     for atom in atoms:
+        atom_failures = [
+            entry
+            for entry in (build_failures or [])
+            if entry["atom"] == atom.name and atom.name in failed_names
+        ]
         search_result = tactic_search_results.get(_atom_key(atom))
         atom_solver_time = lean_solver_time_s
         if search_result is not None and atom_solver_time is not None:
@@ -391,6 +405,7 @@ def _metadata_for_atoms(
             _atom_key(atom) in known_witness_proved,
             atom_solver_time,
             search_result.as_metadata() if search_result is not None else None,
+            atom_failures,
         )
         if _atom_key(atom) in known_witness_proved:
             metadata = _known_witness_metadata(atom, metadata, harness_stage)
@@ -895,6 +910,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         f"search (default: {DEFAULT_TACTIC_SEARCH_TIMEOUT_S:.0f}s).",
     )
     parser.add_argument(
+        "--failure-report",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Where to write the structured per-atom build failure JSON "
+        "(default: <out-dir>/lake_build_failures.json).",
+    )
+    parser.add_argument(
         "--external-proofs",
         type=Path,
         default=None,
@@ -1352,6 +1375,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         repo_dir=args.repo_dir,
     )
 
+    failure_report = build_failure_report(build_log, source_root=args.repo_dir)
+    failure_report_path = args.failure_report or (args.out_dir / "lake_build_failures.json")
+    failure_report_path.parent.mkdir(parents=True, exist_ok=True)
+    failure_report_path.write_text(
+        json.dumps(failure_report, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+    )
+    if failure_report["failures"] or failure_report["unattributed"]:
+        print(f"wrote structured build failures to {failure_report_path}")
+
     if args.record_tactic_search_history:
         _record_tactic_search_history(
             history_path=args.tactic_search_history,
@@ -1371,6 +1403,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             known_witness_proved,
             lean_solver_time_s,
             tactic_search_results,
+            failure_report["failures"],
         )
         for atoms, proved, failed in zip(
             atoms_per_payload,

@@ -158,10 +158,16 @@ change to the contract constants must be synchronised across projects in the sam
 
 ### Iterative repair loop (downstream acceptance of AI proofs)
 
-- Under consideration: shape the `lake build` failure log (unsolved goals and friends, which the
-  build-log attribution in `scripts/export_cert.py` already attributes per atom) into structured
-  feedback returned to the AI side, so mumei-agent can run an iterative proof repair loop
-  (generate → build → error feedback → regenerate).
+- ✅ Implemented (B-3): `scripts/bridge.py` writes `<out-dir>/lake_build_failures.json`
+  (override with `--failure-report PATH`, schema `mumei-lean-build-failures-v1`) from the same
+  build-log attribution `scripts/export_cert.py` uses for the promotion gate. Each entry is
+  `{atom, file, line, column, kind, message}` with `kind` ∈ `sorry` / `unsolved_goals` /
+  `type_mismatch` / `import_error` / `unknown_identifier` / `other_error`; file-level
+  diagnostics that precede any theorem (e.g. `import_error`) land in `unattributed` with
+  `atom: null`. Failed atoms also carry the same entries under `lean_metadata.build_failures`
+  plus a `build_failure=<kind>` diagnostic. Output is deduplicated and sorted, so identical logs
+  yield byte-identical JSON (`tests/test_build_failures.py`). This is the structured feedback a
+  mumei-agent repair loop (generate → build → error feedback → regenerate) consumes.
 
 ### Positioning and dependencies
 

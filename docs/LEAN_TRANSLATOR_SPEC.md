@@ -1012,6 +1012,87 @@ Rules:
    never whether promotion is allowed — that still requires the real `lake
    build` of §12.4.
 
+## 13. External proof injection (AI / handwritten proof bodies)
+
+`scripts/external_proof.py` lets a caller — today mumei-agent's
+`agent/lean_ai_proof.py` (`lean_fallback_strategy = "ai_generated_proof"`) —
+supply a proof body for one atom. It generalises `IngestedAtom.auto_tactic`
+(§12): both are exposed through `IngestedAtom.proof_body_override` and replace
+only the generic `mumei_arith` / `mumei_arith_deep` tactic that
+`render_theorem` would emit after `:= by`.
+
+Input is a JSON file passed as `--external-proofs PATH` to `scripts/bridge.py`
+or `scripts/ingest_cert.py`:
+
+```json
+{"proofs": [{"atom": "quintic_pos", "module_key": "std/quintic",
+             "tactic_script": "intro hx\nsubst h_body\n...",
+             "source": "ai_generated_proof", "attempts": 3}]}
+```
+
+Exactly one of `tactic_script` or `witness_lemma` (rendered as
+`exact <lemma>`) is required; `module_key` is optional and scopes the proof to
+one module; `source` is `ai_generated_proof` (default) or
+`handwritten_witness`.
+
+### 13.1 What the supplier does *not* control
+
+1. **The statement.** The theorem header, binders, `def <atom>Result` and the
+   translator IR are regenerated from the certificate exactly as without a
+   proof; the supplier only fills the tactic block. An unfaithful statement
+   (`partial_translation`) stays partial even with a proof attached and is
+   never promoted.
+2. **The gate.** Promotion still requires the real `lake build` and every
+   `scripts/export_cert.py` contract gate (§9/§12.4). No code path marks an
+   atom `lean_verified` because a proof was supplied.
+3. **Tactic search.** Atoms with an external proof are not probed by §12
+   (`is_search_eligible` is false), so a rejected or failing external proof
+   cannot be silently replaced by a ladder tactic in the same run.
+
+### 13.2 Rejection before rendering
+
+`reject_external_proof` refuses a proof *before* it reaches a `.lean` file when
+it is empty, uses both/neither body forms, names an invalid witness lemma, has
+an unknown `source`, or contains any token from `FORBIDDEN_TACTIC_TOKENS`
+(mirrors mumei-agent's list: `sorry`, `admit`, `axiom`, `unsafe`,
+`implemented_by`, `@[extern`, `native_decide`, `run_cmd`, `run_tac`,
+`#eval`/`#exit`/`#print`, `set_option`, `initialize`, macro/elab/syntax
+keywords, `IO.`, and any new declaration line). A rejected atom keeps the status
+it would have had without the proof (generic tactic, or
+`manual_lemma_required` when it has a `manual_lemma_reason`), and its
+`lean_metadata.external_proof` is `{"rejected": "<reason>"}`.
+
+### 13.3 Metadata and provenance
+
+For every atom that had an external proof supplied (accepted or rejected) the
+per-atom `lean_metadata` gains:
+
+| key | value |
+| --- | --- |
+| `external_proof` | `{source, script_sha256, witness_lemma?, attempts?, supersedes_manual_lemma_reason?}` or `{rejected}` |
+| `ai_proof_used` | `true` only when `source == "ai_generated_proof"` **and** the atom is `lean_verified` by the real build; `false` for rejected, failed, handwritten |
+| `ai_proof_attempts` | copied from `attempts` when present |
+| `diagnostics` | `external_proof_source=<source>` or `external_proof_rejected=<reason>` |
+
+`ai_proof_used` / `ai_proof_attempts` are the keys mumei-agent already writes
+into its own `lean_metadata`; no new alias is introduced. Atoms without an
+external proof keep their existing metadata shape. `translator_version` and
+`bridge_lemma_hash` are unaffected — the bridge lemma catalog is not touched.
+
+### 13.4 No-false-promotion matrix
+
+`tests/test_lean_bridge_e2e.py::test_external_proof_matrix_never_promotes_unproved_atoms`
+runs the live bridge over `tests/fixtures/std_quintic_external_proof.proof-cert.json`
+(`x > 0 → x⁵ > 0`, which the generic ladder cannot close):
+
+| supplied proof | `z3_check_result` | `ai_proof_used` |
+| --- | --- | --- |
+| valid tactic script | `lean_verified` | `true` |
+| script containing `sorry` | `unknown` / `manual_lemma_required` (rejected, never rendered) | `false` |
+| script leaving unsolved goals | `unknown` / `manual_lemma_required` | `false` |
+| script with a type mismatch | `unknown` / `manual_lemma_required` | `false` |
+| witness lemma that does not exist | `unknown` / `manual_lemma_required` | `false` |
+
 ## README translator contract
 
 External **Lean 4** proof backend for the [mumei](https://github.com/mumei-lang/mumei)

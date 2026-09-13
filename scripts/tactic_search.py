@@ -146,7 +146,7 @@ def ladder_for(
 
 def is_search_eligible(atom: IngestedAtom, stage: str) -> bool:
     """Whether ``atom`` may be handed to the tactic search (spec §12.1)."""
-    if atom.auto_tactic is not None:
+    if atom.auto_tactic is not None or atom.external_proof is not None:
         return False
     if not atom.has_faithful_statement:
         return False

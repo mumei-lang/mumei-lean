@@ -63,6 +63,11 @@ try:
         translate_body,
         translate_contract,
     )
+    from .external_proof import (
+        ExternalProof,
+        apply_external_proofs,
+        load_external_proofs,
+    )
     from .known_witnesses import KNOWN_LEAN_WITNESSES
 except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py``
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -85,6 +90,11 @@ except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py
         render_guard_trace_theorem,
         translate_body,
         translate_contract,
+    )
+    from external_proof import (  # type: ignore
+        ExternalProof,
+        apply_external_proofs,
+        load_external_proofs,
     )
     from known_witnesses import KNOWN_LEAN_WITNESSES  # type: ignore
 
@@ -134,6 +144,25 @@ class IngestedAtom:
     ``mumei_arith`` / ``mumei_arith_deep`` fallback in the emitted proof;
     promotion still requires the real ``lake build`` to succeed."""
 
+    external_proof: Optional[ExternalProof] = None
+    """Caller-supplied tactic script / witness lemma (spec §13).
+
+    Replaces the generic tactic body exactly like ``auto_tactic``; the
+    statement stays translator-owned and promotion still requires the real
+    ``lake build`` plus the ``export_cert`` contract gates."""
+
+    external_proof_rejection: Optional[str] = None
+    """Why a supplied external proof was refused before rendering."""
+
+    @property
+    def proof_body_override(self) -> Optional[str]:
+        """Tactic text that replaces the generic fallback, if any."""
+        if self.external_proof is not None:
+            return self.external_proof.render_body()
+        if self.auto_tactic is not None:
+            return f"  {self.auto_tactic}"
+        return None
+
     @property
     def has_custom_bridge_proof(self) -> bool:
         """True when a dedicated bridge-lemma generator handles this atom.
@@ -182,7 +211,10 @@ class IngestedAtom:
             self.requires_translation.is_partial
             or self.ensures_translation.is_partial
             or body_partial
-            or (self.manual_lemma_reason is not None and self.auto_tactic is None)
+            or (
+                self.manual_lemma_reason is not None
+                and self.proof_body_override is None
+            )
         )
 
     @property
@@ -1261,7 +1293,9 @@ def render_theorem(atom: IngestedAtom) -> str:
         if use_body_semantics
         else None
     )
-    if finite_field_body is not None:
+    if atom.external_proof is not None:
+        body = atom.external_proof.render_body()
+    elif finite_field_body is not None:
         body = finite_field_body
     elif use_body_semantics:
         tactic = atom.auto_tactic or "mumei_arith_deep"
@@ -1269,10 +1303,15 @@ def render_theorem(atom: IngestedAtom) -> str:
     else:
         body = f"  {atom.auto_tactic or 'mumei_arith'}"
     notes: List[str] = []
-    if atom.auto_tactic is not None:
+    if atom.external_proof is not None:
+        notes.append(
+            f"  -- external_proof: source={atom.external_proof.source} "
+            f"sha256={atom.external_proof.script_sha256}"
+        )
+    elif atom.auto_tactic is not None:
         notes.append(f"  -- tactic_search_adopted: {atom.auto_tactic}")
     if req.is_partial or ens.is_partial or (
-        atom.manual_lemma_reason and atom.auto_tactic is None
+        atom.manual_lemma_reason and atom.proof_body_override is None
     ):
         notes.append(
             "  -- manual_lemma_required: "
@@ -1452,6 +1491,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         action="store_true",
         help="Print a one-line summary instead of the list of written files.",
     )
+    parser.add_argument(
+        "--external-proofs",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="JSON file of caller-supplied tactic scripts / witness lemmas "
+        "injected as proof bodies (docs/LEAN_TRANSLATOR_SPEC.md §13).",
+    )
     args = parser.parse_args(argv)
 
     if not args.input.exists():
@@ -1465,6 +1512,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
 
     atoms = collect_unknown_atoms(payload)
+    if args.external_proofs is not None:
+        rejections = apply_external_proofs(
+            atoms, load_external_proofs(args.external_proofs)
+        )
+        for name, reason in sorted(rejections.items()):
+            print(f"warning: external proof for {name} rejected: {reason}", file=sys.stderr)
     written = write_modules(atoms, args.out, args.module_prefix)
 
     if args.print_summary:

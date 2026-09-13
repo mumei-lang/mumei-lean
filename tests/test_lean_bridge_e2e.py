@@ -1077,3 +1077,97 @@ def test_builtin_name_binder_and_block_body_upgrade_unknown_to_lean_verified(
         assert payload["all_verified"] is True
     finally:
         _cleanup_generated_file(GENERATED_STACK)
+
+
+GENERATED_QUINTIC = REPO_ROOT / "generated" / "Generated" / "Std" / "Quintic.lean"
+QUINTIC_GOOD_SCRIPT = (
+    "intro hx\nsubst h_body\nunfold quinticPosResult\n"
+    "have h2 : 0 < x * x := mul_pos hx hx\n"
+    "exact mul_pos (mul_pos (mul_pos h2 hx) hx) hx"
+)
+
+
+@pytest.mark.lake_available
+@pytest.mark.parametrize(
+    ("label", "entry", "expect_verified", "expect_rejected"),
+    [
+        ("valid_script", {"tactic_script": QUINTIC_GOOD_SCRIPT}, True, None),
+        ("sorry", {"tactic_script": "intro hx\nsorry"}, False, "forbidden_token:sorry"),
+        (
+            "unsolved_goals",
+            {"tactic_script": "intro hx\nsubst h_body\nunfold quinticPosResult"},
+            False,
+            None,
+        ),
+        ("type_mismatch", {"tactic_script": "intro hx\nexact hx"}, False, None),
+        (
+            "missing_witness",
+            {"witness_lemma": "Std.Quintic.no_such_lemma", "source": "handwritten_witness"},
+            False,
+            None,
+        ),
+    ],
+)
+def test_external_proof_matrix_never_promotes_unproved_atoms(
+    lake_available, tmp_path: Path, label, entry, expect_verified, expect_rejected
+):
+    """Spec §13.4: only a script that really builds yields ``lean_verified``.
+
+    The fixture (``x > 0 → x⁵ > 0``) is out of reach for the generic
+    ``mumei_arith_deep`` ladder, so promotion can only come from the
+    supplied proof — and the failing rows prove it never does falsely.
+    """
+    proofs = tmp_path / "proofs.json"
+    proofs.write_text(
+        json.dumps({"proofs": [{"atom": "quintic_pos", "attempts": 3, **entry}]})
+    )
+    out_cert = tmp_path / "quintic.lean-cert.json"
+    out_dir = tmp_path / "generated"
+    _cleanup_generated_file(GENERATED_QUINTIC)
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "std_quintic_external_proof.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+            "--no-tactic-search",
+            "--external-proofs",
+            str(proofs),
+        )
+        if expect_verified:
+            _assert_bridge_ok(proc)
+        else:
+            assert proc.returncode == 1, proc.stdout + proc.stderr
+        generated_src = GENERATED_QUINTIC.read_text()
+        assert "sorry" not in generated_src
+        assert "theorem quintic_pos_correct (x : Int) (result : Int)" in generated_src
+        payload = json.loads(out_cert.read_text())
+        [atom] = payload["atoms"]
+        meta = atom["lean_metadata"]
+        assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
+        assert meta["bridge_lemma_hash"] == (
+            "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
+        )
+        if expect_rejected is not None:
+            assert f"rejected: {expect_rejected}" in proc.stderr
+            assert meta["external_proof"] == {"rejected": expect_rejected}
+            assert "external_proof:" not in generated_src
+        else:
+            assert meta["external_proof"]["source"] == entry.get(
+                "source", "ai_generated_proof"
+            )
+            assert meta["ai_proof_attempts"] == 3
+        if expect_verified:
+            assert atom["z3_check_result"] == "lean_verified"
+            assert meta["status"] == "lean_verified"
+            assert meta["ai_proof_used"] is True
+            assert payload["all_verified"] is True
+        else:
+            assert atom["z3_check_result"] == "unknown"
+            assert meta["status"] == "manual_lemma_required"
+            assert meta["ai_proof_used"] is False
+            assert payload["all_verified"] is False
+    finally:
+        _cleanup_generated_file(GENERATED_QUINTIC)

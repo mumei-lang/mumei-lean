@@ -55,6 +55,11 @@ try:
         bridge_harness_contract,
         bridge_stage_metadata,
     )
+    from .external_proof import (
+        AI_GENERATED_PROOF,
+        apply_external_proofs,
+        load_external_proofs,
+    )
     from .known_witnesses import KNOWN_LEAN_WITNESSES
     from .bridge_scan import (
         _is_unknown_lean_candidate,
@@ -107,6 +112,11 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
         bridge_failure_taxonomy,
         bridge_harness_contract,
         bridge_stage_metadata,
+    )
+    from external_proof import (  # type: ignore
+        AI_GENERATED_PROOF,
+        apply_external_proofs,
+        load_external_proofs,
     )
     from known_witnesses import KNOWN_LEAN_WITNESSES  # type: ignore
     from bridge_scan import (  # type: ignore
@@ -177,6 +187,12 @@ def _candidate_metadata(
             if adopted
             else "tactic_search_exhausted"
         )
+    if atom.external_proof is not None:
+        diagnostics.append(f"external_proof_source={atom.external_proof.source}")
+    if atom.external_proof_rejection is not None:
+        diagnostics.append(
+            f"external_proof_rejected={atom.external_proof_rejection}"
+        )
     heatmap_data = _load_solver_heatmap(atom, out_dir)
     if heatmap_data is not None:
         diagnostics.append("solver_heatmap_available=true")
@@ -187,15 +203,23 @@ def _candidate_metadata(
     proof_strategy = select_proof_strategy(atom)
     mathlib_imports = resolve_mathlib_imports(atom)
     manual_reason = atom.manual_lemma_reason if not getattr(atom, "has_custom_bridge_proof", False) else None
+    external_proof_meta: Optional[dict] = None
+    if atom.external_proof is not None:
+        external_proof_meta = atom.external_proof.provenance()
+    elif atom.external_proof_rejection is not None:
+        external_proof_meta = {"rejected": atom.external_proof_rejection}
     if (
-        atom.auto_tactic is not None
+        atom.proof_body_override is not None
         and manual_reason is not None
         and status == LEAN_VERIFIED
     ):
-        # The automatic tactic search discharged the obligation the template
-        # catalog could not (spec §12.4): keep the reason as provenance under
-        # ``tactic_search`` instead of a promotion-blocking field.
-        if tactic_search is not None:
+        # The automatic tactic search (spec §12.4) or an external proof
+        # (spec §13) discharged the obligation the template catalog could
+        # not: keep the reason as provenance instead of a promotion-blocking
+        # field.
+        if atom.external_proof is not None and external_proof_meta is not None:
+            external_proof_meta["supersedes_manual_lemma_reason"] = manual_reason
+        elif tactic_search is not None:
             tactic_search = {
                 **tactic_search,
                 "supersedes_manual_lemma_reason": manual_reason,
@@ -223,6 +247,20 @@ def _candidate_metadata(
     }
     if tactic_search is not None:
         metadata["tactic_search"] = tactic_search
+    if external_proof_meta is not None:
+        # ``ai_proof_used`` is the provenance key mumei-agent already writes;
+        # it is only true once the real build promoted the atom.
+        metadata["external_proof"] = external_proof_meta
+        metadata["ai_proof_used"] = bool(
+            atom.external_proof is not None
+            and atom.external_proof.source == AI_GENERATED_PROOF
+            and status == LEAN_VERIFIED
+        )
+        if (
+            atom.external_proof is not None
+            and atom.external_proof.attempts is not None
+        ):
+            metadata["ai_proof_attempts"] = atom.external_proof.attempts
     if heatmap_data is not None:
         metadata["solver_heatmap"] = heatmap_data
     if harness_stage is not None:
@@ -310,7 +348,7 @@ def _candidate_status(
     if (
         atom.manual_lemma_reason
         and not getattr(atom, "has_custom_bridge_proof", False)
-        and atom.auto_tactic is None
+        and atom.proof_body_override is None
     ):
         return MANUAL_LEMMA_REQUIRED
     if (
@@ -857,6 +895,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         f"search (default: {DEFAULT_TACTIC_SEARCH_TIMEOUT_S:.0f}s).",
     )
     parser.add_argument(
+        "--external-proofs",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="JSON file of caller-supplied tactic scripts / witness lemmas "
+        "(e.g. mumei-agent AI proofs) injected as proof bodies of the "
+        "regenerated statements (docs/LEAN_TRANSLATOR_SPEC.md §13). "
+        "Promotion still requires `lake build` and the export gates.",
+    )
+    parser.add_argument(
         "--repo-dir",
         type=Path,
         default=Path(__file__).resolve().parent.parent,
@@ -981,8 +1029,26 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.no_tactic_search_history
         else load_history(args.tactic_search_history)
     )
+    external_proofs = (
+        load_external_proofs(args.external_proofs)
+        if args.external_proofs is not None
+        else []
+    )
     for src_path, payload in payloads:
         atoms = collect_unknown_atoms(payload)
+        if external_proofs:
+            rejections = apply_external_proofs(atoms, external_proofs)
+            for name, reason in sorted(rejections.items()):
+                print(
+                    f"warning: external proof for atom {name} rejected: {reason}",
+                    file=sys.stderr,
+                )
+            for atom in atoms:
+                if atom.external_proof is not None:
+                    print(
+                        f"external proof ({atom.external_proof.source}) injected "
+                        f"for atom {atom.name}"
+                    )
         if tactic_search_enabled:
             # Stage ``residual``: obligations the template catalog left with a
             # ``manual_lemma_reason`` are probed before they are emitted, so an

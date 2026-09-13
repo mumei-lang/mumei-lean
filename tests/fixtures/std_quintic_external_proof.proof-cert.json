@@ -1,0 +1,34 @@
+{
+  "version": "1",
+  "file": "std/quintic.mm",
+  "mumei_version": "0.0.0",
+  "z3_version": "4.13",
+  "timestamp": "2026-01-01T00:00:00Z",
+  "all_verified": false,
+  "atoms": [
+    {
+      "name": "quintic_pos",
+      "z3_check_result": "unknown",
+      "z3_result_class": "unknown",
+      "status": "unknown",
+      "escalation_reason": "nonlinear_arithmetic",
+      "requires": "x > 0",
+      "ensures": "result > 0",
+      "body_expr": "{ x * x * x * x * x }",
+      "body_summary": "{ x * x * x * x * x }",
+      "logic_fragment_tags": [
+        "nonlinear_arithmetic"
+      ],
+      "params": [
+        {
+          "name": "x",
+          "type": "i64"
+        }
+      ],
+      "return_type": "i64",
+      "proof_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "bridge_lemma_hash": "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
+    }
+  ]
+}

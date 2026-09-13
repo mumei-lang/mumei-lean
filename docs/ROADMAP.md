@@ -214,8 +214,9 @@ change to the contract constants must be synchronised across projects in the sam
   with the compiler-side C-2 (mumei P10-D nlsat-first for bounded low-degree nonlinear
   arithmetic) and the B-7 re-measurement in the same PR group — the escalation population stays
   at 6 atoms (all finite-field, outside the nlsat window), so nothing on this side changes.
-  The C-1 inventory (mumei `docs/ROADMAP.md` P30) is the target-obligation input for the
-  remaining B-1 work: 23 benchmark atoms reachable by lowering only (`perform` statement
+  B-1 as filed (the first construct, PR #115) is complete; what the canonical roadmap carries
+  into Wave 5 as "B-1 続き" is the follow-up of further lowering-only constructs, and the C-1
+  inventory (mumei `docs/ROADMAP.md` P30) is its target-obligation input: 23 benchmark atoms reachable by lowering only (`perform` statement
   sequences before a pure tail, pure `let` sequences, nested `if`, struct projection — no new
   bridge lemma, hash unchanged); the 11 `task_group: all` / `any` atoms need a bridge lemma
   and are filed as mumei P31 (hash lockstep, not in this wave). Reference regression gates:

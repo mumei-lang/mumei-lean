@@ -475,9 +475,32 @@ def _atom_proved(
         return False
     if not _lean_result_contract_current(metadata):
         return False
-    if atom.get("manual_lemma_reason") and not known_witness:
-        return False
+    source_reason = atom.get("manual_lemma_reason")
+    if source_reason and not known_witness:
+        if not _manual_lemma_reason_superseded(str(source_reason), metadata):
+            return False
     return known_witness or name not in failed
+
+
+def _manual_lemma_reason_superseded(reason: str, metadata: Optional[dict]) -> bool:
+    """True when verified bridge metadata records that ``reason`` (a faithful
+    statement the template catalog could not discharge) was closed by an
+    external proof (spec §13) or the tactic search (spec §12.4).
+
+    Only an explicit ``supersedes_manual_lemma_reason`` equal to the source
+    reason counts; a metadata entry that merely omits the reason does not.
+    """
+    if not isinstance(metadata, dict):
+        return False
+    if str(metadata.get("status", "")) != LEAN_VERIFIED:
+        return False
+    for key in ("external_proof", "tactic_search"):
+        provenance = metadata.get(key)
+        if isinstance(provenance, dict) and (
+            provenance.get("supersedes_manual_lemma_reason") == reason
+        ):
+            return True
+    return False
 
 
 def _metadata_for_atom(

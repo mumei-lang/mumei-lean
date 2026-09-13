@@ -37,6 +37,7 @@ try:
     from .ingest_cert import (
         IngestedAtom,
         collect_unknown_atoms,
+        external_proof_rendered,
         module_to_path,
         write_modules,
     )
@@ -57,6 +58,7 @@ try:
         bridge_stage_metadata,
     )
     from .external_proof import (
+        ExternalProofApplication,
         AI_GENERATED_PROOF,
         apply_external_proofs,
         load_external_proofs,
@@ -96,6 +98,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
     from ingest_cert import (  # type: ignore
         IngestedAtom,
         collect_unknown_atoms,
+        external_proof_rendered,
         module_to_path,
         write_modules,
     )
@@ -116,6 +119,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
         bridge_stage_metadata,
     )
     from external_proof import (  # type: ignore
+        ExternalProofApplication,
         AI_GENERATED_PROOF,
         apply_external_proofs,
         load_external_proofs,
@@ -385,11 +389,11 @@ def _metadata_for_atoms(
     tactic_search_results = tactic_search_results or {}
     failed_names = set(failed)
     for atom in atoms:
-        atom_failures = [
-            entry
-            for entry in (build_failures or [])
-            if entry["atom"] == atom.name and atom.name in failed_names
-        ]
+        atom_failures = (
+            _failures_for_atom(atom, build_failures or [], out_dir, module_prefix)
+            if atom.name in failed_names
+            else []
+        )
         search_result = tactic_search_results.get(_atom_key(atom))
         atom_solver_time = lean_solver_time_s
         if search_result is not None and atom_solver_time is not None:
@@ -411,6 +415,32 @@ def _metadata_for_atoms(
             metadata = _known_witness_metadata(atom, metadata, harness_stage)
         metadata_by_atom[atom.name] = metadata
     return metadata_by_atom
+
+
+def _failures_for_atom(
+    atom: IngestedAtom,
+    build_failures: List[dict],
+    out_dir: Path,
+    module_prefix: str,
+) -> List[dict]:
+    """Structured failures that belong to ``atom``: same name *and* a Lake
+    file path that resolves to the atom's own generated module (so two
+    same-named atoms in different modules never share diagnostics). An
+    entry without a file path is kept for every same-named atom."""
+    rel = module_to_path(atom.module_key, module_prefix)
+    owned = {str((out_dir / rel).as_posix()), str(rel.as_posix())}
+    matched: List[dict] = []
+    for entry in build_failures:
+        if entry["atom"] != atom.name:
+            continue
+        file_path = entry.get("file")
+        if file_path is None:
+            matched.append(entry)
+            continue
+        file_norm = str(Path(str(file_path)).as_posix())
+        if any(file_norm == f or file_norm.endswith(f) for f in owned):
+            matched.append(entry)
+    return matched
 
 
 def _known_witness_metadata(
@@ -664,6 +694,16 @@ def _attribute_failures(
         and not attributions
         and not unattributable
     )
+    def _everything_failed() -> List[List[str]]:
+        # Treat every atom we would have lifted into Lean as failed
+        # in *every* payload so the resulting certificate is
+        # conservative (no false ``lean_verified``).
+        everything: List[List[str]] = []
+        for atoms, proved in zip(atoms_per_payload, proved_per_payload):
+            local_known = _known_witness_names(atoms, known_witness_proved)
+            everything.append(sorted(set(proved) - local_known))
+        return everything
+
     if lake_missing or unattributable or unrecognised_failure:
         if unattributable and verbose:
             print(
@@ -679,14 +719,7 @@ def _attribute_failures(
                 f"treating all lifted atoms as failed.",
                 file=sys.stderr,
             )
-        # Treat every atom we would have lifted into Lean as failed
-        # in *every* payload so the resulting certificate is
-        # conservative (no false ``lean_verified``).
-        per_payload_failed: List[List[str]] = []
-        for atoms, proved in zip(atoms_per_payload, proved_per_payload):
-            local_known = _known_witness_names(atoms, known_witness_proved)
-            per_payload_failed.append(sorted(set(proved) - local_known))
-        return per_payload_failed
+        return _everything_failed()
 
     # Map each payload to the set of generated source files it
     # owns. Failures whose Lake-reported file path matches one of
@@ -708,6 +741,7 @@ def _attribute_failures(
     all_known_files: set = set().union(*payload_files) if payload_files else set()
 
     per_payload_failed = []
+    attributed_to_generated = False
     for atoms, proved, files in zip(
         atoms_per_payload,
         proved_per_payload,
@@ -718,6 +752,7 @@ def _attribute_failures(
         for file_path, name in attributions:
             if name not in proved_set:
                 continue
+            attributed_to_generated = True
             if file_path is None:
                 # No file context — apply to every payload that
                 # owns the name to stay conservative.
@@ -741,7 +776,34 @@ def _attribute_failures(
         local_known = _known_witness_names(atoms, known_witness_proved)
         local -= local_known
         per_payload_failed.append(sorted(local))
+    if rc != 0 and not lake_missing and not attributed_to_generated:
+        # Every parsed diagnostic names a theorem outside the generated
+        # payloads (a dependency or library file). The build still failed,
+        # and nothing tells us which generated theorems Lean reached, so a
+        # foreign failure is as unattributable as a missing location.
+        if verbose:
+            print(
+                f"warning: `lake build` exited with status {rc} but every "
+                f"parsed failure belongs to a file outside the generated "
+                f"payloads; treating all lifted atoms as failed.",
+                file=sys.stderr,
+            )
+        return _everything_failed()
     return per_payload_failed
+
+
+def _write_failure_report(build_log: str, repo_dir: Path, path: Path) -> dict:
+    """Write the structured ``lake build`` failure report (B-3) for
+    ``build_log`` to ``path`` and return it. Written for every build,
+    including ``--ci-mode`` fallbacks, so repair loops always find it."""
+    report = build_failure_report(build_log, source_root=repo_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+    )
+    if report["failures"] or report["unattributed"]:
+        print(f"wrote structured build failures to {path}")
+    return report
 
 
 def _lake_build_command(repo_dir: Path, target: str) -> Optional[List[str]]:
@@ -1057,11 +1119,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.external_proofs is not None
         else []
     )
+    external_proof_application = ExternalProofApplication()
     for src_path, payload in payloads:
         atoms = collect_unknown_atoms(payload)
         if external_proofs:
-            rejections = apply_external_proofs(atoms, external_proofs)
-            for name, reason in sorted(rejections.items()):
+            applied = apply_external_proofs(
+                atoms, external_proofs, renders_override=external_proof_rendered
+            )
+            external_proof_application.merge(applied)
+            for name, reason in sorted(applied.rejections.items()):
                 print(
                     f"warning: external proof for atom {name} rejected: {reason}",
                     file=sys.stderr,
@@ -1096,6 +1162,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"({partial_count} partial translation)"
         )
 
+    for proof in external_proof_application.unmatched(external_proofs):
+        print(
+            f"warning: external proof for {proof.atom} matched no collected atom",
+            file=sys.stderr,
+        )
     known_witness_proved: Set[AtomKey] = set()
 
     all_atoms: List[IngestedAtom] = []
@@ -1320,6 +1391,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                 f"log: {log_path}"
             )
 
+    build_log = log_path.read_text()
+    failure_report_path = args.failure_report or (args.out_dir / "lake_build_failures.json")
+    failure_report = _write_failure_report(build_log, args.repo_dir, failure_report_path)
+
     if args.ci_mode and rc != 0:
         print(
             "warning: `lake build` failed in --ci-mode; preserving generated "
@@ -1328,12 +1403,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         if args.summary_json is not None:
             summary_payload["ci_mode_fallback"] = True
+            summary_payload["failure_report"] = str(failure_report_path)
             args.summary_json.write_text(
                 json.dumps(summary_payload, indent=2, ensure_ascii=False) + "\n"
             )
         return 0
 
-    build_log = log_path.read_text()
     print(f"`lake build` exited with status {rc}; log: {log_path}")
     if rc != 0:
         print("--- lake build log tail ---", file=sys.stderr)
@@ -1374,15 +1449,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         module_prefix=args.module_prefix,
         repo_dir=args.repo_dir,
     )
-
-    failure_report = build_failure_report(build_log, source_root=args.repo_dir)
-    failure_report_path = args.failure_report or (args.out_dir / "lake_build_failures.json")
-    failure_report_path.parent.mkdir(parents=True, exist_ok=True)
-    failure_report_path.write_text(
-        json.dumps(failure_report, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
-    )
-    if failure_report["failures"] or failure_report["unattributed"]:
-        print(f"wrote structured build failures to {failure_report_path}")
 
     if args.record_tactic_search_history:
         _record_tactic_search_history(

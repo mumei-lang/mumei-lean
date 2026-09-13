@@ -132,7 +132,7 @@ def test_rejected_proof_is_never_rendered():
     rejections = apply_external_proofs(
         [atom], [ExternalProof(atom="quintic_pos", tactic_script="sorry")]
     )
-    assert rejections == {"quintic_pos": "forbidden_token:sorry"}
+    assert rejections.rejections == {"quintic_pos": "forbidden_token:sorry"}
     assert atom.external_proof is None
     assert atom.external_proof_rejection == "forbidden_token:sorry"
     assert "sorry" not in render_theorem(atom)
@@ -248,3 +248,124 @@ def test_ingest_cli_injects_external_proofs(tmp_path: Path, capsys):
     assert "exact mul_pos hx hx" in src
     assert "sorry" not in src
     assert src.count("mumei_arith_deep") == 1
+
+
+def test_external_proof_supersession_survives_the_export_gate():
+    """The lean-cert gate (``export_cert._atom_proved``) honours the
+    ``supersedes_manual_lemma_reason`` provenance and promotes; without it the
+    source ``manual_lemma_reason`` keeps blocking."""
+    from export_cert import upgrade_certificate
+
+    cert = _cert([_unknown_atom(manual_lemma_reason="template_catalog_miss")])
+    [atom] = collect_unknown_atoms(cert)
+    assert atom.manual_lemma_reason == "template_catalog_miss"
+    apply_external_proofs(
+        [atom], [ExternalProof(atom="quintic_pos", tactic_script=GOOD_SCRIPT)]
+    )
+    metadata = bridge._metadata_for_atoms(
+        [atom], Path("generated"), "Generated", ["quintic_pos"], []
+    )
+    upgraded = upgrade_certificate(
+        cert=cert,
+        proved_atoms=["quintic_pos"],
+        failed_atoms=[],
+        lean_version="leanprover/lean4:v4.15.0",
+        atom_metadata=metadata,
+    )
+    assert upgraded["atoms"][0]["z3_check_result"] == "lean_verified"
+    assert upgraded["atoms"][0]["lean_metadata"]["ai_proof_used"] is True
+
+    failed_metadata = bridge._metadata_for_atoms(
+        [atom], Path("generated"), "Generated", ["quintic_pos"], ["quintic_pos"]
+    )
+    still_unknown = upgrade_certificate(
+        cert=cert,
+        proved_atoms=["quintic_pos"],
+        failed_atoms=["quintic_pos"],
+        lean_version="leanprover/lean4:v4.15.0",
+        atom_metadata=failed_metadata,
+    )
+    assert still_unknown["atoms"][0]["z3_check_result"] == "unknown"
+
+
+def test_duplicate_proofs_for_one_atom_are_rejected_regardless_of_order():
+    from external_proof import REJECT_DUPLICATE
+
+    good = ExternalProof(atom="quintic_pos", tactic_script=GOOD_SCRIPT)
+    bad = ExternalProof(atom="quintic_pos", tactic_script="sorry")
+    for proofs in ([good, bad], [bad, good]):
+        [atom] = collect_unknown_atoms(_cert([_unknown_atom()]))
+        applied = apply_external_proofs([atom], proofs)
+        assert atom.external_proof is None
+        assert atom.external_proof_rejection == REJECT_DUPLICATE
+        assert applied.rejections == {"quintic_pos": REJECT_DUPLICATE}
+        assert applied.unmatched(proofs) == []
+        assert "external_proof" not in render_theorem(atom)
+
+
+def test_unmatched_proofs_are_reported_not_dropped(tmp_path: Path, capsys):
+    [atom] = collect_unknown_atoms(_cert([_unknown_atom()]))
+    stray = ExternalProof(atom="misspelled", tactic_script=GOOD_SCRIPT)
+    scoped = ExternalProof(
+        atom="quintic_pos", tactic_script=GOOD_SCRIPT, module_key="std/other.mm"
+    )
+    applied = apply_external_proofs([atom], [stray, scoped])
+    assert atom.external_proof is None
+    assert applied.rejections == {}
+    assert applied.unmatched([stray, scoped]) == [stray, scoped]
+
+    cert = tmp_path / "cert.json"
+    cert.write_text(json.dumps(_cert([_unknown_atom()])))
+    proofs = tmp_path / "proofs.json"
+    proofs.write_text(
+        json.dumps({"proofs": [{"atom": "misspelled", "tactic_script": GOOD_SCRIPT}]})
+    )
+    assert ingest_main(
+        [str(cert), "--out", str(tmp_path / "gen"), "--external-proofs", str(proofs)]
+    ) == 0
+    assert "external proof for misspelled matched no collected atom" in capsys.readouterr().err
+
+
+def test_custom_bridge_proof_atoms_never_take_or_claim_an_external_proof():
+    from external_proof import REJECT_CUSTOM_BRIDGE_PROOF
+    from ingest_cert import external_proof_rendered
+
+    fixture = Path(__file__).parent / "fixtures" / "guard_trace_demo.proof-cert.json"
+    atoms = collect_unknown_atoms(json.loads(fixture.read_text()))
+    target = next(atom for atom in atoms if atom.has_custom_bridge_proof)
+    proof = ExternalProof(atom=target.name, tactic_script="simp")
+    applied = apply_external_proofs(atoms, [proof], renders_override=external_proof_rendered)
+    assert target.external_proof is None
+    assert target.external_proof_rejection == REJECT_CUSTOM_BRIDGE_PROOF
+    assert applied.rejections == {target.name: REJECT_CUSTOM_BRIDGE_PROOF}
+    assert "external_proof" not in render_theorem(target)
+    meta = bridge._candidate_metadata(target, Path("generated"), "Generated", "lean_verified")
+    assert meta["ai_proof_used"] is False
+    assert meta["external_proof"] == {"rejected": REJECT_CUSTOM_BRIDGE_PROOF}
+
+
+def test_external_proof_not_rendered_is_rejected():
+    """A renderer that ignores ``proof_body_override`` (known-witness delegate)
+    must not leave the proof attached, otherwise ``ai_proof_used`` would be
+    derived from text Lean never saw."""
+    from external_proof import REJECT_NOT_RENDERED
+    from ingest_cert import external_proof_rendered
+
+    fixture = Path(__file__).parent / "fixtures" / "abs_saturating.proof-cert.json"
+    atoms = collect_unknown_atoms(json.loads(fixture.read_text()))
+    target = next(atom for atom in atoms if atom.name == "abs_saturating")
+    assert not target.has_custom_bridge_proof
+    proof = ExternalProof(atom="abs_saturating", tactic_script="omega")
+    applied = apply_external_proofs(atoms, [proof], renders_override=external_proof_rendered)
+    assert target.external_proof is None
+    assert applied.rejections == {"abs_saturating": REJECT_NOT_RENDERED}
+    assert "external_proof" not in render_theorem(target)
+    # The generic renderer does carry the override, so it is confirmed there.
+    [plain] = collect_unknown_atoms(_cert([_unknown_atom()]))
+    apply_external_proofs(
+        [plain],
+        [ExternalProof(atom="quintic_pos", tactic_script=GOOD_SCRIPT)],
+        renders_override=external_proof_rendered,
+    )
+    assert plain.external_proof is not None
+    assert external_proof_rendered(plain)

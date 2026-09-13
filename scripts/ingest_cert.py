@@ -1305,7 +1305,7 @@ def render_theorem(atom: IngestedAtom) -> str:
     notes: List[str] = []
     if atom.external_proof is not None:
         notes.append(
-            f"  -- external_proof: source={atom.external_proof.source} "
+            f"  {EXTERNAL_PROOF_NOTE_PREFIX}{atom.external_proof.source} "
             f"sha256={atom.external_proof.script_sha256}"
         )
     elif atom.auto_tactic is not None:
@@ -1377,6 +1377,23 @@ def _render_known_witness_delegate(atom: IngestedAtom) -> Optional[str]:
             "  exact MumeiLean.StdMathAbs.abs_saturating_correct x result h_body\n"
         )
     return None
+
+
+EXTERNAL_PROOF_NOTE_PREFIX = "-- external_proof: source="
+
+
+def external_proof_rendered(atom: IngestedAtom) -> bool:
+    """True iff the theorem rendered for ``atom`` carries its external proof
+    body (spec §13). Dedicated renderers (custom bridge proofs, known-witness
+    delegates) ignore ``proof_body_override``; a proof attached to such an
+    atom never reaches Lean and must not count as used."""
+    if atom.external_proof is None:
+        return False
+    marker = (
+        f"{EXTERNAL_PROOF_NOTE_PREFIX}{atom.external_proof.source} "
+        f"sha256={atom.external_proof.script_sha256}"
+    )
+    return marker in render_theorem(atom)
 
 
 def uses_generic_fallback_tactic(atom: IngestedAtom) -> bool:
@@ -1513,11 +1530,17 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     atoms = collect_unknown_atoms(payload)
     if args.external_proofs is not None:
-        rejections = apply_external_proofs(
-            atoms, load_external_proofs(args.external_proofs)
+        external_proofs = load_external_proofs(args.external_proofs)
+        applied = apply_external_proofs(
+            atoms, external_proofs, renders_override=external_proof_rendered
         )
-        for name, reason in sorted(rejections.items()):
+        for name, reason in sorted(applied.rejections.items()):
             print(f"warning: external proof for {name} rejected: {reason}", file=sys.stderr)
+        for proof in applied.unmatched(external_proofs):
+            print(
+                f"warning: external proof for {proof.atom} matched no collected atom",
+                file=sys.stderr,
+            )
     written = write_modules(atoms, args.out, args.module_prefix)
 
     if args.print_summary:

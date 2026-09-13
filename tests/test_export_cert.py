@@ -481,3 +481,79 @@ def test_failed_theorem_attributions_maps_generated_known_witness_name():
     assert _failed_theorem_attributions(log) == [
         ("Generated/Std/Math/Abs.lean", "abs_saturating")
     ]
+
+
+def _manual_reason_cert() -> dict:
+    return _certificate(
+        [{**_atom("inc"), "manual_lemma_reason": "template_catalog_miss"}]
+    )
+
+
+def _upgrade_with_metadata(metadata: dict) -> str:
+    upgraded = upgrade_certificate(
+        cert=_manual_reason_cert(),
+        proved_atoms=["inc"],
+        failed_atoms=[],
+        lean_version="leanprover/lean4:v4.15.0",
+        atom_metadata={"inc": metadata},
+    )
+    return upgraded["atoms"][0]["z3_check_result"]
+
+
+def test_manual_lemma_reason_blocks_promotion_without_supersession():
+    assert _upgrade_with_metadata({"status": LEAN_VERIFIED}) == "unknown"
+    # A provenance block that does not name the source reason is not enough.
+    assert (
+        _upgrade_with_metadata(
+            {"status": LEAN_VERIFIED, "external_proof": {"source": "ai_generated_proof"}}
+        )
+        == "unknown"
+    )
+    assert (
+        _upgrade_with_metadata(
+            {
+                "status": LEAN_VERIFIED,
+                "external_proof": {"supersedes_manual_lemma_reason": "other_reason"},
+            }
+        )
+        == "unknown"
+    )
+
+
+def test_manual_lemma_reason_superseded_by_external_proof_or_tactic_search():
+    assert (
+        _upgrade_with_metadata(
+            {
+                "status": LEAN_VERIFIED,
+                "external_proof": {
+                    "source": "ai_generated_proof",
+                    "supersedes_manual_lemma_reason": "template_catalog_miss",
+                },
+            }
+        )
+        == LEAN_VERIFIED
+    )
+    assert (
+        _upgrade_with_metadata(
+            {
+                "status": LEAN_VERIFIED,
+                "tactic_search": {
+                    "adopted_tactic": "omega",
+                    "supersedes_manual_lemma_reason": "template_catalog_miss",
+                },
+            }
+        )
+        == LEAN_VERIFIED
+    )
+    # A failed build never promotes, whatever the provenance says.
+    assert (
+        _upgrade_with_metadata(
+            {
+                "status": "manual_lemma_required",
+                "external_proof": {
+                    "supersedes_manual_lemma_reason": "template_catalog_miss"
+                },
+            }
+        )
+        == "unknown"
+    )

@@ -32,9 +32,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Protocol, Tuple
 
 AI_GENERATED_PROOF = "ai_generated_proof"
 _ALLOWED_SOURCES = frozenset({AI_GENERATED_PROOF, "handwritten_witness"})
@@ -168,14 +168,72 @@ def load_external_proofs(path: Path) -> List[ExternalProof]:
     return parse_external_proofs(json.loads(path.read_text()))
 
 
-def apply_external_proofs(atoms: Iterable[Any], proofs: Iterable[ExternalProof]) -> Dict[str, str]:
+@dataclass
+class ExternalProofApplication:
+    """Outcome of :func:`apply_external_proofs` for one batch of atoms."""
+
+    rejections: Dict[str, str] = field(default_factory=dict)
+    matched: List[ExternalProof] = field(default_factory=list)
+
+    def unmatched(self, proofs: Iterable[ExternalProof]) -> List[ExternalProof]:
+        """Proofs in ``proofs`` that targeted no atom in this (or any merged) batch."""
+        matched = set(id(proof) for proof in self.matched)
+        return [proof for proof in proofs if id(proof) not in matched]
+
+    def merge(self, other: "ExternalProofApplication") -> None:
+        self.rejections.update(other.rejections)
+        self.matched.extend(other.matched)
+
+
+class ProofTarget(Protocol):
+    """The slice of ``ingest_cert.IngestedAtom`` external proofs touch."""
+
+    name: str
+    module_key: str
+    external_proof: Optional[ExternalProof]
+    external_proof_rejection: Optional[str]
+
+    @property
+    def has_custom_bridge_proof(self) -> bool: ...
+
+
+REJECT_DUPLICATE = "duplicate_external_proofs_for_atom"
+REJECT_CUSTOM_BRIDGE_PROOF = "atom_uses_custom_bridge_proof"
+REJECT_NOT_RENDERED = "external_proof_not_rendered"
+
+
+def apply_external_proofs(
+    atoms: Iterable[ProofTarget],
+    proofs: Iterable[ExternalProof],
+    renders_override: Optional[Callable[[ProofTarget], bool]] = None,
+) -> ExternalProofApplication:
     """Attach accepted proofs to matching ``IngestedAtom`` objects.
 
     Rejected proofs are recorded on the atom as ``external_proof_rejection``
-    and returned as ``{atom_name: reason}``; the atom then keeps whatever
-    status it had without the proof, so a rejected script can never promote.
+    and returned in ``rejections`` as ``{atom_name: reason}``; the atom then
+    keeps whatever status it had without the proof, so a rejected script can
+    never promote.
+
+    Deterministic rules independent of JSON order:
+
+    * more than one proof matching the same atom is a rejection
+      (``duplicate_external_proofs_for_atom``) — nothing is attached;
+    * atoms rendered by a dedicated bridge generator
+      (``has_custom_bridge_proof``) never take an override, because those
+      renderers emit their own proof and the supplied text would not be
+      what ``lake build`` checked (``atom_uses_custom_bridge_proof``).
+
+    ``renders_override`` (``ingest_cert.external_proof_rendered``) confirms
+    after attachment that the rendered theorem really carries the supplied
+    proof body; when it does not (a renderer that ignores overrides), the
+    proof is detached and rejected (``external_proof_not_rendered``) so
+    ``ai_proof_used`` can only be derived from text Lean actually checked.
+
+    Every proof that matched an atom (attached or rejected) is listed in
+    ``matched`` so callers can report proofs that targeted nothing.
     """
-    rejections: Dict[str, str] = {}
+    outcome = ExternalProofApplication()
+    proofs = list(proofs)
     by_atom: Dict[str, List[ExternalProof]] = {}
     for proof in proofs:
         by_atom.setdefault(proof.atom, []).append(proof)
@@ -187,11 +245,20 @@ def apply_external_proofs(atoms: Iterable[Any], proofs: Iterable[ExternalProof])
         ]
         if not candidates:
             continue
-        proof = candidates[0]
-        reason = reject_external_proof(proof)
+        outcome.matched.extend(candidates)
+        if len(candidates) > 1:
+            reason = REJECT_DUPLICATE
+        elif atom.has_custom_bridge_proof:
+            reason = REJECT_CUSTOM_BRIDGE_PROOF
+        else:
+            reason = reject_external_proof(candidates[0])
         if reason is not None:
             atom.external_proof_rejection = reason
-            rejections[atom.name] = reason
+            outcome.rejections[atom.name] = reason
             continue
-        atom.external_proof = proof
-    return rejections
+        atom.external_proof = candidates[0]
+        if renders_override is not None and not renders_override(atom):
+            atom.external_proof = None
+            atom.external_proof_rejection = REJECT_NOT_RENDERED
+            outcome.rejections[atom.name] = REJECT_NOT_RENDERED
+    return outcome

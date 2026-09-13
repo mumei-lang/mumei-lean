@@ -104,6 +104,11 @@ schema with two additions:
 | `lean_cert_schema_version`    | `String` | Schema version for this Lean-augmented certificate (currently `1.0-lean`). |
 | `harness_contract`            | `Object` | Versioned bridge harness metadata describing acceptance path, artifact contracts, and verifier gates. |
 
+The top-level certificate `version` is forwarded verbatim. It selects the
+`content_hash` algorithm mumei recomputes on ingest (`"1.0"` legacy
+four-field hash, `"1.1"` content-hash v2 covering signature /
+`spec_metadata` / effects); mumei-lean never recomputes `content_hash`.
+
 Atom-level changes are conservative:
 
 | `AtomCertificate` field | Behaviour                                                                                               |

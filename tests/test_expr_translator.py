@@ -1369,6 +1369,27 @@ def test_builtin_name_binder_conflict_across_contract_components():
     assert expr_translator.builtin_name_binder_conflicts(
         "top < max", "result <= max", "{ top + 1 }"
     ) == []
+    assert ensures.translator_ir is not None
+    assert ensures.translator_ir.sort == "manual_lemma_required"
+    assert ensures.translator_ir.manual_lemma_reason == ensures.manual_lemma_reason
+
+
+def test_builtin_name_binder_conflict_ignores_locally_bound_names():
+    # A quantifier / let binder named like a helper never reaches the theorem
+    # parameter list, so it cannot shadow a helper call in another component.
+    assert expr_translator.builtin_name_binder_conflicts(
+        "forall max : Int: max > 0", "max(a, b) >= a", ""
+    ) == []
+    assert expr_translator.builtin_name_binder_conflicts(
+        "forall(max, 0, n, max >= 0)", "max(a, b) >= a", ""
+    ) == []
+    assert expr_translator.builtin_name_binder_conflicts(
+        "let max = a + 1 in max > a", "result == max(a, b)", ""
+    ) == []
+    # A free bare use still conflicts.
+    assert expr_translator.builtin_name_binder_conflicts(
+        "forall i : Int: i > max", "max(a, b) >= a", ""
+    ) == ["max"]
 
 
 def test_translate_body_unwraps_single_expression_block():

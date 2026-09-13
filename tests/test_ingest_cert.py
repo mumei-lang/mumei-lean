@@ -8,6 +8,7 @@ import pytest
 
 from ingest_cert import (
     _classify_input,
+    _translator_ir_payload,
     _module_to_lean_namespace,
     _translate_expr,
     collect_unknown_atoms,
@@ -328,6 +329,47 @@ def test_render_theorem_injects_list_body_semantics():
     assert "(result : List Int)" in rendered
     assert "(h_body : result = listBodyResult x y)" in rendered
     assert "body semantics unsupported" not in rendered
+
+
+@pytest.mark.parametrize(
+    ("body_expr", "requires", "ensures", "expected_def"),
+    [
+        ('{ "Mumei" }', 'starts_with(result, "M")', 'starts_with(result, "M")', "def wrappedResult : String :="),
+        ("{ [x, y] }", "true", "result[0] == x", "def wrappedResult (x y : Int) : List Int :="),
+        ("{ true }", "true", "result", "def wrappedResult : Prop :="),
+        ("{ forall(i, 0, n, i >= 0) }", "n >= 0", "result", "def wrappedResult (n : Int) : Prop :="),
+    ],
+)
+def test_render_theorem_infers_result_type_through_block_body(
+    body_expr, requires, ensures, expected_def
+):
+    # A single-expression block `{ e }` has the value (and type) of `e`.
+    cert = _make_certificate(
+        "m.mm",
+        [_make_atom("wrapped", requires=requires, ensures=ensures, body_expr=body_expr)],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert expected_def in rendered, rendered
+    assert ": Int :=" not in rendered.split(expected_def)[0], rendered
+
+
+def test_builtin_name_binder_conflict_syncs_translator_ir():
+    cert = _make_certificate(
+        "m.mm",
+        [_make_atom("clash", requires="max(a, b) > 0", ensures="result <= max")],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    assert atom.translator_ir["sort"] == "manual_lemma_required"
+    assert "builtin_name_binder_conflict:max" in atom.translator_ir["manual_lemma_reason"]
+
+    # A certificate that ships its own (stale, complete-looking) IR is
+    # overridden for translator-detected conflicts.
+    raw = _make_atom("clash", requires="max(a, b) > 0", ensures="result <= max")
+    raw["translator_ir"] = {"sort": "contract_obligation", "theorem_goal": "True"}
+    [with_ir] = collect_unknown_atoms(_make_certificate("m.mm", [raw]))
+    assert with_ir.translator_ir["sort"] == "manual_lemma_required"
+    assert "builtin_name_binder_conflict:max" in with_ir.translator_ir["manual_lemma_reason"]
 
 
 def test_render_theorem_injects_string_body_semantics():

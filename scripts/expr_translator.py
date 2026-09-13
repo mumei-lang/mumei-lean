@@ -684,8 +684,52 @@ _BUILTIN_NAME_BINDER_CANDIDATES: Set[str] = set(_KNOWN_FUNCTIONS) - {
 }
 
 
+def _locally_bound_names(tokens: List[tuple]) -> Set[str]:
+    """Names bound by a quantifier or ``let`` anywhere in ``tokens``.
+
+    These never reach the theorem parameter list. A name that is bound in
+    one place and free elsewhere is already rejected as partial by the
+    scope guards in ``translate_contract``, so a flat set is sufficient.
+    """
+    bound: Set[str] = set()
+    for idx, (kind, text) in enumerate(tokens):
+        if kind == "KW" and text in _QUANTIFIER_KEYWORDS:
+            parsed_unbounded = _parse_unbounded_quantifier(tokens, idx)
+            if parsed_unbounded is not None:
+                bound.add(parsed_unbounded[0])
+            elif idx + 1 < len(tokens) and tokens[idx + 1] == ("OP", "("):
+                close = _find_matching(tokens, idx + 1, "(", ")")
+                if close != -1:
+                    parts = _split_top_level(tokens, idx + 2, close)
+                    if parts and parts[0] and parts[0][0][0] == "ID":
+                        bound.add(parts[0][0][1])
+        elif kind == "KW" and text == "let":
+            parsed_let = _parse_let_binding_scope(tokens, idx)
+            if parsed_let is not None:
+                bound.add(parsed_let[0])
+    return bound
+
+
+def _classify_builtin_name_uses(
+    tokens: List[tuple], bare: Set[str], called: Set[str]
+) -> None:
+    """Sort built-in helper names in ``tokens`` into ``bare`` / ``called``.
+
+    Occurrences of locally bound names (quantifier / ``let`` binders and
+    their uses) are neither: they do not become theorem parameters.
+    """
+    local = _locally_bound_names(tokens)
+    for idx, (kind, text) in enumerate(tokens):
+        if kind != "ID" or text not in _BUILTIN_NAME_BINDER_CANDIDATES:
+            continue
+        if idx + 1 < len(tokens) and tokens[idx + 1] == ("OP", "("):
+            called.add(text)
+        elif text not in local:
+            bare.add(text)
+
+
 def _builtin_name_binders(tokens: List[tuple]) -> Set[str]:
-    """Built-in helper names used only as bare identifiers in ``tokens``.
+    """Built-in helper names used only as free bare identifiers in ``tokens``.
 
     A name qualifies when every occurrence is a plain ``ID`` token that is
     not followed by ``(``; a name that is also called anywhere in the same
@@ -693,13 +737,7 @@ def _builtin_name_binders(tokens: List[tuple]) -> Set[str]:
     """
     bare: Set[str] = set()
     called: Set[str] = set()
-    for idx, (kind, text) in enumerate(tokens):
-        if kind != "ID" or text not in _BUILTIN_NAME_BINDER_CANDIDATES:
-            continue
-        if idx + 1 < len(tokens) and tokens[idx + 1] == ("OP", "("):
-            called.add(text)
-        else:
-            bare.add(text)
+    _classify_builtin_name_uses(tokens, bare, called)
     return bare - called
 
 
@@ -713,14 +751,7 @@ def builtin_name_binder_conflicts(*sources: str) -> List[str]:
     bare: Set[str] = set()
     called: Set[str] = set()
     for source in sources:
-        tokens = _tokenize((source or "").strip())
-        for idx, (kind, text) in enumerate(tokens):
-            if kind != "ID" or text not in _BUILTIN_NAME_BINDER_CANDIDATES:
-                continue
-            if idx + 1 < len(tokens) and tokens[idx + 1] == ("OP", "("):
-                called.add(text)
-            else:
-                bare.add(text)
+        _classify_builtin_name_uses(_tokenize((source or "").strip()), bare, called)
     return sorted(bare & called)
 
 
@@ -735,6 +766,9 @@ def mark_builtin_name_binder_conflict(
     reasons.update(f"builtin_name_binder_conflict:{name}" for name in conflicts)
     translation.unsupported_reasons = sorted(reasons)
     translation.manual_lemma_reason = ";".join(translation.unsupported_reasons)
+    if translation.translator_ir is not None:
+        translation.translator_ir.sort = "manual_lemma_required"
+        translation.translator_ir.manual_lemma_reason = translation.manual_lemma_reason
 
 
 def _unsupported_reasons(source: str, tokens: List[tuple], is_partial: bool) -> List[str]:
@@ -2692,6 +2726,20 @@ def _unwrap_block_body(source: str) -> Optional[str]:
     if depth != 0 or in_string:
         return None
     return source[1:-1].strip()
+
+
+def normalize_body_source(source: str) -> str:
+    """Strip every enclosing single-expression block from a body source.
+
+    ``{ "ok" }`` and ``"ok"`` denote the same value; callers inferring the
+    body's result type from the raw source must see the inner expression.
+    """
+    stripped = (source or "").strip()
+    while True:
+        inner = _unwrap_block_body(stripped)
+        if inner is None:
+            return stripped
+        stripped = inner
 
 
 def _known_body_pattern(source: str) -> Optional[TranslationResult]:

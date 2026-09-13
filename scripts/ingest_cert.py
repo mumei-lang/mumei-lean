@@ -55,6 +55,7 @@ try:
         contains_identifier,
         mark_builtin_name_binder_conflict,
         normalize_access_control_translator_ir,
+        normalize_body_source,
         normalize_cei_translator_ir,
         normalize_guard_trace_translator_ir,
         render_access_control_theorem,
@@ -78,6 +79,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py
         contains_identifier,
         mark_builtin_name_binder_conflict,
         normalize_access_control_translator_ir,
+        normalize_body_source,
         normalize_cei_translator_ir,
         normalize_guard_trace_translator_ir,
         render_access_control_theorem,
@@ -495,8 +497,15 @@ def _translator_ir_payload(atom: dict, *fallbacks: Optional[TranslationResult]) 
                     item_text = str(item)
                     if item_text not in target:
                         target.append(item_text)
-            if payload.get("manual_lemma_reason") and not result.get("manual_lemma_reason"):
-                result["manual_lemma_reason"] = str(payload["manual_lemma_reason"])
+            fallback_reason = str(payload.get("manual_lemma_reason") or "")
+            if fallback_reason and not result.get("manual_lemma_reason"):
+                result["manual_lemma_reason"] = fallback_reason
+            if "builtin_name_binder_conflict:" in fallback_reason:
+                existing = str(result.get("manual_lemma_reason") or "")
+                merged = [r for r in existing.split(";") if r]
+                merged.extend(r for r in fallback_reason.split(";") if r and r not in merged)
+                result["manual_lemma_reason"] = ";".join(merged)
+                result["sort"] = "manual_lemma_required"
         return result
     binders: List[dict] = []
     lowering_rules: List[str] = []
@@ -966,7 +975,7 @@ def _decl_parts_for_identifiers(
 
 
 def _body_result_type(source: str, translation: TranslationResult) -> str:
-    stripped = (source or "").strip()
+    stripped = normalize_body_source(source)
     if not stripped:
         return "Int"
     if stripped.startswith('"'):

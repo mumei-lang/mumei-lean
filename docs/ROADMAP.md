@@ -95,12 +95,23 @@ PATH="$HOME/.elan/bin:$PATH" python -m pytest tests/test_cert_roundtrip.py tests
 PATH="$HOME/.elan/bin:$PATH" lake build
 ```
 
-## AI-assisted proof ingestion and translator surface extension (proposed)
+## AI-assisted proof ingestion and translator surface extension (B-1 / B-2 / B-3 — ✅ Implemented)
 
-Proposed / next task — not implemented. This is the `mumei-lean` receiving end of the
-mumei-agent task "Task 2-D: AI-driven Lean proof generation for unknown atoms", whose plan is
-still being written on the agent side; this section may be started in parallel with it or after
-it. As stated above, `mumei-lang/mumei/docs/CROSS_PROJECT_ROADMAP.md` owns the global order, so
+B-1 (PR #115), B-2 and B-3 (PR #116) are implemented in this repo; the per-item markers below
+record what each one ships. This is the `mumei-lean` receiving end
+of the mumei-agent task "Task 2-D: AI-driven Lean proof generation for unknown atoms", which
+**has already shipped on the agent side** (mumei-agent PR #572, 2026-09-11:
+`agent/lean_ai_proof.py::run_ai_proof_repair`, the `ai_proof_generator` path of
+`lean_bridge.py::run_lean_bridge`, `--enable-lean-ai-proof`, `ai_proof_used` /
+`ai_proof_attempts` / `lean_fallback_strategy = "ai_generated_proof"` provenance). That
+implementation does **not** depend on anything in this section: it re-runs this repo's
+`scripts/ingest_cert.py` as a subprocess to regenerate the trusted `theorem <atom>_correct`
+statement from the current certificate, lets the LLM write only the tactic script after `:= by`,
+assembles `Generated.AiProof.<Atom>_<run>` itself and runs `lake build` + a `#print axioms`
+audit independently inside a mumei-lean checkout. Consequently B-1 / B-2 / B-3 below are
+**follow-ups that let the already-implemented B-4 path also run through
+mumei-lean's own acceptance surface** (`scripts/bridge.py` → `export_cert.py` gates) instead of
+the agent's private Lake invocation and log parsing. As stated above, `mumei-lang/mumei/docs/CROSS_PROJECT_ROADMAP.md` owns the global order, so
 this work stays inside the narrow V1 rule for this repo (Z3 `unknown` complement only), and any
 change to the contract constants must be synchronised across projects in the same change set.
 
@@ -112,14 +123,17 @@ change to the contract constants must be synchronised across projects in the sam
   and the fixed tactic ladder in `scripts/tactic_search.py`
   ([`docs/LEAN_TRANSLATOR_SPEC.md`](LEAN_TRANSLATOR_SPEC.md) §12). Everything else falls back to
   a hand-written witness via `manual_lemma_reason` / `-- TODO: unproven`.
-- For the mumei-agent side to make AI-driven Lean proof generation work end to end, this repo
-  needs a path that accepts an externally (AI) supplied Lean proof body or tactic script and
-  promotes it only after a real `lake build` verifies it. No such receiving surface exists yet;
-  that is the gap.
+- mumei-agent's AI proof generation shipped before this receiving surface existed: it writes
+  `Generated/AiProof/*.lean` into the checkout, runs Lake itself, and derives `ai_proof_used`
+  provenance on its side. B-2 (`scripts/bridge.py --external-proofs`) now offers the equivalent
+  path through the regular `export_cert.py` gates, writing the same `ai_proof_used` key; moving
+  the agent onto it is agent-side follow-up work (mumei-agent roadmap) and changes no lean-cert
+  vocabulary.
 
 ### Scope
 
-- **(a) Translator surface extension.** Incrementally lower the constructs that
+- **(a) Translator surface extension — ✅ Implemented (B-1, PR #115: bare built-in helper names
+  as `Int` binders, single-expression `{ e }` body blocks, conditional result typing).** Incrementally lower the constructs that
   `scripts/expr_translator.py` currently treats as partial — unsupported function calls,
   `match` / inductive forms, regex, `==>` / implication, some `let` forms, i.e. the reasons
   enumerated by `_unsupported_reasons` — wherever a sound lowering exists, so that fewer
@@ -130,13 +144,16 @@ change to the contract constants must be synchronised across projects in the sam
   copy of it; a lowering-only change leaves that hash untouched, so each extension must
   separately assess whether the generated-Prop surface moved enough to warrant a
   `translator_version` bump.
-- **(b) AI-generated proof ingestion path.** Add a new path in `scripts/ingest_cert.py` /
+- **(b) AI-generated proof ingestion path — ✅ Implemented (B-2, PR #116: `scripts/external_proof.py`,
+  `--external-proofs proofs.json` on `scripts/ingest_cert.py` / `scripts/bridge.py`).** A path in `scripts/ingest_cert.py` /
   `scripts/bridge.py` that accepts an AI-generated tactic script or witness lemma. Generalise the
   existing `IngestedAtom.auto_tactic` mechanism (which injects the tactic adopted by
   `tactic_search`) so that an externally supplied proof body can be injected into
   `render_theorem`. As with tactic search, an accepted proof is written into the generated module
   and only promotes to `lean_verified` when a real `lake build` succeeds — it must not bypass any
-  of the `scripts/export_cert.py` gates.
+  of the `scripts/export_cert.py` gates. The lean-cert must reuse the keys mumei-agent already
+  emits (`ai_proof_used`, `ai_proof_attempts`, `lean_fallback_strategy = "ai_generated_proof"`);
+  no new alias is introduced.
 
 ### Soundness guards
 
@@ -171,12 +188,15 @@ change to the contract constants must be synchronised across projects in the sam
 
 ### Positioning and dependencies
 
-- This task is the Lean-side counterpart of the mumei-agent "Task 2-D". Sub-task (a) is
-  worthwhile on its own, independently of any AI integration. Sub-task (b) advances together with
-  mumei-agent once the contract (escalation bundle / lean-cert schema) is agreed on both sides.
-- Cross-repo ordering is fixed in [mumei `docs/CROSS_PROJECT_ROADMAP.md` Priority 25](https://github.com/mumei-lang/mumei/blob/develop/docs/CROSS_PROJECT_ROADMAP.md) (Track B). The mumei-lean items map as: sub-task (a) translator surface extension = **B-1** (Wave 1, may start immediately, one construct per PR, lowering-only so `bridge_lemma_hash` stays unchanged); sub-task (b) AI proof ingestion path = **B-2** (Wave 2, after the B-0 contract agreement: extended escalation-bundle schema, `ai_proof_used` / `ai_proof_attempts` lean-cert provenance); the iterative repair loop's structured `lake build` failure feedback = **B-3** (Wave 2, alongside B-2). The mumei-agent generation side (B-4 / B-5) starts only after B-2 / B-3 are on `develop`. B-2's acceptance gate extends the adversarial "no false promotion" matrix in `.agents/skills/testing-mumei-lean-live-generated/SKILL.md` with: AI proof containing `sorry`, failed `lake build`, unresolved tactic — none may promote to `lean_verified`.
-- No implemented marker (✅) applies yet; this stays in proposed / next-task state. The existing
-  regression commands remain the reference gates:
+- This task is the Lean-side counterpart of the mumei-agent "Task 2-D", which is already
+  implemented (see the section header). Sub-task (a) is worthwhile on its own, independently of
+  any AI integration. Sub-task (b) adopts the lean-cert contract mumei-agent already emits
+  (`ai_proof_used` / `ai_proof_attempts` / `lean_fallback_strategy`) rather than negotiating a
+  new one.
+- Cross-repo ordering is fixed in [mumei `docs/CROSS_PROJECT_ROADMAP.md` Priority 25](https://github.com/mumei-lang/mumei/blob/develop/docs/CROSS_PROJECT_ROADMAP.md) (Track B, Wave table revised 2026-09-13). The mumei-lean items map as: sub-task (a) translator surface extension = **B-1** (one construct per PR, lowering-only so `bridge_lemma_hash` stays unchanged, one live generated path per construct); sub-task (b) AI proof ingestion path = **B-2**; structured `lake build` failure feedback = **B-3**. The originally planned order (B-2 / B-3 before the agent-side B-4 / B-5) was inverted in practice: **B-4 / B-5 / B-6 landed first on mumei-agent (PR #572) without B-2 / B-3**, and B-1 / B-2 / B-3 landed afterwards as Wave 3 follow-ups (PR #115 / #116); wiring the agent's AI stage through `scripts/bridge.py` is the subsequent Wave 4 item. B-2's acceptance gate extends the adversarial "no false promotion" matrix in `.agents/skills/testing-mumei-lean-live-generated/SKILL.md` with: AI proof containing `sorry`, failed `lake build`, unresolved tactic — none may promote to `lean_verified`.
+- B-1 / B-2 / B-3 all carry the ✅ marker above; nothing in this section remains proposed. The
+  agent-side Wave 4 item (running the mumei-agent AI stage through `scripts/bridge.py`) is
+  tracked in the mumei-agent roadmap. Reference regression gates:
 
 ```bash
 PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest -q

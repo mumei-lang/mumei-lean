@@ -344,6 +344,50 @@ Expected:
 Known non-issue: `first_atom_translator_version` comes back as `""` for `pilot_proof_cert.json`
 because that fixture carries no `translator_version`; do not chase it.
 
+### 4. External (AI) proof injection must never promote an unproved atom (B-2 / spec §13)
+
+`scripts/bridge.py --external-proofs PATH` is the *only* path by which mumei-agent's AI proof
+stage (`agent/lean_ai_proof.py`) reaches Lake: the agent hands over tactic scripts, the bridge
+regenerates the statement from the certificate (`ingest_cert.py`), injects the script as
+`IngestedAtom.auto_tactic`, builds, and exports through the same `export_cert.py` gates as any
+other atom. The fixture `tests/fixtures/std_quintic_external_proof.proof-cert.json`
+(`x > 0 → x⁵ > 0`) is out of reach for the `mumei_arith_deep` ladder, so any `lean_verified`
+there can only come from the supplied script. Run the committed matrix with `-rs`:
+
+```bash
+PATH="$HOME/.elan/bin:$PATH" PYTHONPATH=scripts python -m pytest \
+  tests/test_lean_bridge_e2e.py -q -rs -k external_proof_matrix
+```
+
+| `proofs[0]` entry | Expected |
+|---|---|
+| valid script (`intro hx; subst h_body; unfold quinticPosResult; …mul_pos…`) | bridge exit 0, `z3_check_result == "lean_verified"`, `lean_metadata.ai_proof_used == true`, `ai_proof_attempts` copied from the entry, `external_proof.source == "ai_generated_proof"` |
+| script containing `sorry` (or `admit` / `native_decide` / `axiom` / `unsafe` / `run_cmd` …) | rejected *before* Lake: stderr `rejected: forbidden_token:sorry`, `lean_metadata.external_proof == {"rejected": "forbidden_token:sorry"}`, generated source has no `external_proof:` marker and no `sorry`; atom stays `unknown`, `ai_proof_used == false` |
+| script that leaves goals open (`intro hx; subst h_body; unfold quinticPosResult`) | `lake build` exits 1, `lake_build_failures.json` has one entry `{"atom": "quintic_pos", "kind": "unsolved_goals", "line": …}`, atom stays `unknown`, `lean_metadata.status == "manual_lemma_required"`, `ai_proof_used == false` |
+| script with a type error (`intro hx; exact hx`) | build fails with `kind == "type_mismatch"` in the failure report; atom stays `unknown`, `ai_proof_used == false` |
+| `witness_lemma` pointing at a missing declaration | build fails (`unknown_identifier`); atom stays `unknown` |
+
+In every failing row `bridge.py` must exit 1 and `all_verified == false`. Adversarial check #2
+(stale `translator_version` / `bridge_lemma_hash`) applies unchanged to injected proofs: the
+export gate, not the injected script, decides promotion. The structured
+failure report (`--failure-report PATH`, default `<out-dir>/lake_build_failures.json`,
+schema `mumei-lean-build-failures-v1`) is what mumei-agent feeds back to the model for the next
+attempt — if a row fails to build but the report has no entry for the atom, the agent's repair
+loop degrades to log-tail feedback, so treat a missing entry as a regression too. The
+`external_proof_matrix` test asserts this: for the `unsolved_goals` / `type_mismatch` /
+`missing_witness` rows it reads `<out-dir>/lake_build_failures.json` and requires an entry with
+`atom == "quintic_pos"`, the expected `kind`, and an integer `line`; the `sorry` row is
+rejected before Lake so no specific kind is required there.
+
+Agent-side live check (same fixture, real Lake, scripted generator that first returns the
+unsolved-goals script and then the valid one): `run_ai_proof_repair(...)` must show
+`ai_proof_outcomes[0].attempt_log == [tactic_failed, accepted]`, the second request's
+`feedback[0].failures[0].kind == "unsolved_goals"`, and the promoted atom's `lean_metadata`
+carrying the bridge's `translator_version` / `bridge_lemma_hash` / `lean_theorem_name`
+verbatim plus an `ai_proof_evidence.axiom_audit_log_path` whose log lists only
+`propext`, `Classical.choice`, `Quot.sound`. An AI stage that still promotes from its own
+`lake build` log instead of the exported `.lean-cert.json` is the regression this guards.
+
 ## Timing Expectations
 
 With a warm mathlib cache (`.lake` around 5 GB) the whole live suite finishes in well under a

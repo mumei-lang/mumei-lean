@@ -1022,3 +1022,58 @@ def test_bridge_escalation_bundle(lake_available, tmp_path: Path):
         assert candidate["lean_metadata"]["known_witness_used"] is False
     finally:
         _cleanup_generated_abs()
+
+
+GENERATED_STACK = REPO_ROOT / "generated" / "Generated" / "Std" / "Stack.lean"
+
+
+@pytest.mark.lake_available
+def test_builtin_name_binder_and_block_body_upgrade_unknown_to_lean_verified(
+    lake_available, tmp_path: Path
+):
+    """Spec §4.1/§4.2: bare `max` binds as Int and `{ top + 1 }` unwraps.
+
+    Both atoms in the fixture were partial (helper-name clash / brace
+    passthrough) before the lowering; they must now build without a
+    known witness and without touching the bridge lemma catalog.
+    """
+    out_cert = tmp_path / "stack.lean-cert.json"
+    out_dir = tmp_path / "generated"
+    _cleanup_generated_file(GENERATED_STACK)
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "std_stack_builtin_name_binder.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+        _assert_bridge_ok(proc)
+        assert "0 partial translation" in proc.stdout
+        generated_src = GENERATED_STACK.read_text()
+        assert "def stackPushResult (top max : Int) : Int :=\n  top + 1\n" in generated_src
+        assert (
+            "theorem stack_push_correct (top max : Int) (result : Int) "
+            "(h_body : result = stackPushResult top max) :\n"
+            "    (top ≥ 0 ∧ max > 0 ∧ top < max) → (result ≥ 0 ∧ result ≤ max)"
+        ) in generated_src
+        assert "if top = max then 1 else 0" in generated_src
+        assert "{ top" not in generated_src
+        payload = json.loads(out_cert.read_text())
+        for name in ("stack_push", "stack_is_full"):
+            atom = next(a for a in payload["atoms"] if a["name"] == name)
+            assert atom["z3_check_result"] == "lean_verified"
+            assert atom["status"] == "verified"
+            meta = atom["lean_metadata"]
+            assert meta["known_witness_used"] is False
+            assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
+            assert meta["bridge_lemma_hash"] == (
+                "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
+            )
+        push = next(a for a in payload["atoms"] if a["name"] == "stack_push")
+        rules = push["lean_metadata"]["translator_ir"]["lowering_rules"]
+        assert "builtin_name_binder_lowering" in rules
+        assert payload["all_verified"] is True
+    finally:
+        _cleanup_generated_file(GENERATED_STACK)

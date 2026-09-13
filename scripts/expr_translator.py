@@ -528,6 +528,11 @@ class TranslationResult:
     manual_lemma_reason: Optional[str] = None
     """Non-empty when the expression must be finished by a manual lemma."""
 
+    result_type: Optional[str] = None
+    """Lean result type established for a body expression (``Int`` /
+    ``String`` / ``List Int`` / ``Prop``), when the translator could
+    determine one structurally (e.g. by unifying conditional branches)."""
+
 
 _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "type_system_mapping",
@@ -547,6 +552,7 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "quantifier_skolemize_lowering",
     "implication_lowering",
     "let_binding_lowering",
+    "builtin_name_binder_lowering",
     "unknown_obligation_lowering",
     "smart_contract_lowering",
     "smart_contract_guard_trace_lowering",
@@ -644,6 +650,11 @@ def _lean_binder_name(name: str) -> str:
         return "binder"
     if clean[0].isdigit():
         clean = "_" + clean
+    # Built-in helper names used as plain variables (``max``, ``len``)
+    # keep their own name, mirroring mumei-core ``lean_binder_name`` so the
+    # certificate ``binder_mapping`` and the rendered theorem agree.
+    if clean in _BUILTIN_NAME_BINDER_CANDIDATES:
+        return clean
     if clean in _RESERVED_IDENTS or clean in {"theorem", "def", "namespace", "end"}:
         return f"{clean}_binder"
     return clean
@@ -671,6 +682,175 @@ def _binder_for_identifier(
     return TranslatorIRBinder(name, _lean_binder_name(name), "i64", "Int")
 
 
+# Built-in helper names that may also be used as plain scalar variables
+# (``max >= 0``). Excludes helpers whose bare form is never a variable.
+_BUILTIN_NAME_BINDER_CANDIDATES: Set[str] = set(_KNOWN_FUNCTIONS) - {
+    "old", "holds", "unknown", "unknown_obligation", "implies",
+}
+
+
+def _scope_end(tokens: List[tuple], start: int) -> int:
+    """Index one past the last token of the group that starts at ``start``:
+    the first unmatched closer or top-level ``,`` ends the scope."""
+    depth = 0
+    for idx in range(start, len(tokens)):
+        kind, text = tokens[idx]
+        if kind != "OP":
+            continue
+        if text in ("(", "[", "{"):
+            depth += 1
+        elif text in (")", "]", "}"):
+            if depth == 0:
+                return idx
+            depth -= 1
+        elif text == "," and depth == 0:
+            return idx
+    return len(tokens)
+
+
+def _locally_bound_positions(tokens: List[tuple]) -> Set[int]:
+    """Token indices that are occurrences of a quantifier / ``let`` binder
+    *inside its own lexical scope* (binding site included).
+
+    Scopes are tracked per binding, so a name bound in one quantifier does
+    not hide a free occurrence of the same spelling elsewhere in ``tokens``.
+    """
+    bound: Set[int] = set()
+    for idx, (kind, text) in enumerate(tokens):
+        name: Optional[str] = None
+        scope: Optional[Tuple[int, int]] = None
+        if kind == "KW" and text in _QUANTIFIER_KEYWORDS:
+            parsed_unbounded = _parse_unbounded_quantifier(tokens, idx)
+            if parsed_unbounded is not None:
+                name = parsed_unbounded[0]
+                scope = (idx + 1, _scope_end(tokens, parsed_unbounded[2]))
+            elif idx + 1 < len(tokens) and tokens[idx + 1] == ("OP", "("):
+                close = _find_matching(tokens, idx + 1, "(", ")")
+                if close != -1:
+                    parts = _split_top_level(tokens, idx + 2, close)
+                    if parts and parts[0] and parts[0][0][0] == "ID":
+                        name = parts[0][0][1]
+                        scope = (idx + 2, close)
+        elif kind == "KW" and text == "let":
+            parsed_let = _parse_let_binding_scope(tokens, idx)
+            if parsed_let is not None:
+                name = parsed_let[0]
+                scope = (idx + 1, parsed_let[2])
+        if name is None or scope is None:
+            continue
+        for pos in range(scope[0], scope[1]):
+            if tokens[pos] == ("ID", name):
+                bound.add(pos)
+    return bound
+
+
+def _classify_builtin_name_uses(
+    tokens: List[tuple], bare: Set[str], called: Set[str]
+) -> None:
+    """Sort built-in helper names in ``tokens`` into ``bare`` / ``called``.
+
+    Occurrences of locally bound names (quantifier / ``let`` binders and
+    their in-scope uses) are neither: they do not become theorem parameters.
+    The same spelling used free outside that scope is still counted.
+    """
+    local = _locally_bound_positions(tokens)
+    for idx, (kind, text) in enumerate(tokens):
+        if kind != "ID" or text not in _BUILTIN_NAME_BINDER_CANDIDATES:
+            continue
+        if idx + 1 < len(tokens) and tokens[idx + 1] == ("OP", "("):
+            called.add(text)
+        elif idx not in local:
+            bare.add(text)
+
+
+BUILTIN_NAME_BINDER_LOWERING_RULE = "builtin_name_binder_lowering"
+BUILTIN_NAME_BINDER_TYPES: Tuple[str, str] = ("i64", "Int")
+"""``(mumei_type, lean_type)`` every binder produced by
+``builtin_name_binder_lowering`` carries; the rule accepts no other type."""
+
+
+def builtin_name_binders_lowered(translation: Optional[TranslationResult]) -> Set[str]:
+    """Built-in helper names that ``translation`` lowered to ``Int`` binders."""
+    if translation is None or translation.translator_ir is None:
+        return set()
+    ir = translation.translator_ir
+    if BUILTIN_NAME_BINDER_LOWERING_RULE not in ir.lowering_rules:
+        return set()
+    return {
+        binder.mumei_name
+        for binder in ir.binders
+        if binder.mumei_name in _BUILTIN_NAME_BINDER_CANDIDATES
+    }
+
+
+def _builtin_name_binders(tokens: List[tuple]) -> Set[str]:
+    """Built-in helper names used only as free bare identifiers in ``tokens``.
+
+    A name qualifies when every occurrence is a plain ``ID`` token that is
+    not followed by ``(``; a name that is also called anywhere in the same
+    expression stays a helper reference and is not lowered to a binder.
+    """
+    bare: Set[str] = set()
+    called: Set[str] = set()
+    _classify_builtin_name_uses(tokens, bare, called)
+    return bare - called
+
+
+def builtin_name_binder_conflicts(*sources: str) -> List[str]:
+    """Names lowered as binders in one source but called as helpers in another.
+
+    ``render_theorem`` binds requires / ensures / body under one parameter
+    list, so ``max`` cannot be an ``Int`` binder in ``ensures`` while
+    ``requires`` still calls ``max(a, b)``.
+    """
+    bare: Set[str] = set()
+    called: Set[str] = set()
+    for source in sources:
+        _classify_builtin_name_uses(_tokenize((source or "").strip()), bare, called)
+    return sorted(bare & called)
+
+
+def _mark_partial(translation: TranslationResult, reasons: List[str]) -> None:
+    """Mark ``translation`` partial for structural ``reasons`` and keep the
+    attached TranslatorIR in sync (``manual_lemma_required``)."""
+    if not reasons:
+        return
+    translation.is_partial = True
+    merged = set(translation.unsupported_reasons)
+    merged.update(reasons)
+    merged.discard("unsupported_syntax")
+    translation.unsupported_reasons = sorted(merged)
+    translation.manual_lemma_reason = ";".join(translation.unsupported_reasons)
+    if translation.translator_ir is not None:
+        translation.translator_ir.sort = "manual_lemma_required"
+        translation.translator_ir.manual_lemma_reason = translation.manual_lemma_reason
+
+
+def mark_builtin_name_binder_conflict(
+    translation: TranslationResult,
+    conflicts: List[str],
+) -> None:
+    _mark_partial(
+        translation,
+        [f"builtin_name_binder_conflict:{name}" for name in conflicts],
+    )
+
+
+# Statement starters of the mumei body language. None of them denotes a
+# value, so a body containing one is a statement block, not an expression,
+# and is never lowered to a Lean term.
+_STATEMENT_KEYWORDS: Set[str] = {
+    "while", "loop", "for", "return", "break", "continue", "mut", "fn",
+}
+
+STATEMENT_BLOCK_REASON = "statement_block_requires_manual_lemma"
+CONDITIONAL_BRANCH_TYPE_REASON = "conditional_branch_type_mismatch"
+
+
+def _statement_keywords(tokens: List[tuple]) -> List[str]:
+    return sorted({text for kind, text in tokens if kind == "ID" and text in _STATEMENT_KEYWORDS})
+
+
 def _unsupported_reasons(source: str, tokens: List[tuple], is_partial: bool) -> List[str]:
     reasons: List[str] = []
     if any(kind == "UNK" for kind, _text in tokens):
@@ -679,6 +859,8 @@ def _unsupported_reasons(source: str, tokens: List[tuple], is_partial: bool) -> 
         reasons.append("regex_semantics_require_manual_lemma")
     if any(kind == "KW" and text == "match" for kind, text in tokens):
         reasons.append("match_or_inductive_translation_requires_manual_lemma")
+    if _statement_keywords(tokens):
+        reasons.append(STATEMENT_BLOCK_REASON)
     if any(kind == "ID" and text in _UNKNOWN_OBLIGATION_FUNCTIONS for kind, text in tokens):
         reasons.append("unknown_obligation_requires_manual_lemma")
     for idx, (kind, text) in enumerate(tokens):
@@ -729,6 +911,8 @@ def _lowering_rules(tokens: List[tuple], array_ids: List[str], string_ids: List[
         rules.append("implication_lowering")
     if any(kind == "KW" and text == "let" for kind, text in tokens):
         rules.append("let_binding_lowering")
+    if _builtin_name_binders(tokens):
+        rules.append(BUILTIN_NAME_BINDER_LOWERING_RULE)
     if any(
         kind == "KW" and text in _QUANTIFIER_KEYWORDS for kind, text in tokens
     ) and any(
@@ -823,6 +1007,12 @@ def _build_semantic_gap_notes(
         notes.append(
             "let_binding_lowering: let x = e in body maps to Lean let "
             "binding. Scoping rules match Lean 4 semantics."
+        )
+    if _builtin_name_binders(tokens):
+        notes.append(
+            "builtin_name_binder_lowering: a built-in helper name used only "
+            "as a bare identifier is bound as an Int theorem parameter; the "
+            "local binder shadows the Lean/mumei helper of the same name."
         )
     return notes
 
@@ -1388,6 +1578,11 @@ def _attach_translator_ir(
     result.predicate_identifiers = _extract_predicate_identifiers(real_tokens)
     result.predicate_arities = _extract_predicate_arities(real_tokens)
     reasons = _unsupported_reasons(source or "", real_tokens, result.is_partial)
+    # Structural reasons recorded by a lowering step (branch-type mismatch,
+    # binder conflicts) are not recoverable from the tokens; keep them.
+    carried = {r for r in result.unsupported_reasons if r != "unsupported_syntax"}
+    if carried:
+        reasons = sorted((set(reasons) | carried) - {"unsupported_syntax"})
     result.unsupported_reasons = reasons
     result.manual_lemma_reason = ";".join(reasons) if reasons else None
     result.translator_ir = _build_translator_ir(
@@ -1404,6 +1599,7 @@ def _attach_translator_ir(
 
 def _extract_identifiers(tokens: List[tuple]) -> List[str]:
     seen: List[str] = []
+    builtin_binders = _builtin_name_binders(tokens)
     i = 0
     while i < len(tokens):
         kind, text = tokens[i]
@@ -1429,7 +1625,7 @@ def _extract_identifiers(tokens: List[tuple]) -> List[str]:
         if kind != "ID":
             i += 1
             continue
-        if text in _RESERVED_IDENTS:
+        if text in _RESERVED_IDENTS and text not in builtin_binders:
             i += 1
             continue
         if text not in seen:
@@ -1841,6 +2037,7 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
     """
     pieces: List[str] = []
     is_partial = any(kind == "UNK" for kind, _ in tokens)
+    builtin_binders = _builtin_name_binders(tokens)
     i = 0
     n = len(tokens)
     while i < n:
@@ -2236,12 +2433,17 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
         elif kind == "STR":
             pieces.append(text)
         else:
-            # Bare known helper names (without a
-            # following ``(``) cannot be lowered to a Lean helper call
-            # and would reference an undeclared name. Flag as partial so
-            # the generated theorem carries a ``-- TODO: unproven``
-            # marker rather than silently emitting broken Lean.
-            if kind == "ID" and text in _KNOWN_FUNCTIONS:
+            # A built-in helper name used only as a bare identifier is a
+            # plain scalar variable (``builtin_name_binder_lowering``).
+            # A helper name that is *also* called in the same expression
+            # cannot be both a binder and a helper reference; flag as
+            # partial so the generated theorem carries a
+            # ``-- TODO: unproven`` marker rather than broken Lean.
+            if (
+                kind == "ID"
+                and text in _KNOWN_FUNCTIONS
+                and text not in builtin_binders
+            ):
                 is_partial = True
             pieces.append(text)
         i += 1
@@ -2576,6 +2778,57 @@ def _merge_identifiers(groups: list[list[str]]) -> list[str]:
     return merged
 
 
+def _unwrap_block_body(source: str) -> Optional[str]:
+    """Return the expression inside a single-expression block ``{ e }``.
+
+    A mumei atom body is a block; when it holds exactly one expression its
+    value is that expression, so the braces carry no semantics. Blocks with
+    statements (``;``), or whose outer braces do not enclose the whole
+    source (``{ a } + { b }``), are returned as ``None``.
+    """
+    if not (source.startswith("{") and source.endswith("}")):
+        return None
+    depth = 0
+    in_string = False
+    index = 0
+    while index < len(source):
+        ch = source[index]
+        if in_string:
+            if ch == "\\":
+                index += 2
+                continue
+            if ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and index != len(source) - 1:
+                return None
+        elif ch == ";" and depth == 1:
+            return None
+        index += 1
+    if depth != 0 or in_string:
+        return None
+    return source[1:-1].strip()
+
+
+def normalize_body_source(source: str) -> str:
+    """Strip every enclosing single-expression block from a body source.
+
+    ``{ "ok" }`` and ``"ok"`` denote the same value; callers inferring the
+    body's result type from the raw source must see the inner expression.
+    """
+    stripped = (source or "").strip()
+    while True:
+        inner = _unwrap_block_body(stripped)
+        if inner is None:
+            return stripped
+        stripped = inner
+
+
 def _known_body_pattern(source: str) -> Optional[TranslationResult]:
     braced_if = re.fullmatch(
         r"if\s+([^{}]+?)\s*\{\s*([^{}]+?)\s*\}\s*else\s*\{\s*([^{}]+?)\s*\}",
@@ -2632,7 +2885,13 @@ def _known_body_pattern(source: str) -> Optional[TranslationResult]:
             predicate_identifiers=predicate_ids,
             predicate_arities=predicate_arities,
         )
-        return _attach_translator_ir(source, lowered)
+        lowered = _attach_translator_ir(source, lowered)
+        _unify_branch_result_types(
+            lowered,
+            (then_src.strip(), then_branch),
+            (else_src.strip(), else_branch),
+        )
+        return lowered
 
     conditional_abs = re.fullmatch(
         rf"if\s+({_IDENT_PATTERN})\s*>=\s*0\s+then\s+\1\s+else\s+(?:-\s*\1|0\s*-\s*\1)",
@@ -2724,6 +2983,88 @@ def _known_body_pattern(source: str) -> Optional[TranslationResult]:
     return None
 
 
+def infer_body_result_type(source: str, translation: TranslationResult) -> str:
+    """Lean result type of a body expression.
+
+    A type the translator established structurally (``result_type``) wins;
+    otherwise the leading literal / helper call decides, and ``Int`` is the
+    default for arithmetic terms.
+    """
+    if translation.result_type is not None:
+        return translation.result_type
+    stripped = normalize_body_source(source)
+    if not stripped:
+        return "Int"
+    if stripped.startswith('"'):
+        return "String"
+    if stripped.startswith("["):
+        return "List Int"
+    if stripped.startswith("forall") or stripped.startswith("exists"):
+        return "Prop"
+    if stripped in {"true", "false"}:
+        return "Prop"
+    if any(
+        stripped.startswith(f"{name}(")
+        for name in ("starts_with", "ends_with", "contains", "not_contains")
+    ):
+        return "Prop"
+    if any(stripped.startswith(f"{name}(") for name in translation.predicate_identifiers):
+        return "Prop"
+    if translation.string_identifiers and not translation.array_identifiers:
+        if stripped in translation.string_identifiers:
+            return "String"
+    return "Int"
+
+
+def _unify_branch_result_types(
+    conditional: TranslationResult,
+    *branches: Tuple[str, TranslationResult],
+) -> None:
+    """Give a conditional the common result type of its branches, or mark it
+    partial when the branches disagree (``if c { "a" } else { 0 }``)."""
+    types = {infer_body_result_type(src, tr) for src, tr in branches}
+    if len(types) == 1:
+        conditional.result_type = types.pop()
+        return
+    _mark_partial(conditional, [CONDITIONAL_BRANCH_TYPE_REASON])
+
+
+def _split_top_level_conditional(
+    tokens: List[tuple],
+) -> Optional[Tuple[List[tuple], List[tuple], List[tuple]]]:
+    """Split ``if c then a else b`` at its own ``then`` / ``else``.
+
+    Nested conditionals inside either branch are skipped by tracking the
+    ``if`` nesting depth; ``else if`` chains stay inside the else branch.
+    """
+    if not tokens or tokens[0] != ("KW", "if"):
+        return None
+    nesting = 0
+    then_idx = -1
+    else_idx = -1
+    for idx in range(1, len(tokens)):
+        kind, text = tokens[idx]
+        if kind != "KW":
+            continue
+        if text == "if":
+            nesting += 1
+        elif text == "then":
+            if nesting == 0 and then_idx == -1:
+                then_idx = idx
+        elif text == "else":
+            if nesting == 0:
+                else_idx = idx
+                break
+            nesting -= 1
+    if then_idx == -1 or else_idx == -1:
+        return None
+    return tokens[1:then_idx], tokens[then_idx + 1:else_idx], tokens[else_idx + 1:]
+
+
+def _tokens_to_source(tokens: List[tuple]) -> str:
+    return " ".join(text for _kind, text in tokens)
+
+
 def translate_body(body_expr: str) -> TranslationResult:
     """Translate a mumei atom body expression to a Lean term.
 
@@ -2744,10 +3085,40 @@ def translate_body(body_expr: str) -> TranslationResult:
             array_identifiers=[],
             string_identifiers=[],
         )
+    unbraced = _unwrap_block_body(stripped)
+    if unbraced is not None:
+        # An empty block has no value; translate_body("") marks it partial.
+        inner = translate_body(unbraced)
+        return _attach_translator_ir(stripped, inner)
+    tokens = _tokenize(stripped)
+    if _statement_keywords(tokens):
+        # A statement block has no value to lower; `_unsupported_reasons`
+        # records STATEMENT_BLOCK_REASON from the same tokens.
+        return _make_translation_result(
+            stripped,
+            lean_expr="",
+            identifiers=[],
+            is_trivial=False,
+            is_partial=True,
+            array_identifiers=[],
+            string_identifiers=[],
+            tokens=tokens,
+        )
     known = _known_body_pattern(stripped)
     if known is not None:
         return _attach_translator_ir(stripped, known)
     result = translate_contract(stripped)
     if "=>" in stripped and "=>" not in result.lean_expr:
         result.is_partial = True
-    return _attach_translator_ir(stripped, result)
+    result = _attach_translator_ir(stripped, result)
+    split = _split_top_level_conditional(tokens)
+    if split is not None and not result.is_partial:
+        _cond, then_tokens, else_tokens = split
+        then_src = _tokens_to_source(then_tokens)
+        else_src = _tokens_to_source(else_tokens)
+        _unify_branch_result_types(
+            result,
+            (then_src, translate_body(then_src)),
+            (else_src, translate_body(else_src)),
+        )
+    return result

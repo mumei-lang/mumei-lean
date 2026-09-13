@@ -111,6 +111,7 @@ Atom-level changes are conservative:
 | `z3_check_result`       | `"unknown"` → `"lean_verified"` if Lean proved the theorem; otherwise unchanged.                        |
 | `status`                | `"unknown"` → `"verified"` for proven atoms; otherwise unchanged.                                       |
 | `content_hash`, `proof_hash`, `dependencies`, `effects`, `requires`, `ensures` | Forwarded verbatim. |
+| `version`               | Forwarded verbatim. It selects the `content_hash` algorithm mumei recomputes on ingest (`"1.0"` legacy four-field hash, `"1.1"` content-hash v2 covering signature / `spec_metadata` / effects); mumei-lean never recomputes `content_hash`. |
 
 `certificate_hash` is dropped on emit because the canonical hash
 covers the whole serialisation and recomputing it inside mumei-lean

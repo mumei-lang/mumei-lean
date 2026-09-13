@@ -1089,33 +1089,56 @@ QUINTIC_GOOD_SCRIPT = (
 
 @pytest.mark.lake_available
 @pytest.mark.parametrize(
-    ("label", "entry", "expect_verified", "expect_rejected"),
+    ("label", "entry", "expect_verified", "expect_rejected", "expect_failure_kind"),
     [
-        ("valid_script", {"tactic_script": QUINTIC_GOOD_SCRIPT}, True, None),
-        ("sorry", {"tactic_script": "intro hx\nsorry"}, False, "forbidden_token:sorry"),
+        ("valid_script", {"tactic_script": QUINTIC_GOOD_SCRIPT}, True, None, None),
+        (
+            "sorry",
+            {"tactic_script": "intro hx\nsorry"},
+            False,
+            "forbidden_token:sorry",
+            None,
+        ),
         (
             "unsolved_goals",
             {"tactic_script": "intro hx\nsubst h_body\nunfold quinticPosResult"},
             False,
             None,
+            "unsolved_goals",
         ),
-        ("type_mismatch", {"tactic_script": "intro hx\nexact hx"}, False, None),
+        (
+            "type_mismatch",
+            {"tactic_script": "intro hx\nexact hx"},
+            False,
+            None,
+            "type_mismatch",
+        ),
         (
             "missing_witness",
             {"witness_lemma": "Std.Quintic.no_such_lemma", "source": "handwritten_witness"},
             False,
             None,
+            "unknown_identifier",
         ),
     ],
 )
 def test_external_proof_matrix_never_promotes_unproved_atoms(
-    lake_available, tmp_path: Path, label, entry, expect_verified, expect_rejected
+    lake_available,
+    tmp_path: Path,
+    label,
+    entry,
+    expect_verified,
+    expect_rejected,
+    expect_failure_kind,
 ):
     """Spec §13.4: only a script that really builds yields ``lean_verified``.
 
     The fixture (``x > 0 → x⁵ > 0``) is out of reach for the generic
     ``mumei_arith_deep`` ladder, so promotion can only come from the
     supplied proof — and the failing rows prove it never does falsely.
+    Rows that reach Lake must also leave an atom-attributed entry of the
+    expected ``kind`` in the B-3 failure report, because that entry is what
+    mumei-agent feeds back to the model for the next attempt.
     """
     proofs = tmp_path / "proofs.json"
     proofs.write_text(
@@ -1169,5 +1192,16 @@ def test_external_proof_matrix_never_promotes_unproved_atoms(
             assert meta["status"] == "manual_lemma_required"
             assert meta["ai_proof_used"] is False
             assert payload["all_verified"] is False
+        report_path = out_dir / "lake_build_failures.json"
+        if expect_failure_kind is not None:
+            report = json.loads(report_path.read_text())
+            assert report["schema"] == "mumei-lean-build-failures-v1"
+            attributed = [f for f in report["failures"] if f["atom"] == "quintic_pos"]
+            assert attributed, report
+            assert expect_failure_kind in {f["kind"] for f in attributed}, report
+            assert all(isinstance(f["line"], int) for f in attributed), report
+        elif expect_verified and report_path.exists():
+            report = json.loads(report_path.read_text())
+            assert not [f for f in report["failures"] if f["atom"] == "quintic_pos"], report
     finally:
         _cleanup_generated_file(GENERATED_QUINTIC)

@@ -373,7 +373,11 @@ export gate, not the injected script, decides promotion. The structured
 failure report (`--failure-report PATH`, default `<out-dir>/lake_build_failures.json`,
 schema `mumei-lean-build-failures-v1`) is what mumei-agent feeds back to the model for the next
 attempt — if a row fails to build but the report has no entry for the atom, the agent's repair
-loop degrades to log-tail feedback, so treat a missing entry as a regression too.
+loop degrades to log-tail feedback, so treat a missing entry as a regression too. The
+`external_proof_matrix` test asserts this: for the `unsolved_goals` / `type_mismatch` /
+`missing_witness` rows it reads `<out-dir>/lake_build_failures.json` and requires an entry with
+`atom == "quintic_pos"`, the expected `kind`, and an integer `line`; the `sorry` row is
+rejected before Lake so no specific kind is required there.
 
 Agent-side live check (same fixture, real Lake, scripted generator that first returns the
 unsolved-goals script and then the valid one): `run_ai_proof_repair(...)` must show

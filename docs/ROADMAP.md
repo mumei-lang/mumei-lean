@@ -103,11 +103,11 @@ of the mumei-agent task "Task 2-D: AI-driven Lean proof generation for unknown a
 **has already shipped on the agent side** (mumei-agent PR #572, 2026-09-11:
 `agent/lean_ai_proof.py::run_ai_proof_repair`, the `ai_proof_generator` path of
 `lean_bridge.py::run_lean_bridge`, `--enable-lean-ai-proof`, `ai_proof_used` /
-`ai_proof_attempts` / `lean_fallback_strategy = "ai_generated_proof"` provenance). That
-implementation does **not** depend on anything in this section: it re-runs this repo's
+`ai_proof_attempts` / `lean_fallback_strategy = "ai_generated_proof"` provenance). As first
+shipped, that implementation did **not** depend on anything in this section: it re-ran this repo's
 `scripts/ingest_cert.py` as a subprocess to regenerate the trusted `theorem <atom>_correct`
-statement from the current certificate, lets the LLM write only the tactic script after `:= by`,
-assembles `Generated.AiProof.<Atom>_<run>` itself and runs `lake build` + a `#print axioms`
+statement from the current certificate, let the LLM write only the tactic script after `:= by`,
+assembled `Generated.AiProof.<Atom>_<run>` itself and ran `lake build` + a `#print axioms`
 audit independently inside a mumei-lean checkout. B-1 / B-2 / B-3 below were the
 **follow-ups that let the B-4 path run through mumei-lean's own acceptance surface**
 (`scripts/bridge.py` → `export_cert.py` gates) instead of the agent's private Lake invocation
@@ -130,11 +130,14 @@ change to the contract constants must be synchronised across projects in the sam
   and the fixed tactic ladder in `scripts/tactic_search.py`
   ([`docs/LEAN_TRANSLATOR_SPEC.md`](LEAN_TRANSLATOR_SPEC.md) §12). Everything else falls back to
   a hand-written witness via `manual_lemma_reason` / `-- TODO: unproven`.
-- mumei-agent's AI proof generation shipped before this receiving surface existed: it writes
-  `Generated/AiProof/*.lean` into the checkout, runs Lake itself, and derives `ai_proof_used`
-  provenance on its side. B-2 (`scripts/bridge.py --external-proofs`) now offers the equivalent
-  path through the regular `export_cert.py` gates, writing the same `ai_proof_used` key; the
-  agent moved onto it in Wave 4 (mumei-agent PR #579) with no lean-cert vocabulary change.
+- mumei-agent's AI proof generation shipped before this receiving surface existed: it used to
+  write `Generated/AiProof/*.lean` into the checkout, run Lake itself, and derive `ai_proof_used`
+  provenance on its side. B-2 (`scripts/bridge.py --external-proofs`) provides the equivalent
+  path through the regular `export_cert.py` gates, writing the same `ai_proof_used` key, and
+  since Wave 4 (mumei-agent PR #579) it is the agent's only route to Lake: the agent no longer
+  generates modules, runs Lake, or derives `ai_proof_used` itself — it only supplies tactic
+  scripts, reads the exported lean-cert, and keeps its own `#print axioms` audit and
+  `sorry`-family pre-rejection on top. No lean-cert vocabulary changed.
 
 ### Scope
 

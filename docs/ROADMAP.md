@@ -209,7 +209,16 @@ change to the contract constants must be synchronised across projects in the sam
   `benchmarks/evaluation/evaluation_suite.json`, 2026-09-13, local Ollama `qwen2.5-coder:3b`):
   the 6 Lean escalation candidates are `lean_verified` with AI off and on alike (delta +0,
   `ai_proof_used` 0, `manual_lemma_reason` remaining 0) — the deterministic tactic ladder
-  discharges them before the external-proof stage is reached. Reference regression gates:
+  discharges them before the external-proof stage is reached. Wave 4 is complete (2026-09-13:
+  mumei-agent PR #579, mumei PR #558 / papers PR #6, mumei-lean PR #118); Wave 5 is in progress
+  with the compiler-side C-2 (mumei P10-D nlsat-first for bounded low-degree nonlinear
+  arithmetic) and the B-7 re-measurement in the same PR group — the escalation population stays
+  at 6 atoms (all finite-field, outside the nlsat window), so nothing on this side changes.
+  The C-1 inventory (mumei `docs/ROADMAP.md` P30) is the target-obligation input for the
+  remaining B-1 work: 23 benchmark atoms reachable by lowering only (`perform` statement
+  sequences before a pure tail, pure `let` sequences, nested `if`, struct projection — no new
+  bridge lemma, hash unchanged); the 11 `task_group: all` / `any` atoms need a bridge lemma
+  and are filed as mumei P31 (hash lockstep, not in this wave). Reference regression gates:
 
 ```bash
 PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest -q

@@ -108,10 +108,17 @@ implementation does **not** depend on anything in this section: it re-runs this 
 `scripts/ingest_cert.py` as a subprocess to regenerate the trusted `theorem <atom>_correct`
 statement from the current certificate, lets the LLM write only the tactic script after `:= by`,
 assembles `Generated.AiProof.<Atom>_<run>` itself and runs `lake build` + a `#print axioms`
-audit independently inside a mumei-lean checkout. Consequently B-1 / B-2 / B-3 below are
-**follow-ups that let the already-implemented B-4 path also run through
-mumei-lean's own acceptance surface** (`scripts/bridge.py` → `export_cert.py` gates) instead of
-the agent's private Lake invocation and log parsing. As stated above, `mumei-lang/mumei/docs/CROSS_PROJECT_ROADMAP.md` owns the global order, so
+audit independently inside a mumei-lean checkout. B-1 / B-2 / B-3 below were the
+**follow-ups that let the B-4 path run through mumei-lean's own acceptance surface**
+(`scripts/bridge.py` → `export_cert.py` gates) instead of the agent's private Lake invocation
+and log parsing. **That wiring is complete (Wave 4, 2026-09-13, mumei-agent PR #579):** the agent
+now writes one `mumei-agent.external_proofs/v1` entry per residual atom and calls
+`scripts/bridge.py --cert … --lean-cert-out … --external-proofs … --failure-report …`, so the
+tactic is injected via `IngestedAtom.auto_tactic`, promotion happens only when the exported
+lean-cert carries `z3_check_result = "lean_verified"` with `ai_proof_used = true` /
+`external_proof.source = "ai_generated_proof"`, and the B-3 `mumei-lean-build-failures-v1` report
+feeds the agent's next repair attempt. The agent keeps its own `#print axioms` audit and
+`sorry`-family pre-rejection on top. As stated above, `mumei-lang/mumei/docs/CROSS_PROJECT_ROADMAP.md` owns the global order, so
 this work stays inside the narrow V1 rule for this repo (Z3 `unknown` complement only), and any
 change to the contract constants must be synchronised across projects in the same change set.
 
@@ -126,9 +133,8 @@ change to the contract constants must be synchronised across projects in the sam
 - mumei-agent's AI proof generation shipped before this receiving surface existed: it writes
   `Generated/AiProof/*.lean` into the checkout, runs Lake itself, and derives `ai_proof_used`
   provenance on its side. B-2 (`scripts/bridge.py --external-proofs`) now offers the equivalent
-  path through the regular `export_cert.py` gates, writing the same `ai_proof_used` key; moving
-  the agent onto it is agent-side follow-up work (mumei-agent roadmap) and changes no lean-cert
-  vocabulary.
+  path through the regular `export_cert.py` gates, writing the same `ai_proof_used` key; the
+  agent moved onto it in Wave 4 (mumei-agent PR #579) with no lean-cert vocabulary change.
 
 ### Scope
 
@@ -193,10 +199,14 @@ change to the contract constants must be synchronised across projects in the sam
   any AI integration. Sub-task (b) adopts the lean-cert contract mumei-agent already emits
   (`ai_proof_used` / `ai_proof_attempts` / `lean_fallback_strategy`) rather than negotiating a
   new one.
-- Cross-repo ordering is fixed in [mumei `docs/CROSS_PROJECT_ROADMAP.md` Priority 25](https://github.com/mumei-lang/mumei/blob/develop/docs/CROSS_PROJECT_ROADMAP.md) (Track B, Wave table revised 2026-09-13). The mumei-lean items map as: sub-task (a) translator surface extension = **B-1** (one construct per PR, lowering-only so `bridge_lemma_hash` stays unchanged, one live generated path per construct); sub-task (b) AI proof ingestion path = **B-2**; structured `lake build` failure feedback = **B-3**. The originally planned order (B-2 / B-3 before the agent-side B-4 / B-5) was inverted in practice: **B-4 / B-5 / B-6 landed first on mumei-agent (PR #572) without B-2 / B-3**, and B-1 / B-2 / B-3 landed afterwards as Wave 3 follow-ups (PR #115 / #116); wiring the agent's AI stage through `scripts/bridge.py` is the subsequent Wave 4 item. B-2's acceptance gate extends the adversarial "no false promotion" matrix in `.agents/skills/testing-mumei-lean-live-generated/SKILL.md` with: AI proof containing `sorry`, failed `lake build`, unresolved tactic — none may promote to `lean_verified`.
+- Cross-repo ordering is fixed in [mumei `docs/CROSS_PROJECT_ROADMAP.md` Priority 25](https://github.com/mumei-lang/mumei/blob/develop/docs/CROSS_PROJECT_ROADMAP.md) (Track B, Wave table revised 2026-09-13). The mumei-lean items map as: sub-task (a) translator surface extension = **B-1** (one construct per PR, lowering-only so `bridge_lemma_hash` stays unchanged, one live generated path per construct); sub-task (b) AI proof ingestion path = **B-2**; structured `lake build` failure feedback = **B-3**. The originally planned order (B-2 / B-3 before the agent-side B-4 / B-5) was inverted in practice: **B-4 / B-5 / B-6 landed first on mumei-agent (PR #572) without B-2 / B-3**, and B-1 / B-2 / B-3 landed afterwards as Wave 3 follow-ups (PR #115 / #116); wiring the agent's AI stage through `scripts/bridge.py` landed as the Wave 4 item (mumei-agent PR #579, 2026-09-13). B-2's acceptance gate extends the adversarial "no false promotion" matrix in `.agents/skills/testing-mumei-lean-live-generated/SKILL.md` with: AI proof containing `sorry`, failed `lake build`, unresolved tactic — none may promote to `lean_verified`.
 - B-1 / B-2 / B-3 all carry the ✅ marker above; nothing in this section remains proposed. The
   agent-side Wave 4 item (running the mumei-agent AI stage through `scripts/bridge.py`) is
-  tracked in the mumei-agent roadmap. Reference regression gates:
+  complete and tracked in the mumei-agent roadmap. B-7 measurement (mumei
+  `benchmarks/evaluation/evaluation_suite.json`, 2026-09-13, local Ollama `qwen2.5-coder:3b`):
+  the 6 Lean escalation candidates are `lean_verified` with AI off and on alike (delta +0,
+  `ai_proof_used` 0, `manual_lemma_reason` remaining 0) — the deterministic tactic ladder
+  discharges them before the external-proof stage is reached. Reference regression gates:
 
 ```bash
 PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest -q

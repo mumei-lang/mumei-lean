@@ -1425,3 +1425,30 @@ def test_failures_for_atom_joins_on_module_path_not_only_name():
     )["inc"]
     assert [e["kind"] for e in math_meta["build_failures"]] == ["unsolved_goals", "other_error"]
     assert [e["kind"] for e in list_meta["build_failures"]] == ["type_mismatch", "other_error"]
+
+
+def test_foreign_file_diagnostic_naming_a_generated_atom_fails_everything():
+    """A dependency theorem that happens to share a generated atom's name
+    must not count as a generated-payload attribution: the sibling atom
+    `dec` would otherwise be promoted after a failed build."""
+    atoms = collect_unknown_atoms(
+        _cert("std/math.mm", [_atom("inc", z3="unknown"), _atom("dec", z3="unknown")])
+    )
+    log = (
+        "./MumeiLean/Broken.lean:1:0: theorem inc_correct\n"
+        "error: ./MumeiLean/Broken.lean:2:2: type mismatch\n"
+        "error: build failed\n"
+    )
+    failed = bridge._attribute_failures(
+        build_log=log,
+        rc=1,
+        lake_missing=False,
+        atoms_per_payload=[atoms],
+        proved_per_payload=[["inc", "dec"]],
+        known_witness_proved=set(),
+        out_dir=Path("generated"),
+        module_prefix="Generated",
+        repo_dir=Path("."),
+        verbose=False,
+    )
+    assert failed == [["dec", "inc"]]

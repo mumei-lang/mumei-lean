@@ -752,7 +752,6 @@ def _attribute_failures(
         for file_path, name in attributions:
             if name not in proved_set:
                 continue
-            attributed_to_generated = True
             if file_path is None:
                 # No file context — apply to every payload that
                 # owns the name to stay conservative.
@@ -766,6 +765,8 @@ def _attribute_failures(
             matched_local = any(
                 file_norm == f or file_norm.endswith(f) for f in files
             )
+            if matched_known:
+                attributed_to_generated = True
             if matched_local:
                 local.add(name)
             elif not matched_known:

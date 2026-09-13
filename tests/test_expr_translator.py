@@ -1,6 +1,8 @@
 """Unit tests for ``scripts.expr_translator``."""
 from __future__ import annotations
 
+import pytest
+
 import expr_translator
 from expr_translator import (
     OBLIGATION_CLASS_ARITHMETIC,
@@ -1369,6 +1371,46 @@ def test_builtin_name_binder_conflict_across_contract_components():
     assert expr_translator.builtin_name_binder_conflicts(
         "top < max", "result <= max", "{ top + 1 }"
     ) == []
+    assert ensures.translator_ir is not None
+    assert ensures.translator_ir.sort == "manual_lemma_required"
+    assert ensures.translator_ir.manual_lemma_reason == ensures.manual_lemma_reason
+
+
+def test_builtin_name_binder_conflict_ignores_locally_bound_names():
+    # A quantifier / let binder named like a helper never reaches the theorem
+    # parameter list, so it cannot shadow a helper call in another component.
+    assert expr_translator.builtin_name_binder_conflicts(
+        "forall max : Int: max > 0", "max(a, b) >= a", ""
+    ) == []
+    assert expr_translator.builtin_name_binder_conflicts(
+        "forall(max, 0, n, max >= 0)", "max(a, b) >= a", ""
+    ) == []
+    assert expr_translator.builtin_name_binder_conflicts(
+        "let max = a + 1 in max > a", "result == max(a, b)", ""
+    ) == []
+    # A free bare use still conflicts.
+    assert expr_translator.builtin_name_binder_conflicts(
+        "forall i : Int: i > max", "max(a, b) >= a", ""
+    ) == ["max"]
+
+
+def test_builtin_name_binder_conflict_is_lexically_scoped():
+    # A binder named `max` inside one quantifier does not hide a free `max`
+    # outside that scope: the free occurrence still conflicts with the call.
+    assert expr_translator.builtin_name_binder_conflicts(
+        "forall(max, 0, n, max >= 0) && max >= 0", "max(a, b) >= a", ""
+    ) == ["max"]
+    assert expr_translator.builtin_name_binder_conflicts(
+        "(forall max : Int: max > 0) && result <= max", "max(a, b) >= a", ""
+    ) == ["max"]
+    assert expr_translator.builtin_name_binder_conflicts(
+        "(let max = a + 1 in max > a) && max > 0", "result == max(a, b)", ""
+    ) == ["max"]
+    # The free occurrence alone is what lowers to a binder.
+    tokens = expr_translator._tokenize("forall(max, 0, n, max >= 0) && max >= 0")
+    assert expr_translator._builtin_name_binders(tokens) == {"max"}
+    tokens = expr_translator._tokenize("forall(max, 0, n, max >= 0) && n >= 0")
+    assert expr_translator._builtin_name_binders(tokens) == set()
 
 
 def test_translate_body_unwraps_single_expression_block():
@@ -1389,3 +1431,58 @@ def test_translate_body_keeps_statement_blocks_partial():
     ):
         assert expr_translator.translate_body(source).is_partial is True, source
     assert expr_translator._unwrap_block_body("{ a } + { b }") is None
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "{ while n > 0 { n } }",
+        "{ loop { n } }",
+        "{ return n }",
+        "{ for i in xs { i } }",
+        "while n > 0 { n }",
+        "{ if n > 0 { while n > 0 { n } } else { n } }",
+    ],
+)
+def test_translate_body_rejects_statement_only_blocks(source):
+    # A trailing statement has no `;`, so the block shape alone cannot tell
+    # it from an expression; the statement keyword does.
+    result = expr_translator.translate_body(source)
+    assert result.is_partial is True, source
+    assert expr_translator.STATEMENT_BLOCK_REASON in result.unsupported_reasons, source
+    assert "while" not in result.identifiers and "return" not in result.identifiers
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_type"),
+    [
+        ('{ if x == 0 { "a" } else { "b" } }', "String"),
+        ("{ if x > 0 { [x] } else { [0] } }", "List Int"),
+        ("{ if x > 0 { true } else { false } }", "Prop"),
+        ("{ if x > 0 { x } else { 0 } }", "Int"),
+        ('if x == 0 then "a" else "b"', "String"),
+        ("if x > 0 then x + 1 else 0", "Int"),
+    ],
+)
+def test_translate_body_unifies_conditional_branch_types(source, expected_type):
+    result = expr_translator.translate_body(source)
+    assert result.is_partial is False, source
+    assert result.result_type == expected_type
+    assert expr_translator.infer_body_result_type(source, result) == expected_type
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        '{ if x == 0 { "a" } else { 0 } }',
+        "{ if x > 0 { [x] } else { x } }",
+        'if x == 0 then true else "b"',
+    ],
+)
+def test_translate_body_marks_conditional_with_mismatched_branches_partial(source):
+    result = expr_translator.translate_body(source)
+    assert result.is_partial is True, source
+    assert expr_translator.CONDITIONAL_BRANCH_TYPE_REASON in result.unsupported_reasons
+    assert result.translator_ir is not None
+    assert result.translator_ir.sort == "manual_lemma_required"
+    assert result.result_type is None

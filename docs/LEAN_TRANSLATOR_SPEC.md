@@ -217,14 +217,37 @@ translation stays `partial` with `builtin_name_binder_conflict:<name>` in
 `old`, `holds`, `implies`, `unknown`, `unknown_obligation` are excluded from
 the lowering because they carry translator semantics of their own.
 
+Scope: a quantifier / `let` binder spelled like a helper (`forall(max, …)`,
+`let max = … in …`) is local to its own scope and is neither bare nor called.
+The check is lexical — the same spelling used free *outside* that scope still
+counts as a bare occurrence (`forall(max, 0, n, max >= 0) && max >= 0` binds
+`max`), so a nested binder never hides a conflict.
+
+Certificate IR: when a certificate ships its own `translator_ir` binder for a
+name the current translation lowers under this rule, `ingest_cert` normalises
+that binder to `mumei_type = "i64"` / `lean_type = "Int"` and does not add a
+second binder for the same name. The rule admits no other type.
+
 ### 4.2 Single-expression body blocks
 
 A mumei atom body is a block. When the block consists of exactly one
 expression, `translate_body` unwraps the outer braces and translates the inner
 expression (`{ top + 1 }` → `top + 1`, `{ if top == max { 1 } else { 0 } }` →
-`if top = max then 1 else 0`). Blocks containing statements (`;`, `let … ;`,
-`while`) or whose outer braces do not enclose the whole source are left to the
-existing partial path, so no imperative body is silently accepted.
+`if top = max then 1 else 0`). Blocks containing statements (`;`, `let … ;`)
+or whose outer braces do not enclose the whole source are left to the
+existing partial path. A trailing statement carries no `;`, so statement
+keywords (`while`, `loop`, `for`, `return`, `break`, `continue`, `mut`, `fn`)
+are rejected by keyword: `{ while n > 0 { n } }` is partial with
+`statement_block_requires_manual_lemma`. No imperative body is silently
+accepted.
+
+Result type: a conditional body takes the common result type of its branches
+(`{ if x == 0 { "a" } else { "b" } }` defines a `String`, `{ if p { true }
+else { false } }` a `Prop`, list literals a `List Int`, otherwise `Int`). The
+type is recorded as `TranslationResult.result_type`. Branches of different
+types (`{ if x == 0 { "a" } else { 0 } }`) make the body partial with
+`conditional_branch_type_mismatch`; the translator never falls back to `Int`
+for a branch it could not type.
 
 ## 5. Semantic Gap Bridge Rules
 

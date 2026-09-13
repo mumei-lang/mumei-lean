@@ -1,0 +1,193 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-13T04:34:11Z",
+  "mumei_version": "0.6.19",
+  "z3_version": "4.8.12",
+  "file": "std/stack.mm",
+  "atoms": [
+    {
+      "name": "stack_push",
+      "z3_check_result": "unknown",
+      "content_hash": "2a65e66d27aa07766e94622a73481372fe7ffad76c850a6b4e47d0ac9ce84eb3",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "std/stack.mm"
+        },
+        "traceability_hash": "1a9a1d50a65053d467dda4a23ef4e1bf2788fc54099c96f0828ce4ed3b8691f7",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 2,
+        "checked_refinements": 1,
+        "ensures_implication_checks": 2,
+        "diagnostics": []
+      },
+      "proof_hash": "fabac133badfa582638896c2ebfa2de6d5512db722267c15a35f7a9a4ca331f7",
+      "dependencies": [],
+      "effects": [],
+      "requires": "top >= 0 && max > 0 && top < max",
+      "ensures": "result >= 0 && result <= max",
+      "body_expr": "{ top + 1 }",
+      "body_summary": "{ top + 1 }",
+      "z3_result_class": "unknown",
+      "logic_fragment_tag": "linear_arithmetic",
+      "logic_fragment_tags": [],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "max": "max",
+        "result": "result",
+        "top": "top"
+      },
+      "bridge_lemma_hash": "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347",
+      "translator_ir": {
+        "sort": "refinement_predicate",
+        "binders": [
+          {
+            "mumei_name": "top",
+            "lean_name": "top",
+            "mumei_type": "Nat",
+            "lean_type": "Nat",
+            "role": "param",
+            "refinement": "v >= 0"
+          },
+          {
+            "mumei_name": "max",
+            "lean_name": "max",
+            "mumei_type": "Nat",
+            "lean_type": "Nat",
+            "role": "param",
+            "refinement": "v >= 0"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(top >= 0 && max > 0 && top < max) -> (result >= 0 && result <= max)",
+        "provenance_span": {
+          "file": "std/stack.mm",
+          "line": 14,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [],
+        "proof_trace_hints": [],
+        "requires_bridge_lemmas": []
+      },
+      "symbol_provenance": [],
+      "solver_process_metadata": {
+        "task_id": null,
+        "cache_key": "dc1837ec59b367fc6b177517a9049692686b386bf2ae06fdebc7b90ce650d0d2",
+        "generation_id": "",
+        "solver_config_fingerprint": "4eb8092c0cb08dd4c8d6494173a480c7fae3ce88feef61311d32f80092aad8dc",
+        "timeout_ms": 10000,
+        "cancel_reason": null,
+        "process_start_time": "",
+        "process_end_time": "2026-09-13T04:34:11Z"
+      }
+    },
+    {
+      "name": "stack_is_full",
+      "z3_check_result": "unknown",
+      "content_hash": "12dfc3a9858acb13390eeb0dda387b8c78e98396f66adaf4d8a3d8d1ab64e864",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "std/stack.mm"
+        },
+        "traceability_hash": "cb2ad0a3e1ab36baf04b2bbf9baf3d2629a279e0c74e74724d062d7691bf3104",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 2,
+        "checked_refinements": 1,
+        "ensures_implication_checks": 2,
+        "diagnostics": []
+      },
+      "proof_hash": "fb7dbf8cd98548ba54d0fee956abd6a93e0070eaf95c2ddae631e837b1dc2098",
+      "dependencies": [],
+      "effects": [],
+      "requires": "top >= 0 && max > 0",
+      "ensures": "result >= 0 && result <= 1",
+      "body_expr": "{ if top == max { 1 } else { 0 } }",
+      "body_summary": "{ if top == max { 1 } else { 0 } }",
+      "z3_result_class": "unknown",
+      "logic_fragment_tag": "linear_arithmetic",
+      "logic_fragment_tags": [],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "max": "max",
+        "result": "result",
+        "top": "top"
+      },
+      "bridge_lemma_hash": "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347",
+      "translator_ir": {
+        "sort": "refinement_predicate",
+        "binders": [
+          {
+            "mumei_name": "top",
+            "lean_name": "top",
+            "mumei_type": "Nat",
+            "lean_type": "Nat",
+            "role": "param",
+            "refinement": "v >= 0"
+          },
+          {
+            "mumei_name": "max",
+            "lean_name": "max",
+            "mumei_type": "Nat",
+            "lean_type": "Nat",
+            "role": "param",
+            "refinement": "v >= 0"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(top >= 0 && max > 0) -> (result >= 0 && result <= 1)",
+        "provenance_span": {
+          "file": "std/stack.mm",
+          "line": 38,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [],
+        "proof_trace_hints": [],
+        "requires_bridge_lemmas": []
+      },
+      "symbol_provenance": [],
+      "solver_process_metadata": {
+        "task_id": null,
+        "cache_key": "7b162d9e8a98f05960ed0e93514a8b5b6af1de75bf80733a705a095ca0cb90ce",
+        "generation_id": "",
+        "solver_config_fingerprint": "4eb8092c0cb08dd4c8d6494173a480c7fae3ce88feef61311d32f80092aad8dc",
+        "timeout_ms": 10000,
+        "cancel_reason": null,
+        "process_start_time": "",
+        "process_end_time": "2026-09-13T04:34:11Z"
+      }
+    }
+  ],
+  "certificate_hash": "5ea4fe67653f72a6aa5c623ab29b8116d4dfe9ecc3abc7418bdda6b9b3bcd381",
+  "all_verified": true
+}

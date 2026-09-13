@@ -51,7 +51,9 @@ try:
         OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
         TRANSLATOR_VERSION,
         TranslationResult,
+        builtin_name_binder_conflicts,
         contains_identifier,
+        mark_builtin_name_binder_conflict,
         normalize_access_control_translator_ir,
         normalize_cei_translator_ir,
         normalize_guard_trace_translator_ir,
@@ -72,7 +74,9 @@ except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py
         OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
         TRANSLATOR_VERSION,
         TranslationResult,
+        builtin_name_binder_conflicts,
         contains_identifier,
+        mark_builtin_name_binder_conflict,
         normalize_access_control_translator_ir,
         normalize_cei_translator_ir,
         normalize_guard_trace_translator_ir,
@@ -369,6 +373,16 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
             body_translation = (
                 translate_body(str(body_expr)) if str(body_expr).strip() else None
             )
+            binder_conflicts = builtin_name_binder_conflicts(
+                requires, ensures, str(body_expr)
+            )
+            for translation in (
+                requires_translation,
+                ensures_translation,
+                body_translation,
+            ):
+                if translation is not None:
+                    mark_builtin_name_binder_conflict(translation, binder_conflicts)
             translator_ir = _translator_ir_payload(
                 atom,
                 requires_translation,

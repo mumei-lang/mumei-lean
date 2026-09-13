@@ -194,6 +194,38 @@ mumei_array_get arr i h
 where `h : i < arr.length`; `mumei_array_get_bridge` records that this is the
 same as Lean's dependent `List.get`.
 
+### 4.1 Built-in helper names as binders
+
+A helper name from the table above (`max`, `len`, `sum`, `count`, `hash`, …)
+that occurs in a contract **only as a bare identifier** — never followed by
+`(` — denotes an ordinary scalar variable, not the helper. It lowers to an
+`Int` binder with the same name (`lean_binder_name` keeps the spelling, in
+lockstep with mumei-core) and the local binder shadows the Lean/mumei helper.
+The rule is `builtin_name_binder_lowering` (§8).
+
+```text
+top >= 0 && max > 0 && top < max   ->  top ≥ 0 ∧ max > 0 ∧ top < max
+                                        binders: (top max : Int)
+```
+
+Soundness guard: `render_theorem` binds `requires` / `ensures` / body under one
+parameter list, so a name may not be both an `Int` binder and a helper call in
+the same theorem. If `max` is bare in one component and `max(a, b)` is called
+in another (or bare and called inside a single expression), every affected
+translation stays `partial` with `builtin_name_binder_conflict:<name>` in
+`unsupported_reasons`; it is never emitted as a buildable theorem. The names
+`old`, `holds`, `implies`, `unknown`, `unknown_obligation` are excluded from
+the lowering because they carry translator semantics of their own.
+
+### 4.2 Single-expression body blocks
+
+A mumei atom body is a block. When the block consists of exactly one
+expression, `translate_body` unwraps the outer braces and translates the inner
+expression (`{ top + 1 }` → `top + 1`, `{ if top == max { 1 } else { 0 } }` →
+`if top = max then 1 else 0`). Blocks containing statements (`;`, `let … ;`,
+`while`) or whose outer braces do not enclose the whole source are left to the
+existing partial path, so no imperative body is silently accepted.
+
 ## 5. Semantic Gap Bridge Rules
 
 ### 5.1 Integer Overflow Bridge
@@ -698,6 +730,7 @@ emitted in `TranslatorIR.lowering_rules`.
 | `sort_ascending_bridge` | Sort body with ascending-preservation `forall` ensures; delegates to `MumeiLean.Sort.insertion_sort_ascending_bridge`. | §5.11 |
 | `quantifier_alternation_lowering` | `translator_ir.bridge_pattern == "forall_exists_swap"`; delegates to `MumeiLean.Quantifiers.forall_exists_swap_of_finite`. | §5.12 |
 | `natural_number_induction_lowering` | `translator_ir.bridge_pattern == "int_nonnegative_induction"`; delegates to `MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern`. | §5.13 |
+| `builtin_name_binder_lowering` | A built-in helper name appears only as a bare identifier and is bound as an `Int` theorem parameter; no bridge lemma is required. | §4.1 |
 
 A translator implementation is compliant iff:
 
@@ -764,6 +797,9 @@ Catalog rules:
    a generated theorem that builds (§5) with current contract constants (§9).
 3. `unknown_obligation` entries are triage scaffolding: they keep the generated
    theorem traceable while `manual_lemma_reason` stays set.
+4. Syntax lowerings that only widen the translated fragment (§4.1, §4.2) do
+   not touch this catalog; `bridge_lemma_hash` is unchanged by them and no
+   `stale_translator` rejection is triggered.
 
 ## 11. Escalation timing
 

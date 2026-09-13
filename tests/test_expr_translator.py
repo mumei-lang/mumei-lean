@@ -1319,3 +1319,73 @@ def test_obligation_bridge_lemmas_include_algebra_and_crypto_extensions():
         "MumeiLean.Quantifiers.nested_bounded_forall_intro",
     ):
         assert lemma in quantifier_lemmas
+
+
+def test_builtin_helper_name_used_only_bare_lowers_to_int_binder():
+    # Spec §4.1: a bare `max` is a scalar variable, not the helper.
+    result = expr_translator.translate_contract("top >= 0 && max > 0 && top < max")
+    assert result.is_partial is False
+    assert result.unsupported_reasons == []
+    assert result.lean_expr == "top ≥ 0 ∧ max > 0 ∧ top < max"
+    assert result.identifiers == ["top", "max"]
+    assert result.translator_ir is not None
+    assert "builtin_name_binder_lowering" in result.translator_ir.lowering_rules
+    binder = next(b for b in result.translator_ir.binders if b.lean_name == "max")
+    assert binder.lean_type == "Int"
+    for source in ("hash != 0", "count <= n && sum >= 0", "len >= 0"):
+        assert expr_translator.translate_contract(source).is_partial is False
+
+
+def test_builtin_helper_call_is_not_lowered_to_binder():
+    result = expr_translator.translate_contract("max(a, b) >= a")
+    assert result.is_partial is False
+    assert "max" not in result.identifiers
+    assert result.translator_ir is not None
+    assert "builtin_name_binder_lowering" not in result.translator_ir.lowering_rules
+
+
+def test_builtin_helper_name_mixed_bare_and_call_stays_partial():
+    for source in ("max(a, b) >= max", "len >= 0 && len(arr) >= 1"):
+        result = expr_translator.translate_contract(source)
+        assert result.is_partial is True, source
+        assert result.translator_ir is not None
+        assert (
+            "builtin_name_binder_lowering"
+            not in result.translator_ir.lowering_rules
+        )
+
+
+def test_builtin_name_binder_conflict_across_contract_components():
+    conflicts = expr_translator.builtin_name_binder_conflicts(
+        "max(a, b) > 0", "result <= max", ""
+    )
+    assert conflicts == ["max"]
+    ensures = expr_translator.translate_contract("result <= max")
+    assert ensures.is_partial is False
+    expr_translator.mark_builtin_name_binder_conflict(ensures, conflicts)
+    assert ensures.is_partial is True
+    assert "builtin_name_binder_conflict:max" in ensures.unsupported_reasons
+    assert ensures.manual_lemma_reason is not None
+    assert expr_translator.builtin_name_binder_conflicts(
+        "top < max", "result <= max", "{ top + 1 }"
+    ) == []
+
+
+def test_translate_body_unwraps_single_expression_block():
+    # Spec §4.2: the atom body block `{ e }` denotes `e`.
+    assert expr_translator.translate_body("{ top + 1 }").lean_expr == "top + 1"
+    assert expr_translator.translate_body("{ top + 1 }").is_partial is False
+    braced_if = expr_translator.translate_body("{ if top == max { 1 } else { 0 } }")
+    assert braced_if.is_partial is False
+    assert braced_if.lean_expr == "if top = max then 1 else 0"
+    assert expr_translator.translate_body("{ arr }").lean_expr == "arr"
+
+
+def test_translate_body_keeps_statement_blocks_partial():
+    for source in (
+        "{ let i = 1; i + n }",
+        "{ if n <= 1 { n } else { let i = 1; while i < n { i = i + 1 }; n } }",
+        "{ }",
+    ):
+        assert expr_translator.translate_body(source).is_partial is True, source
+    assert expr_translator._unwrap_block_body("{ a } + { b }") is None

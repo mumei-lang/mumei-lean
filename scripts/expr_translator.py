@@ -547,6 +547,7 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "quantifier_skolemize_lowering",
     "implication_lowering",
     "let_binding_lowering",
+    "builtin_name_binder_lowering",
     "unknown_obligation_lowering",
     "smart_contract_lowering",
     "smart_contract_guard_trace_lowering",
@@ -644,6 +645,11 @@ def _lean_binder_name(name: str) -> str:
         return "binder"
     if clean[0].isdigit():
         clean = "_" + clean
+    # Built-in helper names used as plain variables (``max``, ``len``)
+    # keep their own name, mirroring mumei-core ``lean_binder_name`` so the
+    # certificate ``binder_mapping`` and the rendered theorem agree.
+    if clean in _BUILTIN_NAME_BINDER_CANDIDATES:
+        return clean
     if clean in _RESERVED_IDENTS or clean in {"theorem", "def", "namespace", "end"}:
         return f"{clean}_binder"
     return clean
@@ -669,6 +675,66 @@ def _binder_for_identifier(
     if name in string_ids:
         return TranslatorIRBinder(name, _lean_binder_name(name), "string", "String")
     return TranslatorIRBinder(name, _lean_binder_name(name), "i64", "Int")
+
+
+# Built-in helper names that may also be used as plain scalar variables
+# (``max >= 0``). Excludes helpers whose bare form is never a variable.
+_BUILTIN_NAME_BINDER_CANDIDATES: Set[str] = set(_KNOWN_FUNCTIONS) - {
+    "old", "holds", "unknown", "unknown_obligation", "implies",
+}
+
+
+def _builtin_name_binders(tokens: List[tuple]) -> Set[str]:
+    """Built-in helper names used only as bare identifiers in ``tokens``.
+
+    A name qualifies when every occurrence is a plain ``ID`` token that is
+    not followed by ``(``; a name that is also called anywhere in the same
+    expression stays a helper reference and is not lowered to a binder.
+    """
+    bare: Set[str] = set()
+    called: Set[str] = set()
+    for idx, (kind, text) in enumerate(tokens):
+        if kind != "ID" or text not in _BUILTIN_NAME_BINDER_CANDIDATES:
+            continue
+        if idx + 1 < len(tokens) and tokens[idx + 1] == ("OP", "("):
+            called.add(text)
+        else:
+            bare.add(text)
+    return bare - called
+
+
+def builtin_name_binder_conflicts(*sources: str) -> List[str]:
+    """Names lowered as binders in one source but called as helpers in another.
+
+    ``render_theorem`` binds requires / ensures / body under one parameter
+    list, so ``max`` cannot be an ``Int`` binder in ``ensures`` while
+    ``requires`` still calls ``max(a, b)``.
+    """
+    bare: Set[str] = set()
+    called: Set[str] = set()
+    for source in sources:
+        tokens = _tokenize((source or "").strip())
+        for idx, (kind, text) in enumerate(tokens):
+            if kind != "ID" or text not in _BUILTIN_NAME_BINDER_CANDIDATES:
+                continue
+            if idx + 1 < len(tokens) and tokens[idx + 1] == ("OP", "("):
+                called.add(text)
+            else:
+                bare.add(text)
+    return sorted(bare & called)
+
+
+def mark_builtin_name_binder_conflict(
+    translation: TranslationResult,
+    conflicts: List[str],
+) -> None:
+    if not conflicts:
+        return
+    translation.is_partial = True
+    reasons = set(translation.unsupported_reasons)
+    reasons.update(f"builtin_name_binder_conflict:{name}" for name in conflicts)
+    translation.unsupported_reasons = sorted(reasons)
+    translation.manual_lemma_reason = ";".join(translation.unsupported_reasons)
 
 
 def _unsupported_reasons(source: str, tokens: List[tuple], is_partial: bool) -> List[str]:
@@ -729,6 +795,8 @@ def _lowering_rules(tokens: List[tuple], array_ids: List[str], string_ids: List[
         rules.append("implication_lowering")
     if any(kind == "KW" and text == "let" for kind, text in tokens):
         rules.append("let_binding_lowering")
+    if _builtin_name_binders(tokens):
+        rules.append("builtin_name_binder_lowering")
     if any(
         kind == "KW" and text in _QUANTIFIER_KEYWORDS for kind, text in tokens
     ) and any(
@@ -823,6 +891,12 @@ def _build_semantic_gap_notes(
         notes.append(
             "let_binding_lowering: let x = e in body maps to Lean let "
             "binding. Scoping rules match Lean 4 semantics."
+        )
+    if _builtin_name_binders(tokens):
+        notes.append(
+            "builtin_name_binder_lowering: a built-in helper name used only "
+            "as a bare identifier is bound as an Int theorem parameter; the "
+            "local binder shadows the Lean/mumei helper of the same name."
         )
     return notes
 
@@ -1404,6 +1478,7 @@ def _attach_translator_ir(
 
 def _extract_identifiers(tokens: List[tuple]) -> List[str]:
     seen: List[str] = []
+    builtin_binders = _builtin_name_binders(tokens)
     i = 0
     while i < len(tokens):
         kind, text = tokens[i]
@@ -1429,7 +1504,7 @@ def _extract_identifiers(tokens: List[tuple]) -> List[str]:
         if kind != "ID":
             i += 1
             continue
-        if text in _RESERVED_IDENTS:
+        if text in _RESERVED_IDENTS and text not in builtin_binders:
             i += 1
             continue
         if text not in seen:
@@ -1841,6 +1916,7 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
     """
     pieces: List[str] = []
     is_partial = any(kind == "UNK" for kind, _ in tokens)
+    builtin_binders = _builtin_name_binders(tokens)
     i = 0
     n = len(tokens)
     while i < n:
@@ -2236,12 +2312,17 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
         elif kind == "STR":
             pieces.append(text)
         else:
-            # Bare known helper names (without a
-            # following ``(``) cannot be lowered to a Lean helper call
-            # and would reference an undeclared name. Flag as partial so
-            # the generated theorem carries a ``-- TODO: unproven``
-            # marker rather than silently emitting broken Lean.
-            if kind == "ID" and text in _KNOWN_FUNCTIONS:
+            # A built-in helper name used only as a bare identifier is a
+            # plain scalar variable (``builtin_name_binder_lowering``).
+            # A helper name that is *also* called in the same expression
+            # cannot be both a binder and a helper reference; flag as
+            # partial so the generated theorem carries a
+            # ``-- TODO: unproven`` marker rather than broken Lean.
+            if (
+                kind == "ID"
+                and text in _KNOWN_FUNCTIONS
+                and text not in builtin_binders
+            ):
                 is_partial = True
             pieces.append(text)
         i += 1
@@ -2576,6 +2657,43 @@ def _merge_identifiers(groups: list[list[str]]) -> list[str]:
     return merged
 
 
+def _unwrap_block_body(source: str) -> Optional[str]:
+    """Return the expression inside a single-expression block ``{ e }``.
+
+    A mumei atom body is a block; when it holds exactly one expression its
+    value is that expression, so the braces carry no semantics. Blocks with
+    statements (``;``), or whose outer braces do not enclose the whole
+    source (``{ a } + { b }``), are returned as ``None``.
+    """
+    if not (source.startswith("{") and source.endswith("}")):
+        return None
+    depth = 0
+    in_string = False
+    index = 0
+    while index < len(source):
+        ch = source[index]
+        if in_string:
+            if ch == "\\":
+                index += 2
+                continue
+            if ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and index != len(source) - 1:
+                return None
+        elif ch == ";" and depth == 1:
+            return None
+        index += 1
+    if depth != 0 or in_string:
+        return None
+    return source[1:-1].strip()
+
+
 def _known_body_pattern(source: str) -> Optional[TranslationResult]:
     braced_if = re.fullmatch(
         r"if\s+([^{}]+?)\s*\{\s*([^{}]+?)\s*\}\s*else\s*\{\s*([^{}]+?)\s*\}",
@@ -2744,6 +2862,11 @@ def translate_body(body_expr: str) -> TranslationResult:
             array_identifiers=[],
             string_identifiers=[],
         )
+    unbraced = _unwrap_block_body(stripped)
+    if unbraced is not None:
+        # An empty block has no value; translate_body("") marks it partial.
+        inner = translate_body(unbraced)
+        return _attach_translator_ir(stripped, inner)
     known = _known_body_pattern(stripped)
     if known is not None:
         return _attach_translator_ir(stripped, known)

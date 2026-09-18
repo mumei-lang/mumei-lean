@@ -1564,6 +1564,64 @@ def test_translate_body_lowers_let_sequence_tail():
         assert rule in mixed.translator_ir.lowering_rules
 
 
+def test_translate_body_lowers_struct_projection():
+    # Spec §4.6: a field read `p.x` lowers to the scalar binder `p_x`
+    # consistently across requires / ensures / body; the lowering records
+    # `struct_projection_lowering`.
+    result = expr_translator.translate_body("p.x")
+    assert result.is_partial is False
+    assert result.lean_expr == "p_x"
+    assert result.identifiers == ["p_x"]
+    assert "struct_projection_lowering" in result.translator_ir.lowering_rules
+    # The same projection in a contract produces the same binder name.
+    contract = expr_translator.translate_contract("p.x >= 0")
+    assert contract.is_partial is False
+    assert contract.lean_expr == "p_x ≥ 0"
+    assert contract.identifiers == ["p_x"]
+    assert "struct_projection_lowering" in contract.translator_ir.lowering_rules
+    # Repeated projections share the binder; chained access nests it.
+    twice = expr_translator.translate_body("{ p.x + p.x }")
+    assert twice.is_partial is False
+    assert twice.lean_expr == "p_x + p_x"
+    chained = expr_translator.translate_body("p.x.y")
+    assert chained.is_partial is False
+    assert chained.lean_expr == "p_x_y"
+    # Projections inside nested-if branches keep the rule on the merged IR.
+    nested = expr_translator.translate_body("{ if c { p.x } else { p.y } }")
+    assert nested.is_partial is False
+    assert nested.lean_expr == "if c then p_x else p_y"
+    assert "struct_projection_lowering" in nested.translator_ir.lowering_rules
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # Method calls are not field reads.
+        "p.f(x)",
+        "p.f()",
+        # `perform Eff.op` names an effect operation, not a field read.
+        "{ perform Vault.check }",
+        "perform Vault.check",
+        # Postfix access on a call result is not a plain field read.
+        "f(p).x",
+        # Non-identifier member names.
+        "p.5",
+        "p.",
+        # The projected name would collide with an existing binder.
+        "p.x + p_x",
+        # Float literals are unchanged (still unsupported).
+        "1.5",
+    ],
+)
+def test_translate_body_keeps_non_field_projection_partial(source):
+    result = expr_translator.translate_body(source)
+    assert result.is_partial is True, source
+    assert (
+        result.translator_ir is None
+        or "struct_projection_lowering" not in result.translator_ir.lowering_rules
+    )
+
+
 @pytest.mark.parametrize(
     "source",
     [

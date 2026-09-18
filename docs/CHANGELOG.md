@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-18: Struct-projection lowering as 18th live generated theorem path
+
+- Added lowering rule `struct_projection_lowering` (`docs/LEAN_TRANSLATOR_SPEC.md` §4.6, §8): a `base . field` member access lowers to a fresh scalar binder `base_field` (`p.x` → `p_x`) identically across `requires` / `ensures` / `body`, so the generated theorem quantifies the projected value directly (`takePointResult (p_x : Int) : Int := p_x`). Chained access `p.x.y` nests to `p_x_y`. Non-field shapes stay partial: qualified effect names (`perform Eff.op`), method calls (`p.f(…)`), postfix access on a call result (`f(p).x`), non-identifier members (`p.5`), and projected names colliding with an existing binder (`p.x` next to a real `p_x`).
+- Recorded the 18th live generated theorem path `concurrency/task_struct_capture_double_move_fail.mm::take_point` (`tests/fixtures/concurrency_task_struct_projection.proof-cert.json`): a Z3 `unknown` linear-arithmetic obligation whose `p.x` body previously flagged `unknown_token`, now building `Generated.Concurrency.Task_struct_capture_double_move_fail.take_point_correct` with `known_witness_used = false` (discharged by `mumei_arith_deep`).
+- Lowering only: opaque renaming changes no obligation class (`arithmetic_obligation`) and requires no bridge lemma, so `translator_version` stays `mumei-lean-translator-ir-v2` and `bridge_lemma_hash` stays `ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347`. Fourth and final construct of the Wave 5 "B-1 続き" follow-up — the C-1 inventory group 1 (23 atoms, mumei `docs/ROADMAP.md` P30) is now fully lowered.
+
 ## 2026-09-18: Nested-`if` lowering as 17th live generated theorem path
 
 - Added lowering rule `nested_if_lowering` (`docs/LEAN_TRANSLATOR_SPEC.md` §4.5, §8): `_parse_braced_if` splits `if c { a } else { b }` by brace depth instead of the previous flat `[^{}]+` regex, so branches may carry nested conditionals and `else if` chains (`{ if x < lo { lo } else { if x > hi { hi } else { x } }` → `if x < lo then lo else if x > hi then hi else x`). The rule is recorded only when a branch actually carried braces — flat conditionals keep their prior rule set. Malformed shapes (trailing tokens after the else block, `else ifx`, missing `else`, a nested `if` without `else`) stay partial.

@@ -193,6 +193,14 @@ The bridge ships fourteen live generated theorem paths. Each lowers a Z3 `unknow
   `known_witness_used = false`. This is the seventeenth live generated
   theorem path; it adds no bridge lemma, so `bridge_lemma_hash` is
   unchanged.
+- `concurrency/task_struct_capture_double_move_fail.mm::take_point`: the
+  struct-projection path emits
+  `Generated.Concurrency.Task_struct_capture_double_move_fail.take_point_correct`;
+  `p.x` field reads in `requires` / `body` lower to the scalar binder
+  `p_x` via `struct_projection_lowering` (spec §4.6) and Lake builds the
+  regenerated theorem with `known_witness_used = false`. This is the
+  eighteenth live generated theorem path; it adds no bridge lemma, so
+  `bridge_lemma_hash` is unchanged.
 
 ## Scope
 

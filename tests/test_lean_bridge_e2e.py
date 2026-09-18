@@ -1233,6 +1233,59 @@ def test_nested_if_body_semantics_upgrade_unknown_to_lean_verified(
         _cleanup_generated_file(GENERATED_SATURATING)
 
 
+GENERATED_TASK_STRUCT = (
+    REPO_ROOT
+    / "generated"
+    / "Generated"
+    / "Concurrency"
+    / "Task_struct_capture_double_move_fail.lean"
+)
+
+
+@pytest.mark.lake_available
+def test_struct_projection_body_semantics_upgrade_unknown_to_lean_verified(
+    lake_available, tmp_path: Path
+):
+    """Spec §4.6: `p.x` lowers to the scalar binder `p_x`.
+
+    The fixture atom was partial (`unknown_token` on `.`) before the
+    projection lowering; it must now build via body semantics without a
+    known witness and without touching the bridge lemma catalog.
+    """
+    out_cert = tmp_path / "task_struct.lean-cert.json"
+    out_dir = tmp_path / "generated"
+    _cleanup_generated_file(GENERATED_TASK_STRUCT)
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "concurrency_task_struct_projection.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+        _assert_bridge_ok(proc)
+        assert "0 partial translation" in proc.stdout
+        generated_src = GENERATED_TASK_STRUCT.read_text()
+        assert "def takePointResult (p_x : Int) : Int :=" in generated_src
+        assert "(p_x ≥ 0) → (result ≥ 0)" in generated_src
+        payload = json.loads(out_cert.read_text())
+        atom = next(a for a in payload["atoms"] if a["name"] == "take_point")
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["status"] == "verified"
+        meta = atom["lean_metadata"]
+        assert meta["known_witness_used"] is False
+        assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
+        assert meta["bridge_lemma_hash"] == (
+            "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
+        )
+        rules = meta["translator_ir"]["lowering_rules"]
+        assert "struct_projection_lowering" in rules
+        assert payload["all_verified"] is True
+    finally:
+        _cleanup_generated_file(GENERATED_TASK_STRUCT)
+
+
 GENERATED_QUINTIC = REPO_ROOT / "generated" / "Generated" / "Std" / "Quintic.lean"
 QUINTIC_GOOD_SCRIPT = (
     "intro hx\nsubst h_body\nunfold quinticPosResult\n"

@@ -340,6 +340,35 @@ Malformed shapes stay partial: trailing tokens after the else block,
 `mumei_arith_deep`, whose `split <;> omega` stage splits the `if` goals
 without a new ladder candidate.
 
+### 4.6 Struct field projection (`p.x`)
+
+A mumei atom may read a field of a struct-typed parameter:
+
+```text
+atom take_point(p: Point)
+requires: p.x >= 0;
+ensures: result >= 0;
+body: p.x;
+```
+
+Struct fields are opaque to the prover — the certificate carries no field
+types or layout, only the param binder `p : Point`. The translator lowers
+each `base . field` token triple to a fresh scalar binder `base_field`
+(`p.x` → `p_x : Int`) identically in `requires`, `ensures`, and `body`,
+so the generated theorem quantifies the projected value directly
+(`takePointResult (p_x : Int) : Int := p_x`). The lowering is a
+consistent opaque renaming, adds no bridge lemma, and leaves
+`bridge_lemma_hash` unchanged. The rule is `struct_projection_lowering`
+(§8), recorded whenever at least one `base . field` rewrite was applied.
+
+Shapes that are not plain field reads stay partial: qualified effect
+names (`perform Eff.op`), method calls (`p.f(…)`), postfix access on a
+call result (`f(p).x`), non-identifier members (`p.5`), and projected
+names that would collide with an existing binder (`p.x` next to a real
+`p_x` would conflate two distinct values — the raw `.` keeps the surface
+partial instead of silently equating them). Chained access `p.x.y`
+lowers to a single `p_x_y` binder.
+
 ## 5. Semantic Gap Bridge Rules
 
 ### 5.1 Integer Overflow Bridge
@@ -848,6 +877,7 @@ emitted in `TranslatorIR.lowering_rules`.
 | `perform_statement_lowering` | A body block is a sequence of leading `perform <Effect>.<op>` statements followed by a pure tail; only the tail lowers and no bridge lemma is required. | §4.3 |
 | `let_statement_lowering` | A body block's leading `let <name> = <expr>` statements substitute into the final tail expression; the substituted tail lowers and no bridge lemma is required. | §4.4 |
 | `nested_if_lowering` | A braced `if c { a } else { b }` body carries brace-enclosed content (a nested conditional or block) in a branch; each branch recurses through the translator and no bridge lemma is required. | §4.5 |
+| `struct_projection_lowering` | A `base . field` member access appears; the field read becomes a scalar `base_field` binder consistently across `requires` / `ensures` / `body` and no bridge lemma is required. Qualified effect names (`perform Eff.op`), method calls (`p.f(…)`), postfix access on call results, non-identifier members, and colliding projected names stay partial. | §4.6 |
 
 A translator implementation is compliant iff:
 

@@ -556,6 +556,7 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "perform_statement_lowering",
     "let_statement_lowering",
     "nested_if_lowering",
+    "struct_projection_lowering",
     "unknown_obligation_lowering",
     "smart_contract_lowering",
     "smart_contract_guard_trace_lowering",
@@ -1578,6 +1579,7 @@ def _attach_translator_ir(
     tokens: Optional[List[tuple]] = None,
 ) -> TranslationResult:
     real_tokens = tokens if tokens is not None else _tokenize(source or "")
+    real_tokens, _ = _lower_struct_projection_tokens(real_tokens)
     result.predicate_identifiers = _extract_predicate_identifiers(real_tokens)
     result.predicate_arities = _extract_predicate_arities(real_tokens)
     reasons = _unsupported_reasons(source or "", real_tokens, result.is_partial)
@@ -1721,6 +1723,66 @@ def _tokenize(source: str) -> List[tuple]:
         tokens.append((m.lastgroup, m.group(m.lastgroup)))
         pos = m.end()
     return tokens
+
+
+def _lower_struct_projection_tokens(
+    tokens: List[tuple],
+) -> Tuple[List[tuple], List[str]]:
+    """Rewrite ``base . field`` member access to a fresh ``base_field`` binder.
+
+    Spec §4.6: struct projections are opaque to the prover, so a field read
+    ``p.x`` becomes the scalar binder ``p_x`` consistently across
+    ``requires`` / ``ensures`` / ``body`` and the generated theorem
+    quantifies the projected value directly. Conservative cases keep the
+    raw ``.`` token (hence stay partial): qualified effect names
+    (``perform Eff.op``), method calls ``p.f(…)``, postfix access on a
+    call result ``f(p).x``, member names that are not plain identifiers
+    (``p.5``), and projected names that would collide with an existing
+    identifier (``p.x`` alongside a real ``p_x`` binder would conflate two
+    distinct values). Chained access ``p.x.y`` lowers to a single
+    ``p_x_y`` binder. Returns ``(tokens', projected_names)``.
+    """
+    lowered = list(tokens)
+    plain_idents = {text for kind, text in tokens if kind == "ID"}
+    projected: List[str] = []
+    index = 0
+    while index + 2 < len(lowered):
+        kind, base = lowered[index]
+        if not (
+            kind == "ID"
+            and lowered[index + 1] == ("UNK", ".")
+            and lowered[index + 2][0] == "ID"
+        ):
+            index += 1
+            continue
+        field_name = lowered[index + 2][1]
+        followed_by = lowered[index + 3] if index + 3 < len(lowered) else None
+        merged = f"{base}_{field_name}"
+        if index > 0 and lowered[index - 1] == ("ID", "perform"):
+            # ``perform Eff.op`` names an effect operation, not a field read.
+            index += 1
+            continue
+        if index > 0 and lowered[index - 1] == ("UNK", "."):
+            # The base is itself a member of a qualified name that was not
+            # lowered (e.g. `perform A.b.c`); leave the remaining dots raw
+            # instead of half-rewriting the qualified tail.
+            index += 1
+            continue
+        if followed_by == ("OP", "("):
+            # ``p.f(…)`` is a method call, not a field read.
+            index += 1
+            continue
+        if merged in plain_idents and merged not in projected:
+            # The projected name collides with an unrelated identifier.
+            index += 1
+            continue
+        lowered[index : index + 3] = [("ID", merged)]
+        plain_idents.add(merged)
+        if merged not in projected:
+            projected.append(merged)
+        # Keep scanning at the same index so ``p.x.y`` lowers through the
+        # freshly created ``p_x`` to ``p_x_y``.
+    return lowered, projected
 
 
 def contains_identifier(source: str, name: str) -> bool:
@@ -2496,7 +2558,9 @@ def translate_contract(source: str) -> TranslationResult:
             string_identifiers=[],
         )
 
-    tokens = _tokenize(stripped)
+    tokens, projected_idents = _lower_struct_projection_tokens(
+        _tokenize(stripped)
+    )
     lean_expr, is_partial = _emit_tokens(tokens)
     # Collect identifiers that appear in ``arr[i]`` position. These need
     # ``List Int`` typing in the rendered theorem signature so that
@@ -2763,7 +2827,7 @@ def translate_contract(source: str) -> TranslationResult:
             ):
                 is_partial = True
                 break
-    return _make_translation_result(
+    result = _make_translation_result(
         stripped,
         lean_expr=lean_expr,
         identifiers=free,
@@ -2773,13 +2837,21 @@ def translate_contract(source: str) -> TranslationResult:
         string_identifiers=[s for s in string_idents if s in free],
         tokens=tokens,
     )
+    if (
+        projected_idents
+        and result.translator_ir is not None
+        and "struct_projection_lowering"
+        not in result.translator_ir.lowering_rules
+    ):
+        result.translator_ir.lowering_rules.append("struct_projection_lowering")
+    return result
 
 
 _IDENT_PATTERN = r"[A-Za-z_][A-Za-z0-9_]*"
 
 
 def _fragment_translation(source: str) -> tuple[str, list[str], bool]:
-    tokens = _tokenize(source.strip())
+    tokens, _ = _lower_struct_projection_tokens(_tokenize(source.strip()))
     lean_expr, is_partial = _emit_tokens(tokens)
     return lean_expr, _extract_identifiers(tokens), is_partial
 
@@ -3165,6 +3237,17 @@ def _known_body_pattern(source: str) -> Optional[TranslationResult]:
             predicate_arities=predicate_arities,
         )
         lowered = _attach_translator_ir(source, lowered)
+        # Rules recorded inside a branch (``struct_projection_lowering``,
+        # ``nested_if_lowering``, …) are not recoverable by retokenizing the
+        # whole source, so carry them over the rebuild like
+        # ``_attach_translator_ir`` does for earlier steps.
+        if lowered.translator_ir is not None:
+            for branch in (cond, then_branch, else_branch):
+                if branch.translator_ir is None:
+                    continue
+                for rule in branch.translator_ir.lowering_rules:
+                    if rule not in lowered.translator_ir.lowering_rules:
+                        lowered.translator_ir.lowering_rules.append(rule)
         if any("{" in segment for segment in braced_if) and (
             lowered.translator_ir is not None
             and "nested_if_lowering" not in lowered.translator_ir.lowering_rules
@@ -3405,7 +3488,7 @@ def translate_body(body_expr: str) -> TranslationResult:
                 if rule not in rules:
                     rules.append(rule)
         return inner
-    tokens = _tokenize(stripped)
+    tokens, _ = _lower_struct_projection_tokens(_tokenize(stripped))
     if _statement_keywords(tokens):
         # A statement block has no value to lower; `_unsupported_reasons`
         # records STATEMENT_BLOCK_REASON from the same tokens.

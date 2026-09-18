@@ -8,7 +8,7 @@
     {
       "name": "cei_compliant_withdraw",
       "z3_check_result": "unknown",
-      "content_hash": "9d1f4f2d0a4f6c1f0a9b8e7d6c5b4a39383726150403f2e1d0c9b8a7968574635",
+      "content_hash": "bce38a9e51a6a93e5dc7fcf2023bd3ac0f41cbf82a7325dc5fe29a2ee97b0036",
       "status": "unknown",
       "spec_validation_result": {
         "status": "satisfiable",
@@ -27,9 +27,15 @@
       },
       "proof_hash": "7e3a1b9c4d5f6e7081a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708",
       "dependencies": [],
-      "effects": ["Vault"],
-      "effect_pre": { "Vault": "Idle" },
-      "effect_post": { "Vault": "Interacted" },
+      "effects": [
+        "Vault"
+      ],
+      "effect_pre": {
+        "Vault": "Idle"
+      },
+      "effect_post": {
+        "Vault": "Interacted"
+      },
       "requires": "balance >= 0 && balance <= 1000000000 && amount > 0 && balance >= amount",
       "ensures": "result == balance - amount && result >= 0",
       "body_expr": "{\n    perform Vault.check;\n    perform Vault.update;\n    perform Vault.interact;\n    balance - amount\n}",
@@ -99,7 +105,7 @@
     {
       "name": "guarded_state_update",
       "z3_check_result": "unknown",
-      "content_hash": "1f2e3d4c5b6a7980717263544536271809aabbccddeeff0011223344556677889",
+      "content_hash": "b28ee1abb93c99d3bd63de3fd5d4883a704253575f2597a80f72024a2fdee60e",
       "status": "unknown",
       "spec_validation_result": {
         "status": "satisfiable",
@@ -118,9 +124,15 @@
       },
       "proof_hash": "2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a",
       "dependencies": [],
-      "effects": ["Vault"],
-      "effect_pre": { "Vault": "Checked" },
-      "effect_post": { "Vault": "Effected" },
+      "effects": [
+        "Vault"
+      ],
+      "effect_pre": {
+        "Vault": "Checked"
+      },
+      "effect_post": {
+        "Vault": "Effected"
+      },
       "requires": "balance >= 0 && balance <= 1000000000 && amount > 0 && balance >= amount",
       "ensures": "result == balance - amount",
       "body_expr": "{\n    perform Vault.update;\n    balance - amount\n}",
@@ -178,7 +190,7 @@
       "symbol_provenance": [],
       "solver_process_metadata": {
         "task_id": null,
-        "cache_key": "aabbccddeeff001122334455667788990a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+        "cache_key": "409d9ffcdcf3280b74dee8e4cdff26d00e06b324ad1334835d59bfe45dd5258f",
         "generation_id": "",
         "solver_config_fingerprint": "4eb8092c0cb08dd4c8d6494173a480c7fae3ce88feef61311d32f80092aad8dc",
         "timeout_ms": 10000,
@@ -188,6 +200,6 @@
       }
     }
   ],
-  "certificate_hash": "8f7e6d5c4b3a29180716253445566778899aabbccddeeff001122334455667788",
+  "certificate_hash": "64f3af9c705119ed116e80e8d64bd119dee7e0557e549b8b6001ff1845aec3b0",
   "all_verified": true
 }

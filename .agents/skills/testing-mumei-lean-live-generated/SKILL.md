@@ -251,8 +251,9 @@ PATH="$HOME/.elan/bin:$PATH" python -m pytest tests/test_lean_bridge_e2e.py -q \
 
 Negative controls for path 15 (unit level, no Lake needed):
 `tests/test_expr_translator.py::test_translate_body_keeps_non_perform_sequence_blocks_partial`
-covers a `perform` in tail position, a non-`perform` statement in the prefix,
-and braces not enclosing the whole source — all stay partial.
+covers a `perform` in tail position, a bare `perform` keyword as tail, a
+non-`perform` statement in the prefix, and braces not enclosing the whole
+source — all stay partial.
 
 Focused pytest coverage for paths 9–11, Lake required:
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-18: `perform` statement-sequence lowering as 15th live generated theorem path
+
+- Added lowering rule `perform_statement_lowering` (`docs/LEAN_TRANSLATOR_SPEC.md` §4.3, §8): a brace-enclosed body block of leading `perform <Effect>.<op>` statements followed by a pure tail denotes the tail, so `translate_body` lowers `{ perform Vault.check; perform Vault.update; perform Vault.interact; balance - amount }` to `balance - amount`. `normalize_body_source` strips the same prefix so result-type inference sees the tail. Non-matching shapes (a `perform` in tail position, a non-`perform` statement in the prefix, an empty tail, braces not enclosing the whole source, or a bare `perform` keyword as tail) stay partial.
+- Recorded the 15th live generated theorem path `defi/invariants.mm::cei_compliant_withdraw` / `guarded_state_update` (`tests/fixtures/defi_invariants_perform_sequence.proof-cert.json`): Z3 `unknown` linear-arithmetic obligations whose `perform` sequence bodies previously flagged `unknown_token`, now building `Generated.Defi.Invariants.cei_compliant_withdraw_correct` / `guarded_state_update_correct` with `known_witness_used = false`.
+- Lowering only: the obligation class stays `arithmetic_obligation` and no bridge lemma is required, so `translator_version` stays `mumei-lean-translator-ir-v2` and `bridge_lemma_hash` stays `ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347`. This is the first construct of the Wave 5 "B-1 続き" follow-up, covering the 19-atom `perform`-sequence group of the C-1 inventory (mumei `docs/ROADMAP.md` P30).
+
 ## 2026-08-30: Modular exponentiation ladder stage as 14th live generated theorem path
 
 - Added the 17th tactic ladder candidate `mumei_ff_pow` (`MumeiLean/Tactics.lean`, `docs/LEAN_TRANSLATOR_SPEC.md` §12.2), appended after `mumei_induct` so no previously adopted candidate changes. It extends `mumei_ff_mod` with the `Int.toNat` exponent-literal reduction and the new supporting lemma `MumeiLean.Algebra.emod_pow_emod`, collapsing a `mumei_ff_pow` term into a single `polynomial % p`.

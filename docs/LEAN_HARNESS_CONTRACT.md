@@ -170,6 +170,22 @@ The bridge ships fourteen live generated theorem paths. Each lowers a Z3 `unknow
   regenerated theorem with `known_witness_used = false`. This is the fourteenth
   live generated theorem path; the search substitutes tactics only, so
   `bridge_lemma_hash` is unchanged.
+- `defi/invariants.mm::cei_compliant_withdraw` / `guarded_state_update`: the
+  `perform` statement-sequence path emits
+  `Generated.Defi.Invariants.cei_compliant_withdraw_correct` /
+  `guarded_state_update_correct`; `{ perform Eff.op…; <pure tail> }` bodies
+  lower to the tail via `perform_statement_lowering` (spec §4.3) and Lake
+  builds the regenerated theorems with `known_witness_used = false`. This is
+  the fifteenth live generated theorem path; it adds no bridge lemma, so
+  `bridge_lemma_hash` is unchanged.
+- `concurrency/linear_ownership.mm::move_once` / `read_before_move`: the `let`
+  statement-sequence path emits
+  `Generated.Concurrency.Linear_ownership.move_once_correct` /
+  `read_before_move_correct`; `{ let x = e; …; <tail> }` bodies substitute
+  each binding into the tail via `let_statement_lowering` (spec §4.4) and
+  Lake builds the regenerated theorems with `known_witness_used = false`.
+  This is the sixteenth live generated theorem path; it adds no bridge
+  lemma, so `bridge_lemma_hash` is unchanged.
 
 ## Scope
 

@@ -269,12 +269,49 @@ theorem, so the lowering adds no bridge lemma and leaves the obligation
 class and `bridge_lemma_hash` unchanged. The rule is
 `perform_statement_lowering` (§8).
 
-A block that does not match that shape stays partial: a non-`perform`
-statement among the leading segments (`{ perform A.x; let y = 1; y }`), a
-`perform` statement in tail position (`{ balance - amount; perform A.x }`),
-an empty tail, or braces that do not enclose the whole source.
+A block that does not match that shape stays partial: a non-`perform`,
+non-`let` statement among the leading segments
+(`{ perform A.x; while i < n { i }; y }`), a `perform` statement in tail
+position (`{ balance - amount; perform A.x }`), an empty tail, or braces
+that do not enclose the whole source. `let` segments in the prefix compose
+with `perform` segments via §4.4.
 `normalize_body_source` strips the same prefix, so result-type inference
 sees the tail (`{ perform Log.append; "ok" }` is a `String` body).
+
+### 4.4 `let` statement sequences in body blocks
+
+A mumei body may bind intermediate names before computing its value:
+
+```text
+{ let n = len(buf); let owned = buf; n }
+```
+
+Each `let <name> = <expr>` segment binds `<name>` for the rest of the
+block; the block denotes its final expression. `translate_body` lowers the
+tail with every binding substituted textually — `<name>` occurrences in
+later segment expressions and in the tail are replaced by their bound
+expression, parenthesized when it is compound
+(`{ let owned = buf; len(owned) }` → `len(buf)` → `(mumei_len buf)`).
+Bindings resolve sequentially, so a later binding may reference earlier
+names (`{ let x = a; let x = x + 1; x }` → `(a + 1)`) and `perform`/`let`
+segments may interleave (both rules are recorded, §4.3). Substitution is
+an equational rewriting of a pure expression, so the lowering adds no
+bridge lemma and leaves `bridge_lemma_hash` unchanged. The rule is
+`let_statement_lowering` (§8).
+
+Substitution stays conservative — the block remains partial when:
+
+- a bound name is rebound inside the tail (`let` / `forall` / `exists`
+  binder), e.g. `{ let n = len(buf); forall(n, 0, m, arr[n] >= 0) }`;
+- a bound name appears in call position in the tail
+  (`{ let f = len; f(buf) }`);
+- the block ends in a `let`/`perform` statement or any segment is neither
+  `let` nor `perform`;
+- `==` is used instead of `=` (`{ let owned == buf; owned }`).
+
+`normalize_body_source` applies the same lowering, so result-type
+inference sees the substituted tail (`{ let msg = "ok"; msg }` is a
+`String` body).
 
 ## 5. Semantic Gap Bridge Rules
 
@@ -782,6 +819,7 @@ emitted in `TranslatorIR.lowering_rules`.
 | `natural_number_induction_lowering` | `translator_ir.bridge_pattern == "int_nonnegative_induction"`; delegates to `MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern`. | §5.13 |
 | `builtin_name_binder_lowering` | A built-in helper name appears only as a bare identifier and is bound as an `Int` theorem parameter; no bridge lemma is required. | §4.1 |
 | `perform_statement_lowering` | A body block is a sequence of leading `perform <Effect>.<op>` statements followed by a pure tail; only the tail lowers and no bridge lemma is required. | §4.3 |
+| `let_statement_lowering` | A body block's leading `let <name> = <expr>` statements substitute into the final tail expression; the substituted tail lowers and no bridge lemma is required. | §4.4 |
 
 A translator implementation is compliant iff:
 

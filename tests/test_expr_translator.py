@@ -1425,7 +1425,6 @@ def test_translate_body_unwraps_single_expression_block():
 
 def test_translate_body_keeps_statement_blocks_partial():
     for source in (
-        "{ let i = 1; i + n }",
         "{ if n <= 1 { n } else { let i = 1; while i < n { i = i + 1 }; n } }",
         "{ }",
     ):
@@ -1473,8 +1472,8 @@ def test_translate_body_lowers_perform_sequence_tail():
         # A bare `perform` keyword cannot be the block's value either.
         "{ perform Vault.check; perform }",
         "{ perform Vault.check; perform Vault }",
-        # Any non-perform statement in the prefix keeps the block partial.
-        "{ perform Vault.check; let y = 1; y + amount }",
+        # Any non-perform/non-let statement in the prefix stays partial.
+        "{ perform Vault.check; while i < n { i = i + 1 }; y + amount }",
         "{ if c { x } else { perform Vault.check }; y }",
         # Braces that do not enclose the whole source are not a block.
         "{ perform Vault.check; x } + { y }",
@@ -1490,6 +1489,59 @@ def test_translate_body_keeps_non_perform_sequence_blocks_partial(source):
     )
 
 
+def test_translate_body_lowers_let_sequence_tail():
+    # Spec §4.4: `{ let x = e; …; tail }` denotes `tail` with each binding
+    # substituted; the lowering records `let_statement_lowering`.
+    result = expr_translator.translate_body("{ let owned = buf; len(owned) }")
+    assert result.is_partial is False
+    assert result.lean_expr == "(mumei_len buf)"
+    assert result.unsupported_reasons == []
+    assert "let_statement_lowering" in result.translator_ir.lowering_rules
+    multi = expr_translator.translate_body(
+        "{\n    let n = len(buf);\n    let owned = buf;\n    n\n}"
+    )
+    assert multi.is_partial is False
+    assert multi.lean_expr == "( (mumei_len buf) )"
+    # A later binding resolves earlier names first, so shadowing is kept.
+    shadowed = expr_translator.translate_body("{ let x = a; let x = x + 1; x }")
+    assert shadowed.is_partial is False
+    assert shadowed.lean_expr == "( a + 1 )"
+    # Mixed effect/let prefixes compose (both rules recorded).
+    mixed = expr_translator.translate_body(
+        "{ perform Vault.check; let n = len(buf); n }"
+    )
+    assert mixed.is_partial is False
+    assert mixed.lean_expr == "( (mumei_len buf) )"
+    for rule in ("perform_statement_lowering", "let_statement_lowering"):
+        assert rule in mixed.translator_ir.lowering_rules
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # A block ending in a binding has no value.
+        "{ let owned = buf; }",
+        "{ let owned = buf; let n = len(buf) }",
+        # A bound name rebound inside the tail must not be substituted.
+        "{ let n = len(buf); forall(n, 0, m, arr[n] >= 0) }",
+        "{ let n = len(buf); let n = n + 1 in n }",
+        # A bound name used in call position cannot be substituted safely.
+        "{ let f = len; f(buf) }",
+        # `==` is not a `let` binding.
+        "{ let owned == buf; owned }",
+        # Non-let/non-perform statements in the prefix stay partial.
+        "{ let owned = buf; while i < n { i = i + 1 }; owned }",
+    ],
+)
+def test_translate_body_keeps_unsupported_statement_sequences_partial(source):
+    result = expr_translator.translate_body(source)
+    assert result.is_partial is True, source
+    assert (
+        result.translator_ir is None
+        or "let_statement_lowering" not in result.translator_ir.lowering_rules
+    )
+
+
 def test_normalize_body_source_strips_perform_prefix():
     assert (
         expr_translator.normalize_body_source(
@@ -1501,15 +1553,27 @@ def test_normalize_body_source_strips_perform_prefix():
         expr_translator.normalize_body_source('{ perform Log.append; "ok" }')
         == '"ok"'
     )
-    # Non-perform statement blocks keep their raw source.
+    # Non-perform/non-let statement blocks keep their raw source.
     assert (
-        expr_translator.normalize_body_source("{ let i = 1; i + n }")
-        == "{ let i = 1; i + n }"
+        expr_translator.normalize_body_source("{ while i < n { i }; i }")
+        == "{ while i < n { i }; i }"
     )
     perform_string = '{ perform Log.append; "ok" }'
     assert (
         expr_translator.infer_body_result_type(
             perform_string, expr_translator.translate_body(perform_string)
+        )
+        == "String"
+    )
+    # Let bindings substitute into the tail before normalizing.
+    assert (
+        expr_translator.normalize_body_source("{ let owned = buf; len(owned) }")
+        == "len ( buf )"
+    )
+    let_string = '{ let msg = "ok"; msg }'
+    assert (
+        expr_translator.infer_body_result_type(
+            let_string, expr_translator.translate_body(let_string)
         )
         == "String"
     )

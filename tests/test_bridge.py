@@ -339,6 +339,35 @@ def test_main_dry_run_with_perform_sequence_body_semantics_fixture(tmp_path: Pat
     assert "sorry" not in text
 
 
+def test_main_dry_run_with_let_sequence_body_semantics_fixture(tmp_path: Path):
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "concurrency_linear_ownership_let_sequence.proof-cert.json"
+    )
+    out_dir = tmp_path / "generated"
+    rc = main(
+        [
+            "--cert", str(fixture),
+            "--out-dir", str(out_dir),
+            "--module-prefix", "Generated",
+            "--no-build",
+        ]
+    )
+    assert rc == 0
+    text = (
+        out_dir / "Generated" / "Concurrency" / "Linear_ownership.lean"
+    ).read_text()
+    assert "known_witness_used=true" not in text
+    assert "def moveOnceResult (buf : Int) : Int :=" in text
+    assert "(mumei_len buf)" in text
+    assert "h_body : result = moveOnceResult buf" in text
+    assert "def readBeforeMoveResult (buf : Int) : Int :=" in text
+    assert "h_body : result = readBeforeMoveResult buf" in text
+    assert "let owned" not in text
+    assert "sorry" not in text
+
+
 def test_main_dry_run_with_crypto_body_semantics_fixture(tmp_path: Path):
     fixture = (
         Path(__file__).resolve().parent

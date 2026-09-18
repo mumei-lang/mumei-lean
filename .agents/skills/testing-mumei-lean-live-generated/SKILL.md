@@ -219,9 +219,9 @@ PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest \
 
 The Lake-marked sort ascending test should run and pass when `lake` is available; if it skips unexpectedly, check that `lake` is on `PATH` and that the fixture drivers compile with the pinned Lean toolchain.
 
-## Live Generated Theorem Paths (15 total)
+## Live Generated Theorem Paths (16 total)
 
-The bridge ships fifteen live generated theorem paths. Each lowers a Z3 `unknown`
+The bridge ships sixteen live generated theorem paths. Each lowers a Z3 `unknown`
 (or `spurious_candidate`) atom to a generated Lean theorem that builds with
 `known_witness_used = false`:
 
@@ -240,6 +240,21 @@ The bridge ships fifteen live generated theorem paths. Each lowers a Z3 `unknown
 13. `predicate_guard_collapse` — predicate-parametric, classically-valid guard collapse; the widened ladder adopts `tauto`.
 14. `ff_pow_square_expands` — modular square expanded into repeated modular multiplication; `mumei_ff_mod` does not reach under the exponent, so the ladder tail entry `mumei_ff_pow` is adopted.
 15. `cei_compliant_withdraw` / `guarded_state_update` — `{ perform Eff.op…; <pure tail> }` bodies lower to the tail via `perform_statement_lowering` (spec §4.3); no bridge lemma, `bridge_lemma_hash` unchanged.
+16. `move_once` / `read_before_move` — `{ let x = e; …; <tail> }` bodies substitute each binding into the tail via `let_statement_lowering` (spec §4.4); no bridge lemma, `bridge_lemma_hash` unchanged.
+
+Focused pytest coverage for path 16, Lake required:
+
+```bash
+cd /home/ubuntu/repos/mumei-lean
+PATH="$HOME/.elan/bin:$PATH" python -m pytest tests/test_lean_bridge_e2e.py -q \
+  -k "let_sequence"
+```
+
+Negative controls for path 16 (unit level, no Lake needed):
+`tests/test_expr_translator.py::test_translate_body_keeps_unsupported_statement_sequences_partial`
+covers a trailing `let` with no tail, a bound name rebound inside the tail
+(`let` / `forall` binder), a bound name in call position, `==` in place of
+`=`, and a non-`let`/`perform` statement in the prefix — all stay partial.
 
 Focused pytest coverage for path 15, Lake required:
 

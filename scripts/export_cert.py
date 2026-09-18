@@ -709,7 +709,13 @@ def upgrade_certificate(
     out["lean_version"] = lean_version
     out["lean_cert_schema_version"] = LEAN_CERT_SCHEMA_VERSION
     if harness_contract is not None:
-        out["harness_contract"] = harness_contract
+        # The vendored proof-cert schema (and mumei's ``ProofCertificate``
+        # model) declare ``harness_contract`` as ``string|null``; emit the
+        # contract as a canonical JSON string so emitted certificates
+        # validate and parse on the mumei side.
+        out["harness_contract"] = json.dumps(
+            harness_contract, sort_keys=True
+        )
     return out
 
 
@@ -766,6 +772,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         if line.strip()
     ]
     failed = _failed_theorem_names(build_log)
+    if not build_log.strip():
+        # A ``lake build`` invocation — even a fully successful one —
+        # always prints progress lines; an empty log means no build ran,
+        # so nothing on the proved list can be trusted.
+        print(
+            "warning: build log is empty; no evidence `lake build` ran. "
+            "Treating all listed atoms as failed.",
+            file=sys.stderr,
+        )
+        failed = list({*failed, *proved})
     if _has_unattributable_failures(build_log):
         # File-level failures (e.g. a failing ``import``) cannot be
         # attributed to a specific theorem; fall back to marking every

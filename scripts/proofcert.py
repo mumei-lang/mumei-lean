@@ -22,3 +22,4 @@ class VerificationStatus(str, Enum):
     SKIPPED = "skipped"
     TRUSTED = "trusted"
     ESCALATION_CANDIDATE = "escalation_candidate"
+    UNKNOWN = "unknown"

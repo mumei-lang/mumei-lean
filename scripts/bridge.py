@@ -36,6 +36,9 @@ try:
     from .proofcert import Z3CheckResult
     from .ingest_cert import (
         IngestedAtom,
+        _lean_theorem_name,
+        _module_to_lean_namespace,
+        _validate_module_prefix,
         collect_unknown_atoms,
         external_proof_rendered,
         module_to_path,
@@ -97,6 +100,9 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
     from proofcert import Z3CheckResult  # type: ignore
     from ingest_cert import (  # type: ignore
         IngestedAtom,
+        _lean_theorem_name,
+        _module_to_lean_namespace,
+        _validate_module_prefix,
         collect_unknown_atoms,
         external_proof_rendered,
         module_to_path,
@@ -173,7 +179,10 @@ def _candidate_metadata(
 ) -> dict:
     rel = module_to_path(atom.module_key, module_prefix)
     lean_module = ".".join(rel.with_suffix("").parts)
-    lean_theorem_name = f"{lean_module}.{atom.name}_correct"
+    # The emitted declaration is `_lean_theorem_name(atom.name)`; mirror the
+    # same sanitisation here so metadata names match the generated source.
+    emitted_theorem = _lean_theorem_name(atom.name)
+    lean_theorem_name = f"{lean_module}.{emitted_theorem}"
     diagnostics: List[str] = []
     if atom.escalation_reason:
         diagnostics.append(f"escalation_reason={atom.escalation_reason}")
@@ -234,7 +243,7 @@ def _candidate_metadata(
         manual_reason = None
     metadata = {
         "status": status,
-        "theorem_name": f"{atom.name}_correct",
+        "theorem_name": emitted_theorem,
         "lean_module": lean_module,
         "lean_theorem_name": lean_theorem_name,
         "translator_version": TRANSLATOR_VERSION,
@@ -282,10 +291,23 @@ def _candidate_metadata(
     return metadata
 
 
+def _heatmap_file_stem(atom_name: str) -> str:
+    """Reduce a certificate-supplied atom name to a safe filename stem.
+
+    ``atom.name`` reaches ``out_dir / f"{name}_heatmap.json"`` verbatim,
+    so ``../``-style names would read JSON outside the output tree.
+    """
+    stem = "".join(
+        ch if ch.isalnum() or ch in "_-" else "_" for ch in atom_name
+    ).strip("._-")
+    return stem or "atom"
+
+
 def _load_solver_heatmap(atom: IngestedAtom, out_dir: Path) -> Optional[dict]:
+    stem = _heatmap_file_stem(atom.name)
     for path in (
-        out_dir / f"{atom.name}_heatmap.json",
-        out_dir.parent / f"{atom.name}_heatmap.json",
+        out_dir / f"{stem}_heatmap.json",
+        out_dir.parent / f"{stem}_heatmap.json",
     ):
         if not path.exists():
             continue
@@ -489,11 +511,19 @@ def _remove_stale_generated_modules(
     generated_module_paths = {
         module_to_path(atom.module_key, module_prefix) for atom in generated_atoms
     }
-    target_root = out_dir / module_prefix
+    out_root = out_dir.resolve()
+    target_root = (out_dir / module_prefix).resolve()
+    # The prefix is validated against dotted-identifier syntax upstream;
+    # this containment check is the backstop so a stale cleaner can never
+    # walk or delete files outside ``out_dir``.
+    if not target_root.is_relative_to(out_root):
+        raise ValueError(
+            f"module prefix {module_prefix!r} escapes out_dir {out_dir}"
+        )
     if not target_root.exists():
         return
     for source in target_root.rglob("*.lean"):
-        rel = source.relative_to(out_dir)
+        rel = source.relative_to(out_root)
         if rel not in generated_module_paths:
             source.unlink()
 
@@ -501,6 +531,11 @@ def _remove_stale_generated_modules(
 def _mirror_generated_modules(out_dir: Path, repo_dir: Path, module_prefix: str) -> None:
     source_root = out_dir / module_prefix
     target_root = repo_dir / "generated" / module_prefix
+    for root, base in ((source_root, out_dir), (target_root, repo_dir / "generated")):
+        if not root.resolve().is_relative_to(base.resolve()):
+            raise ValueError(
+                f"module prefix {module_prefix!r} escapes its module tree"
+            )
     if not source_root.exists():
         return
     for source in source_root.rglob("*.lean"):
@@ -824,7 +859,17 @@ def _verify_known_witnesses(
     atoms: List[IngestedAtom],
     repo_dir: Path,
     log_dir: Path,
+    module_prefix: str,
 ) -> List[AtomKey]:
+    """Re-prove known-witness atoms when the aggregate ``lake build`` failed.
+
+    A witness atom may only be promoted when *both* layers compile: the
+    committed witness library module (``MumeiLean.*``) AND the generated
+    delegate theorem under ``<module_prefix>`` (e.g. ``Generated.Std.*``).
+    Checking only the witness module — a static, always-green library —
+    would mark atoms ``lean_verified`` whose generated theorem never
+    elaborated, so the generated module is rebuilt per atom here.
+    """
     modules: Dict[str, List[AtomKey]] = {}
     for atom in atoms:
         witness = KNOWN_LEAN_WITNESSES.get(atom.name)
@@ -839,11 +884,41 @@ def _verify_known_witnesses(
             continue
         modules.setdefault(witness["module"], []).append(_atom_key(atom))
 
-    proved: List[AtomKey] = []
+    # Build each witness library module once; atoms keyed by the witness
+    # module are only candidates if that library compiles.
+    witness_ok: Set[AtomKey] = set()
     log_dir.mkdir(parents=True, exist_ok=True)
     for module, atom_keys in sorted(modules.items()):
         cmd = _lake_build_command(repo_dir, module)
         log_path = log_dir / f"known_witness_{module.replace('.', '_')}.log"
+        if cmd is None:
+            log_path.write_text("error: `lake` not found on PATH\n")
+            continue
+        proc = subprocess.run(  # noqa: S603 - explicit lake invocation
+            cmd,
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+        )
+        log_path.write_text(proc.stdout + proc.stderr)
+        if proc.returncode == 0:
+            witness_ok.update(atom_keys)
+    if not witness_ok:
+        return []
+
+    # Second gate: the generated delegate module must itself build.
+    generated_modules: Dict[str, List[AtomKey]] = {}
+    atoms_by_key = {_atom_key(atom): atom for atom in atoms}
+    for key in witness_ok:
+        atom = atoms_by_key.get(key)
+        if atom is None:
+            continue
+        namespace = _module_to_lean_namespace(atom.module_key, module_prefix)
+        generated_modules.setdefault(namespace, []).append(key)
+    proved: List[AtomKey] = []
+    for module, atom_keys in sorted(generated_modules.items()):
+        cmd = _lake_build_command(repo_dir, module)
+        log_path = log_dir / f"known_witness_generated_{module.replace('.', '_')}.log"
         if cmd is None:
             log_path.write_text("error: `lake` not found on PATH\n")
             continue
@@ -998,6 +1073,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         "(default: this repo).",
     )
     args = parser.parse_args(argv)
+
+    try:
+        _validate_module_prefix(args.module_prefix)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     if (
         args.lean_cert_out is None
@@ -1421,6 +1501,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 all_candidate_atoms,
                 args.repo_dir,
                 args.out_dir,
+                args.module_prefix,
             )
         )
     # Inject canonical known-witness names into ``proved_per_payload`` so

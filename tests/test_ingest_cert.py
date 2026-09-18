@@ -973,3 +973,122 @@ def test_finite_field_associativity_requires_matching_operand_order():
     rendered = render_theorem(atom)
     assert "ff_mul_assoc_mod" not in rendered
     assert "mumei_arith_deep" in rendered
+
+
+def test_module_prefix_rejects_path_traversal(tmp_path: Path):
+    """``--module-prefix`` becomes a directory path; reject escapes."""
+    cert = _make_certificate("std/list.mm", [_make_atom("a")])
+    atoms = collect_unknown_atoms(cert)
+    with pytest.raises(ValueError):
+        write_modules(atoms, tmp_path, "..")
+    with pytest.raises(ValueError):
+        write_modules(atoms, tmp_path, "Generated/../../evil")
+    with pytest.raises(ValueError):
+        _module_to_lean_namespace("std/list", "a/b")
+    [target] = write_modules(atoms, tmp_path, "Generated")
+    assert target.is_relative_to(tmp_path)
+
+
+def test_binder_type_injection_is_dropped():
+    """A malicious ``lean_type`` in certificate binders must not reach the
+    emitted theorem declaration."""
+    cert = _make_certificate(
+        "std/list.mm",
+        [
+            {
+                **_make_atom("a", requires="x > 0", ensures="result >= x"),
+                "translator_ir": {
+                    "binders": [
+                        {
+                            "mumei_name": "x",
+                            "lean_name": "x",
+                            "lean_type": "Int",
+                        },
+                        {
+                            "mumei_name": "evil",
+                            "lean_name": "evil",
+                            "lean_type": "Nat) : False := by exact (by contradiction) -- (",
+                        },
+                    ]
+                },
+            }
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "by contradiction" not in rendered
+    assert "evil" not in rendered
+    assert "x result : Int" in rendered
+
+
+def test_binder_name_injection_is_dropped():
+    cert = _make_certificate(
+        "std/list.mm",
+        [
+            {
+                **_make_atom("a", requires="x > 0", ensures="result >= x"),
+                "translator_ir": {
+                    "binders": [
+                        {
+                            "mumei_name": "x",
+                            "lean_name": "x",
+                            "lean_type": "Int",
+                        },
+                        {
+                            "mumei_name": "evil",
+                            "lean_name": "evil : False\ntheorem forged (",
+                            "lean_type": "Int",
+                        },
+                    ]
+                },
+            }
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "forged" not in rendered
+
+
+def test_comment_interpolation_cannot_break_out():
+    """Certificate text rendered into comments must not close them or
+    inject newlines that begin code lines."""
+    cert = _make_certificate(
+        "std/list.mm",
+        [
+            _make_atom(
+                "a",
+                requires='ok\n-/\ntheorem forged : False := by',
+                ensures="result >= 0",
+            )
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "\ntheorem forged" not in rendered
+    assert rendered.count("-/") == rendered.count("/-")  # balanced markers
+
+
+def test_guard_trace_ops_require_ctor_identifiers(tmp_path: Path):
+    """Ops entries that are not Lean constructor identifiers are rejected
+    instead of being interpolated into ``GuardOp.*`` terms."""
+    cert = _make_certificate(
+        "std/list.mm",
+        [
+            {
+                **_make_atom("g"),
+                "translator_ir": {
+                    "obligation_class": "smart_contract_guard_trace_obligation",
+                    "guard_trace": {
+                        "ops": ["lock", "unlock ) , forged : False := by sorry -- ("],
+                        "expected_outcome": "unlocked",
+                    },
+                },
+            }
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    with pytest.raises(ValueError):
+        render_theorem(atom)
+    rendered = render_module("std/list", "Generated", [atom])
+    assert "omitted atom" in rendered
+    assert "GuardOp." not in rendered

@@ -1433,6 +1433,80 @@ def test_translate_body_keeps_statement_blocks_partial():
     assert expr_translator._unwrap_block_body("{ a } + { b }") is None
 
 
+def test_translate_body_lowers_perform_sequence_tail():
+    # Spec §4.3: `{ perform …; e }` denotes `e`; perform statements carry no
+    # value, only the tail lowers and records `perform_statement_lowering`.
+    source = (
+        "{ perform Vault.check; perform Vault.update; "
+        "perform Vault.interact; balance - amount }"
+    )
+    result = expr_translator.translate_body(source)
+    assert result.is_partial is False
+    assert result.lean_expr == "balance - amount"
+    assert result.unsupported_reasons == []
+    assert "perform_statement_lowering" in result.translator_ir.lowering_rules
+    multiline = expr_translator.translate_body(
+        "{\n    perform Vault.check;\n    perform Vault.update;\n"
+        "    balance - amount\n}"
+    )
+    assert multiline.is_partial is False
+    assert multiline.lean_expr == "balance - amount"
+    called = expr_translator.translate_body(
+        "{ perform FileWrite.write(path); n + 1 }"
+    )
+    assert called.is_partial is False
+    assert called.lean_expr == "n + 1"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # A perform statement in tail position leaves the block valueless.
+        "{ perform Vault.check }",
+        "{ balance - amount; perform Vault.check }",
+        "{ perform Vault.check; }",
+        # Any non-perform statement in the prefix keeps the block partial.
+        "{ perform Vault.check; let y = 1; y + amount }",
+        "{ if c { x } else { perform Vault.check }; y }",
+        # Braces that do not enclose the whole source are not a block.
+        "{ perform Vault.check; x } + { y }",
+        "perform Vault.check; balance - amount",
+    ],
+)
+def test_translate_body_keeps_non_perform_sequence_blocks_partial(source):
+    result = expr_translator.translate_body(source)
+    assert result.is_partial is True, source
+    assert (
+        result.translator_ir is None
+        or "perform_statement_lowering" not in result.translator_ir.lowering_rules
+    )
+
+
+def test_normalize_body_source_strips_perform_prefix():
+    assert (
+        expr_translator.normalize_body_source(
+            "{ perform Vault.check; perform Vault.update; balance - amount }"
+        )
+        == "balance - amount"
+    )
+    assert (
+        expr_translator.normalize_body_source('{ perform Log.append; "ok" }')
+        == '"ok"'
+    )
+    # Non-perform statement blocks keep their raw source.
+    assert (
+        expr_translator.normalize_body_source("{ let i = 1; i + n }")
+        == "{ let i = 1; i + n }"
+    )
+    perform_string = '{ perform Log.append; "ok" }'
+    assert (
+        expr_translator.infer_body_result_type(
+            perform_string, expr_translator.translate_body(perform_string)
+        )
+        == "String"
+    )
+
+
 @pytest.mark.parametrize(
     "source",
     [

@@ -312,6 +312,33 @@ def test_main_dry_run_with_bounded_mul_body_semantics_fixture(tmp_path: Path):
     assert "sorry" not in text
 
 
+def test_main_dry_run_with_perform_sequence_body_semantics_fixture(tmp_path: Path):
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "defi_invariants_perform_sequence.proof-cert.json"
+    )
+    out_dir = tmp_path / "generated"
+    rc = main(
+        [
+            "--cert", str(fixture),
+            "--out-dir", str(out_dir),
+            "--module-prefix", "Generated",
+            "--no-build",
+        ]
+    )
+    assert rc == 0
+    text = (out_dir / "Generated" / "Defi" / "Invariants.lean").read_text()
+    assert "known_witness_used=true" not in text
+    assert "def ceiCompliantWithdrawResult (balance amount : Int) : Int :=" in text
+    assert "balance - amount" in text
+    assert (
+        "h_body : result = ceiCompliantWithdrawResult balance amount" in text
+    )
+    assert "perform" not in text
+    assert "sorry" not in text
+
+
 def test_main_dry_run_with_crypto_body_semantics_fixture(tmp_path: Path):
     fixture = (
         Path(__file__).resolve().parent

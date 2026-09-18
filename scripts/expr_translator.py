@@ -553,6 +553,7 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "implication_lowering",
     "let_binding_lowering",
     "builtin_name_binder_lowering",
+    "perform_statement_lowering",
     "unknown_obligation_lowering",
     "smart_contract_lowering",
     "smart_contract_guard_trace_lowering",
@@ -2815,17 +2816,106 @@ def _unwrap_block_body(source: str) -> Optional[str]:
     return source[1:-1].strip()
 
 
+# A ``perform Eff.op`` or ``perform Eff.op(args)`` statement: an effect
+# transition, not a value-producing expression.
+_PERFORM_STATEMENT_RE = re.compile(
+    r"perform\s+[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+"
+    r"(?:\(.*\))?\s*\Z",
+    re.DOTALL,
+)
+
+
+def _perform_sequence_tail(source: str) -> Optional[str]:
+    """Return the value tail of ``{ perform Eff.op…; …; expr }``.
+
+    ``perform`` statements are temporal effect transitions whose ordering
+    obligations are carried by ``effect_pre`` / ``effect_post``; the block's
+    value — and therefore what a generated theorem binds to ``result`` — is
+    the final expression. Returns ``None`` when the source is not exactly
+    that shape: braces not enclosing the whole source, a non-``perform``
+    statement before the tail, an empty tail, or a ``perform`` statement in
+    tail position (such a block has no value). Those bodies stay partial.
+    """
+    if not (source.startswith("{") and source.endswith("}")):
+        return None
+    depth = 0
+    in_string = False
+    index = 0
+    while index < len(source):
+        ch = source[index]
+        if in_string:
+            if ch == "\\":
+                index += 2
+                continue
+            if ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and index != len(source) - 1:
+                return None
+        index += 1
+    if depth != 0 or in_string:
+        return None
+    inner = source[1:-1]
+
+    segments: List[str] = []
+    depth = 0
+    in_string = False
+    start = 0
+    index = 0
+    while index < len(inner):
+        ch = inner[index]
+        if in_string:
+            if ch == "\\":
+                index += 2
+                continue
+            if ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch in "{[(":
+            depth += 1
+        elif ch in "}])":
+            depth -= 1
+            if depth < 0:
+                return None
+        elif ch == ";" and depth == 0:
+            segments.append(inner[start:index])
+            start = index + 1
+        index += 1
+    if in_string or depth != 0:
+        return None
+    segments.append(inner[start:])
+    if len(segments) < 2:
+        return None
+    for segment in segments[:-1]:
+        if not _PERFORM_STATEMENT_RE.fullmatch(segment.strip()):
+            return None
+    tail = segments[-1].strip()
+    if not tail or _PERFORM_STATEMENT_RE.fullmatch(tail):
+        return None
+    return tail
+
+
 def normalize_body_source(source: str) -> str:
     """Strip every enclosing single-expression block from a body source.
 
     ``{ "ok" }`` and ``"ok"`` denote the same value; callers inferring the
     body's result type from the raw source must see the inner expression.
+    Leading ``perform`` statements carry no value either, so a
+    ``{ perform …; e }`` block normalizes to ``e``.
     """
     stripped = (source or "").strip()
     while True:
         inner = _unwrap_block_body(stripped)
         if inner is None:
-            return stripped
+            inner = _perform_sequence_tail(stripped)
+            if inner is None:
+                return stripped
         stripped = inner
 
 
@@ -3090,6 +3180,19 @@ def translate_body(body_expr: str) -> TranslationResult:
         # An empty block has no value; translate_body("") marks it partial.
         inner = translate_body(unbraced)
         return _attach_translator_ir(stripped, inner)
+    perform_tail = _perform_sequence_tail(stripped)
+    if perform_tail is not None:
+        # Spec §4.2: a `{ perform …; e }` block denotes `e`; the perform
+        # statements' ordering obligations live in effect_pre/effect_post,
+        # so only the tail lowers. The tail-derived IR is kept verbatim —
+        # re-deriving it from the outer tokens would re-flag the `;` /
+        # `perform` surface as unsupported.
+        inner = translate_body(perform_tail)
+        if inner.translator_ir is not None:
+            rules = inner.translator_ir.lowering_rules
+            if "perform_statement_lowering" not in rules:
+                rules.append("perform_statement_lowering")
+        return inner
     tokens = _tokenize(stripped)
     if _statement_keywords(tokens):
         # A statement block has no value to lower; `_unsupported_reasons`

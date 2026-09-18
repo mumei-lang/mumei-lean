@@ -220,7 +220,10 @@ change to the contract constants must be synchronised across projects in the sam
   inventory (mumei `docs/ROADMAP.md` P30) is its target-obligation input: 23 benchmark atoms reachable by lowering only (`perform` statement
   sequences before a pure tail, pure `let` sequences, nested `if`, struct projection — no new
   bridge lemma, hash unchanged); the 11 `task_group: all` / `any` atoms need a bridge lemma
-  and are filed as mumei P31 (hash lockstep, not in this wave). Reference regression gates:
+  and are filed as mumei P31 (hash lockstep, not in this wave). Construct progress: `perform`
+  statement sequences (19 atoms) are lowered via `perform_statement_lowering`
+  (spec §4.3, live path 15: `defi/invariants.mm` fixture) — the remaining `let` sequences,
+  nested `if`, and struct projection are still open. Reference regression gates:
 
 ```bash
 PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest -q

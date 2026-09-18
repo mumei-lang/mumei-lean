@@ -62,7 +62,7 @@
         "theorem_goal": "(p.x >= 0) -> (result >= 0)",
         "provenance_span": {
           "file": "concurrency/task_struct_capture_double_move_fail.mm",
-          "line": 14,
+          "line": 10,
           "col": 1,
           "len": 4
         },

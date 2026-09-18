@@ -219,9 +219,9 @@ PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest \
 
 The Lake-marked sort ascending test should run and pass when `lake` is available; if it skips unexpectedly, check that `lake` is on `PATH` and that the fixture drivers compile with the pinned Lean toolchain.
 
-## Live Generated Theorem Paths (14 total)
+## Live Generated Theorem Paths (15 total)
 
-The bridge ships fourteen live generated theorem paths. Each lowers a Z3 `unknown`
+The bridge ships fifteen live generated theorem paths. Each lowers a Z3 `unknown`
 (or `spurious_candidate`) atom to a generated Lean theorem that builds with
 `known_witness_used = false`:
 
@@ -239,6 +239,21 @@ The bridge ships fourteen live generated theorem paths. Each lowers a Z3 `unknow
 12. `ff_mul_add_distributive` — finite-field distributivity with no bridge lemma template; the deterministic tactic search (`scripts/tactic_search.py`) adopts `mumei_ff_mod`.
 13. `predicate_guard_collapse` — predicate-parametric, classically-valid guard collapse; the widened ladder adopts `tauto`.
 14. `ff_pow_square_expands` — modular square expanded into repeated modular multiplication; `mumei_ff_mod` does not reach under the exponent, so the ladder tail entry `mumei_ff_pow` is adopted.
+15. `cei_compliant_withdraw` / `guarded_state_update` — `{ perform Eff.op…; <pure tail> }` bodies lower to the tail via `perform_statement_lowering` (spec §4.3); no bridge lemma, `bridge_lemma_hash` unchanged.
+
+Focused pytest coverage for path 15, Lake required:
+
+```bash
+cd /home/ubuntu/repos/mumei-lean
+PATH="$HOME/.elan/bin:$PATH" python -m pytest tests/test_lean_bridge_e2e.py -q \
+  -k "perform_sequence"
+```
+
+Negative controls for path 15 (unit level, no Lake needed):
+`tests/test_expr_translator.py::test_translate_body_keeps_non_perform_sequence_blocks_partial`
+covers a `perform` in tail position, a bare `perform` keyword as tail, a
+non-`perform` statement in the prefix, and braces not enclosing the whole
+source — all stay partial.
 
 Focused pytest coverage for paths 9–11, Lake required:
 

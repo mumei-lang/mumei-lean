@@ -249,6 +249,33 @@ types (`{ if x == 0 { "a" } else { 0 } }`) make the body partial with
 `conditional_branch_type_mismatch`; the translator never falls back to `Int`
 for a branch it could not type.
 
+### 4.3 Effect-transition statement prefixes in body blocks
+
+A mumei body may run temporal effect transitions before computing its value:
+
+```text
+{ perform Vault.check; perform Vault.update; balance - amount }
+```
+
+`perform` statements do not produce a value: the block denotes its final
+expression. When the whole source is one brace-enclosed block whose top-level
+`;`-separated segments are leading `perform <Effect>.<op>` statements
+(optionally carrying a call argument list) followed by a single non-empty
+tail expression, `translate_body` lowers the tail
+(`{ perform Vault.check; balance - amount }` → `balance - amount`). The
+ordering obligations of the transitions are carried by the atom's
+`effect_pre` / `effect_post` fields and are out of scope for the value
+theorem, so the lowering adds no bridge lemma and leaves the obligation
+class and `bridge_lemma_hash` unchanged. The rule is
+`perform_statement_lowering` (§8).
+
+A block that does not match that shape stays partial: a non-`perform`
+statement among the leading segments (`{ perform A.x; let y = 1; y }`), a
+`perform` statement in tail position (`{ balance - amount; perform A.x }`),
+an empty tail, or braces that do not enclose the whole source.
+`normalize_body_source` strips the same prefix, so result-type inference
+sees the tail (`{ perform Log.append; "ok" }` is a `String` body).
+
 ## 5. Semantic Gap Bridge Rules
 
 ### 5.1 Integer Overflow Bridge
@@ -754,6 +781,7 @@ emitted in `TranslatorIR.lowering_rules`.
 | `quantifier_alternation_lowering` | `translator_ir.bridge_pattern == "forall_exists_swap"`; delegates to `MumeiLean.Quantifiers.forall_exists_swap_of_finite`. | §5.12 |
 | `natural_number_induction_lowering` | `translator_ir.bridge_pattern == "int_nonnegative_induction"`; delegates to `MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern`. | §5.13 |
 | `builtin_name_binder_lowering` | A built-in helper name appears only as a bare identifier and is bound as an `Int` theorem parameter; no bridge lemma is required. | §4.1 |
+| `perform_statement_lowering` | A body block is a sequence of leading `perform <Effect>.<op>` statements followed by a pure tail; only the tail lowers and no bridge lemma is required. | §4.3 |
 
 A translator implementation is compliant iff:
 

@@ -210,10 +210,11 @@ change to the contract constants must be synchronised across projects in the sam
   the 6 Lean escalation candidates are `lean_verified` with AI off and on alike (delta +0,
   `ai_proof_used` 0, `manual_lemma_reason` remaining 0) — the deterministic tactic ladder
   discharges them before the external-proof stage is reached. Wave 4 is complete (2026-09-13:
-  mumei-agent PR #579, mumei PR #558 / papers PR #6, mumei-lean PR #118); Wave 5 is in progress
-  with the compiler-side C-2 (mumei P10-D nlsat-first for bounded low-degree nonlinear
-  arithmetic) and the B-7 re-measurement in the same PR group — the escalation population stays
-  at 6 atoms (all finite-field, outside the nlsat window), so nothing on this side changes.
+  mumei-agent PR #579, mumei PR #558 / papers PR #6, mumei-lean PR #118); in Wave 5 the
+  compiler-side C-2 (mumei P10-D nlsat-first for bounded low-degree nonlinear arithmetic)
+  merged as mumei PR #562 (2026-09-14) together with the B-7 re-measurement in the same PR
+  group — the escalation population stays at 6 atoms (all finite-field, outside the nlsat
+  window), so nothing on this side changes.
   B-1 as filed (the first construct, PR #115) is complete; what the canonical roadmap carries
   into Wave 5 as "B-1 続き" is the follow-up of further lowering-only constructs, and the C-1
   inventory (mumei `docs/ROADMAP.md` P30) is its target-obligation input: 23 benchmark atoms reachable by lowering only (`perform` statement

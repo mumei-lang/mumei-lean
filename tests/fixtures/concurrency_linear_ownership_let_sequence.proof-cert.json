@@ -1,0 +1,173 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-18T14:20:00Z",
+  "mumei_version": "0.6.19",
+  "z3_version": "4.8.12",
+  "file": "concurrency/linear_ownership.mm",
+  "atoms": [
+    {
+      "name": "move_once",
+      "z3_check_result": "unknown",
+      "content_hash": "4a1c8e2f5b7d9e0c3a6b8f1d4e7c0a3b6d9f2e5c8a1b4d7e0c3a6b9f2e5c8a1b",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "concurrency/linear_ownership.mm"
+        },
+        "traceability_hash": "7f3e1a9c4d6b8e0f2a5c7d9e1b3a5c7d9e1f3a5c7d9e1b3a5c7d9e1f3a5c7d9e",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 1,
+        "checked_refinements": 0,
+        "ensures_implication_checks": 1,
+        "diagnostics": []
+      },
+      "proof_hash": "9c8e7a6b5d4f3e2a1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d",
+      "dependencies": [],
+      "effects": [],
+      "requires": "len(buf) >= 1",
+      "ensures": "result >= 0",
+      "body_expr": "{\n    let owned = buf;\n    len(owned)\n}",
+      "body_summary": "{ let owned = buf; len(owned) }",
+      "z3_result_class": "unknown",
+      "logic_fragment_tag": "linear_arithmetic",
+      "logic_fragment_tags": [],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "buf": "buf",
+        "result": "result"
+      },
+      "bridge_lemma_hash": "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347",
+      "translator_ir": {
+        "sort": "refinement_predicate",
+        "binders": [
+          {
+            "mumei_name": "buf",
+            "lean_name": "buf",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(len(buf) >= 1) -> (result >= 0)",
+        "provenance_span": {
+          "file": "concurrency/linear_ownership.mm",
+          "line": 9,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [],
+        "proof_trace_hints": [],
+        "requires_bridge_lemmas": []
+      },
+      "symbol_provenance": [],
+      "solver_process_metadata": {
+        "task_id": null,
+        "cache_key": "1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e",
+        "generation_id": "",
+        "solver_config_fingerprint": "4eb8092c0cb08dd4c8d6494173a480c7fae3ce88feef61311d32f80092aad8dc",
+        "timeout_ms": 10000,
+        "cancel_reason": null,
+        "process_start_time": "",
+        "process_end_time": "2026-09-18T14:20:00Z"
+      }
+    },
+    {
+      "name": "read_before_move",
+      "z3_check_result": "unknown",
+      "content_hash": "5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "concurrency/linear_ownership.mm"
+        },
+        "traceability_hash": "2a4c6e8f0b1d3a5c7e9f1b3d5a7c9e1f3b5d7a9c1e3f5b7d9a1c3e5f7b9d1a3c",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 1,
+        "checked_refinements": 0,
+        "ensures_implication_checks": 1,
+        "diagnostics": []
+      },
+      "proof_hash": "6f8a0c2e4b6d8f0a2c4e6a8c0e2f4a6b8d0f2a4c6e8a0c2e4f6a8c0e2f4a6c8e",
+      "dependencies": [],
+      "effects": [],
+      "requires": "len(buf) >= 1",
+      "ensures": "result >= 1",
+      "body_expr": "{\n    let n = len(buf);\n    let owned = buf;\n    n\n}",
+      "body_summary": "{ let n = len(buf); let owned = buf; n }",
+      "z3_result_class": "unknown",
+      "logic_fragment_tag": "linear_arithmetic",
+      "logic_fragment_tags": [],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "buf": "buf",
+        "result": "result"
+      },
+      "bridge_lemma_hash": "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347",
+      "translator_ir": {
+        "sort": "refinement_predicate",
+        "binders": [
+          {
+            "mumei_name": "buf",
+            "lean_name": "buf",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(len(buf) >= 1) -> (result >= 1)",
+        "provenance_span": {
+          "file": "concurrency/linear_ownership.mm",
+          "line": 17,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [],
+        "proof_trace_hints": [],
+        "requires_bridge_lemmas": []
+      },
+      "symbol_provenance": [],
+      "solver_process_metadata": {
+        "task_id": null,
+        "cache_key": "3e5f7a9c1b4d6e8f0a2c4e6b8d0f2a4c6e8b0d2f4a6c8e0b2d4f6a8c0e2f4a6c",
+        "generation_id": "",
+        "solver_config_fingerprint": "4eb8092c0cb08dd4c8d6494173a480c7fae3ce88feef61311d32f80092aad8dc",
+        "timeout_ms": 10000,
+        "cancel_reason": null,
+        "process_start_time": "",
+        "process_end_time": "2026-09-18T14:20:00Z"
+      }
+    }
+  ],
+  "certificate_hash": "c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2",
+  "all_verified": true
+}

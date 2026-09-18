@@ -2820,7 +2820,7 @@ def _unwrap_block_body(source: str) -> Optional[str]:
 # transition, not a value-producing expression.
 _PERFORM_STATEMENT_RE = re.compile(
     r"perform\s+[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+"
-    r"(?:\(.*\))?\s*\Z",
+    r"(?:\s*\(.*\))?\s*\Z",
     re.DOTALL,
 )
 
@@ -2897,6 +2897,11 @@ def _perform_sequence_tail(source: str) -> Optional[str]:
             return None
     tail = segments[-1].strip()
     if not tail or _PERFORM_STATEMENT_RE.fullmatch(tail):
+        return None
+    tail_tokens = _tokenize(tail)
+    if tail_tokens and tail_tokens[0] == ("ID", "perform"):
+        # ``perform`` without a dotted op is not an expression either; a
+        # tail starting with the keyword cannot be the block's value.
         return None
     return tail
 
@@ -3182,7 +3187,7 @@ def translate_body(body_expr: str) -> TranslationResult:
         return _attach_translator_ir(stripped, inner)
     perform_tail = _perform_sequence_tail(stripped)
     if perform_tail is not None:
-        # Spec §4.2: a `{ perform …; e }` block denotes `e`; the perform
+        # Spec §4.3: a `{ perform …; e }` block denotes `e`; the perform
         # statements' ordering obligations live in effect_pre/effect_post,
         # so only the tail lowers. The tail-derived IR is kept verbatim —
         # re-deriving it from the outer tokens would re-flag the `;` /

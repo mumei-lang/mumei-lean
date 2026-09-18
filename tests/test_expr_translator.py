@@ -1456,6 +1456,11 @@ def test_translate_body_lowers_perform_sequence_tail():
     )
     assert called.is_partial is False
     assert called.lean_expr == "n + 1"
+    spaced_call = expr_translator.translate_body(
+        "{ perform FileWrite.write (path); n + 1 }"
+    )
+    assert spaced_call.is_partial is False
+    assert spaced_call.lean_expr == "n + 1"
 
 
 @pytest.mark.parametrize(
@@ -1465,6 +1470,9 @@ def test_translate_body_lowers_perform_sequence_tail():
         "{ perform Vault.check }",
         "{ balance - amount; perform Vault.check }",
         "{ perform Vault.check; }",
+        # A bare `perform` keyword cannot be the block's value either.
+        "{ perform Vault.check; perform }",
+        "{ perform Vault.check; perform Vault }",
         # Any non-perform statement in the prefix keeps the block partial.
         "{ perform Vault.check; let y = 1; y + amount }",
         "{ if c { x } else { perform Vault.check }; y }",

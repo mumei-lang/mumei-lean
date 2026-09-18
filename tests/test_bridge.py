@@ -368,6 +368,32 @@ def test_main_dry_run_with_let_sequence_body_semantics_fixture(tmp_path: Path):
     assert "sorry" not in text
 
 
+def test_main_dry_run_with_nested_if_body_semantics_fixture(tmp_path: Path):
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "arithmetic_saturating_nested_if.proof-cert.json"
+    )
+    out_dir = tmp_path / "generated"
+    rc = main(
+        [
+            "--cert", str(fixture),
+            "--out-dir", str(out_dir),
+            "--module-prefix", "Generated",
+            "--no-build",
+        ]
+    )
+    assert rc == 0
+    text = (
+        out_dir / "Generated" / "Arithmetic" / "Saturating.lean"
+    ).read_text()
+    assert "known_witness_used=true" not in text
+    assert "def clampToRangeResult (lo hi x : Int) : Int :=" in text
+    assert "if x < lo then lo else if x > hi then hi else x" in text
+    assert "h_body : result = clampToRangeResult lo hi x" in text
+    assert "sorry" not in text
+
+
 def test_main_dry_run_with_crypto_body_semantics_fixture(tmp_path: Path):
     fixture = (
         Path(__file__).resolve().parent

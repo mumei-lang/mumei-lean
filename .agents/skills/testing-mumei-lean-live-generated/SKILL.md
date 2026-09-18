@@ -219,9 +219,9 @@ PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest \
 
 The Lake-marked sort ascending test should run and pass when `lake` is available; if it skips unexpectedly, check that `lake` is on `PATH` and that the fixture drivers compile with the pinned Lean toolchain.
 
-## Live Generated Theorem Paths (16 total)
+## Live Generated Theorem Paths (17 total)
 
-The bridge ships sixteen live generated theorem paths. Each lowers a Z3 `unknown`
+The bridge ships seventeen live generated theorem paths. Each lowers a Z3 `unknown`
 (or `spurious_candidate`) atom to a generated Lean theorem that builds with
 `known_witness_used = false`:
 
@@ -241,6 +241,20 @@ The bridge ships sixteen live generated theorem paths. Each lowers a Z3 `unknown
 14. `ff_pow_square_expands` — modular square expanded into repeated modular multiplication; `mumei_ff_mod` does not reach under the exponent, so the ladder tail entry `mumei_ff_pow` is adopted.
 15. `cei_compliant_withdraw` / `guarded_state_update` — `{ perform Eff.op…; <pure tail> }` bodies lower to the tail via `perform_statement_lowering` (spec §4.3); no bridge lemma, `bridge_lemma_hash` unchanged.
 16. `move_once` / `read_before_move` — `{ let x = e; …; <tail> }` bodies substitute each binding into the tail via `let_statement_lowering` (spec §4.4); no bridge lemma, `bridge_lemma_hash` unchanged.
+17. `clamp_to_range` — `{ if c { a } else { if … } }` bodies recurse through `translate_body` via `nested_if_lowering` (spec §4.5); `mumei_arith_deep`'s `split <;> omega` discharges the theorem, no bridge lemma, `bridge_lemma_hash` unchanged.
+
+Focused pytest coverage for path 17, Lake required:
+
+```bash
+cd /home/ubuntu/repos/mumei-lean
+PATH="$HOME/.elan/bin:$PATH" python -m pytest tests/test_lean_bridge_e2e.py -q \
+  -k "nested_if"
+```
+
+Negative controls for path 17 (unit level, no Lake needed):
+`tests/test_expr_translator.py::test_translate_body_keeps_malformed_braced_if_partial`
+covers trailing tokens after the else block, `else ifx`, a missing `else`,
+and a nested `if` without its own `else` — all stay partial.
 
 Focused pytest coverage for path 16, Lake required:
 

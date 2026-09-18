@@ -20,7 +20,9 @@ def _pattern_cert() -> dict:
                 "name": "clamp_preserves_order",
                 "requires": "min_val <= max_val",
                 "ensures": "result >= min_val && result <= max_val",
-                "body_expr": "if x < min_val { min_val } else { if x > max_val { max_val } else { x } }",
+                # `while` loops stay `partial_translation` (B-4 territory);
+                # this atom is the not-yet-translatable control.
+                "body_expr": "{ let i = x; while i > max_val { i = i - 1 }; i }",
                 "z3_check_result": "unknown",
                 "status": "unknown",
                 "content_hash": "h-clamp",

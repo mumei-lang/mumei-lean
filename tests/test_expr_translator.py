@@ -1489,6 +1489,54 @@ def test_translate_body_keeps_non_perform_sequence_blocks_partial(source):
     )
 
 
+def test_translate_body_lowers_nested_braced_if():
+    # Spec §4.5: `if c { a } else { b }` branches may nest further braced
+    # conditionals; lowering records `nested_if_lowering`.
+    nested = expr_translator.translate_body(
+        "{ if x < lo { lo } else { if x > hi { hi } else { x } } }"
+    )
+    assert nested.is_partial is False
+    assert nested.lean_expr == "if x < lo then lo else if x > hi then hi else x"
+    assert nested.unsupported_reasons == []
+    assert "nested_if_lowering" in nested.translator_ir.lowering_rules
+    # `else if` chains lower identically.
+    chained = expr_translator.translate_body(
+        "{ if x < lo { lo } else if x > hi { hi } else { x } }"
+    )
+    assert chained.is_partial is False
+    assert chained.lean_expr == nested.lean_expr
+    # Nesting inside the then branch works too.
+    then_nested = expr_translator.translate_body(
+        "{ if a { if b { 1 } else { 2 } } else { 3 } }"
+    )
+    assert then_nested.is_partial is False
+    assert then_nested.lean_expr == "if a then if b then 1 else 2 else 3"
+    # A flat braced if keeps its existing rule set (no new rule).
+    flat = expr_translator.translate_body("{ if x < lo { lo } else { x } }")
+    assert flat.is_partial is False
+    assert "nested_if_lowering" not in flat.translator_ir.lowering_rules
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # Trailing tokens after the else block are not a conditional body.
+        "{ if x < lo { lo } else { y } trailing }",
+        # `else ifx` is not an else-if chain.
+        "{ if x < lo { lo } else ifx { y } }",
+        # Missing else.
+        "{ if x < lo { lo } }",
+        # An empty condition is not a conditional.
+        "{ if { a } else { b } }",
+        # A nested if without its own else stays partial.
+        "{ if x < lo { lo } else { if x > hi { hi } } }",
+    ],
+)
+def test_translate_body_keeps_malformed_braced_if_partial(source):
+    result = expr_translator.translate_body(source)
+    assert result.is_partial is True, source
+
+
 def test_translate_body_lowers_let_sequence_tail():
     # Spec §4.4: `{ let x = e; …; tail }` denotes `tail` with each binding
     # substituted; the lowering records `let_statement_lowering`.

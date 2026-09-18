@@ -219,9 +219,9 @@ PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest \
 
 The Lake-marked sort ascending test should run and pass when `lake` is available; if it skips unexpectedly, check that `lake` is on `PATH` and that the fixture drivers compile with the pinned Lean toolchain.
 
-## Live Generated Theorem Paths (17 total)
+## Live Generated Theorem Paths (18 total)
 
-The bridge ships seventeen live generated theorem paths. Each lowers a Z3 `unknown`
+The bridge ships eighteen live generated theorem paths. Each lowers a Z3 `unknown`
 (or `spurious_candidate`) atom to a generated Lean theorem that builds with
 `known_witness_used = false`:
 
@@ -242,6 +242,21 @@ The bridge ships seventeen live generated theorem paths. Each lowers a Z3 `unkno
 15. `cei_compliant_withdraw` / `guarded_state_update` — `{ perform Eff.op…; <pure tail> }` bodies lower to the tail via `perform_statement_lowering` (spec §4.3); no bridge lemma, `bridge_lemma_hash` unchanged.
 16. `move_once` / `read_before_move` — `{ let x = e; …; <tail> }` bodies substitute each binding into the tail via `let_statement_lowering` (spec §4.4); no bridge lemma, `bridge_lemma_hash` unchanged.
 17. `clamp_to_range` — `{ if c { a } else { if … } }` bodies recurse through `translate_body` via `nested_if_lowering` (spec §4.5); `mumei_arith_deep`'s `split <;> omega` discharges the theorem, no bridge lemma, `bridge_lemma_hash` unchanged.
+18. `take_point` — `p.x` field reads in `requires` / `body` lower to the scalar binder `p_x` via `struct_projection_lowering` (spec §4.6); `mumei_arith_deep` discharges the theorem, no bridge lemma, `bridge_lemma_hash` unchanged.
+
+Focused pytest coverage for path 18, Lake required:
+
+```bash
+cd /home/ubuntu/repos/mumei-lean
+PATH="$HOME/.elan/bin:$PATH" python -m pytest tests/test_lean_bridge_e2e.py -q \
+  -k "struct_projection"
+```
+
+Negative controls for path 18 (unit level, no Lake needed):
+`tests/test_expr_translator.py::test_translate_body_keeps_non_field_projection_partial`
+covers a qualified effect name (`perform Eff.op`), a method call, postfix
+access on a call result, a non-identifier member, a projected-name collision
+with an existing binder, and a float literal — all stay partial.
 
 Focused pytest coverage for path 17, Lake required:
 

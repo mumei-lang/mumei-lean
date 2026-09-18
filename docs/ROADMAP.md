@@ -226,8 +226,11 @@ change to the contract constants must be synchronised across projects in the sam
   sequences (2 atoms) via `let_statement_lowering`
   (spec §4.4, live path 16: `concurrency/linear_ownership.mm` fixture), and
   nested `if` (1 atom) via `nested_if_lowering`
-  (spec §4.5, live path 17: `arithmetic/saturating.mm` fixture) — only struct
-  projection (1 atom) remains open. Reference regression gates:
+  (spec §4.5, live path 17: `arithmetic/saturating.mm` fixture), and
+  struct projection (1 atom) via `struct_projection_lowering`
+  (spec §4.6, live path 18: `concurrency/task_struct_capture_double_move_fail.mm`
+  fixture) — C-1 group 1 is now fully lowered (23/23 atoms). Reference
+  regression gates:
 
 ```bash
 PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest -q

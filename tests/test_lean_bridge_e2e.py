@@ -1183,6 +1183,56 @@ def test_let_sequence_body_semantics_upgrade_unknown_to_lean_verified(
         _cleanup_generated_file(GENERATED_LINEAR_OWNERSHIP)
 
 
+GENERATED_SATURATING = (
+    REPO_ROOT / "generated" / "Generated" / "Arithmetic" / "Saturating.lean"
+)
+
+
+@pytest.mark.lake_available
+def test_nested_if_body_semantics_upgrade_unknown_to_lean_verified(
+    lake_available, tmp_path: Path
+):
+    """Spec §4.5: `if c { a } else { b }` branches may nest conditionals.
+
+    The fixture atom was partial (`unsupported_syntax`) before the nested
+    lowering; it must now build via body semantics without a known
+    witness and without touching the bridge lemma catalog.
+    """
+    out_cert = tmp_path / "saturating.lean-cert.json"
+    out_dir = tmp_path / "generated"
+    _cleanup_generated_file(GENERATED_SATURATING)
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "arithmetic_saturating_nested_if.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+        _assert_bridge_ok(proc)
+        assert "0 partial translation" in proc.stdout
+        generated_src = GENERATED_SATURATING.read_text()
+        assert (
+            "if x < lo then lo else if x > hi then hi else x" in generated_src
+        )
+        payload = json.loads(out_cert.read_text())
+        atom = next(a for a in payload["atoms"] if a["name"] == "clamp_to_range")
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["status"] == "verified"
+        meta = atom["lean_metadata"]
+        assert meta["known_witness_used"] is False
+        assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
+        assert meta["bridge_lemma_hash"] == (
+            "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
+        )
+        rules = meta["translator_ir"]["lowering_rules"]
+        assert "nested_if_lowering" in rules
+        assert payload["all_verified"] is True
+    finally:
+        _cleanup_generated_file(GENERATED_SATURATING)
+
+
 GENERATED_QUINTIC = REPO_ROOT / "generated" / "Generated" / "Std" / "Quintic.lean"
 QUINTIC_GOOD_SCRIPT = (
     "intro hx\nsubst h_body\nunfold quinticPosResult\n"

@@ -224,8 +224,10 @@ change to the contract constants must be synchronised across projects in the sam
   statement sequences (19 atoms) are lowered via `perform_statement_lowering`
   (PR #121, spec §4.3, live path 15: `defi/invariants.mm` fixture), and pure `let`
   sequences (2 atoms) via `let_statement_lowering`
-  (spec §4.4, live path 16: `concurrency/linear_ownership.mm` fixture) — the remaining
-  nested `if` and struct projection are still open. Reference regression gates:
+  (spec §4.4, live path 16: `concurrency/linear_ownership.mm` fixture), and
+  nested `if` (1 atom) via `nested_if_lowering`
+  (spec §4.5, live path 17: `arithmetic/saturating.mm` fixture) — only struct
+  projection (1 atom) remains open. Reference regression gates:
 
 ```bash
 PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest -q

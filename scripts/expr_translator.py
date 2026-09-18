@@ -555,6 +555,7 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "builtin_name_binder_lowering",
     "perform_statement_lowering",
     "let_statement_lowering",
+    "nested_if_lowering",
     "unknown_obligation_lowering",
     "smart_contract_lowering",
     "smart_contract_guard_trace_lowering",
@@ -1587,6 +1588,14 @@ def _attach_translator_ir(
         reasons = sorted((set(reasons) | carried) - {"unsupported_syntax"})
     result.unsupported_reasons = reasons
     result.manual_lemma_reason = ";".join(reasons) if reasons else None
+    # Lowering rules appended by a nested lowering step (statement
+    # sequences, nested if) are likewise not recoverable from the tokens;
+    # carry them over the rebuild.
+    prior_rules = (
+        list(result.translator_ir.lowering_rules)
+        if result.translator_ir is not None
+        else []
+    )
     result.translator_ir = _build_translator_ir(
         source or "",
         result.lean_expr,
@@ -1596,6 +1605,10 @@ def _attach_translator_ir(
         real_tokens,
         result.manual_lemma_reason,
     )
+    if result.translator_ir is not None:
+        for rule in prior_rules:
+            if rule not in result.translator_ir.lowering_rules:
+                result.translator_ir.lowering_rules.append(rule)
     return result
 
 
@@ -3020,14 +3033,85 @@ def normalize_body_source(source: str) -> str:
         stripped = inner
 
 
+def _parse_braced_if(source: str) -> Optional[Tuple[str, str, str]]:
+    """Parse ``if <cond> { <then> } else { <else> }`` at the string level.
+
+    Unlike a flat regex this tracks brace depth, so branches may contain
+    nested ``{ … }`` — most importantly a nested ``if`` in the else branch
+    (``{ if x < lo { lo } else { if x > hi { hi } else { x } } }``) or an
+    ``else if`` chain, which is taken verbatim as the else source.
+    Returns ``(cond_src, then_src, else_src)`` or ``None`` when the source
+    is not exactly that shape.
+    """
+    if not re.match(r"if\b", source):
+        return None
+    depth = 0
+    in_string = False
+    then_open = -1
+    for index in range(2, len(source)):
+        char = source[index]
+        if in_string:
+            if char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char == "{" and depth == 0:
+            then_open = index
+            break
+        elif char in "([":
+            depth += 1
+        elif char in ")]":
+            depth -= 1
+    if then_open == -1:
+        return None
+    cond_src = source[2:then_open]
+    then_close = _matching_brace_index(source, then_open)
+    if then_close is None:
+        return None
+    then_src = source[then_open + 1 : then_close]
+    else_match = re.match(r"\s*else\b", source[then_close + 1 :])
+    if else_match is None:
+        return None
+    else_start = then_close + 1 + else_match.end()
+    else_rest = source[else_start:]
+    if re.match(r"\s*if\b", else_rest):
+        else_src = else_rest
+    else:
+        brace_match = re.match(r"\s*\{", source[else_start:])
+        if brace_match is None:
+            return None
+        else_open = else_start + brace_match.end() - 1
+        else_close = _matching_brace_index(source, else_open)
+        if else_close is None or source[else_close + 1 :].strip():
+            return None
+        else_src = source[else_open + 1 : else_close]
+    return cond_src, then_src, else_src
+
+
+def _matching_brace_index(source: str, open_index: int) -> Optional[int]:
+    """Index of the ``}`` matching ``{`` at ``open_index`` (string aware)."""
+    depth = 0
+    in_string = False
+    for index in range(open_index, len(source)):
+        char = source[index]
+        if in_string:
+            if char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
 def _known_body_pattern(source: str) -> Optional[TranslationResult]:
-    braced_if = re.fullmatch(
-        r"if\s+([^{}]+?)\s*\{\s*([^{}]+?)\s*\}\s*else\s*\{\s*([^{}]+?)\s*\}",
-        source,
-        re.DOTALL,
-    )
+    braced_if = _parse_braced_if(source)
     if braced_if:
-        cond_src, then_src, else_src = braced_if.groups()
+        cond_src, then_src, else_src = braced_if
         cond = translate_contract(cond_src.strip())
         then_branch = translate_body(then_src.strip())
         else_branch = translate_body(else_src.strip())
@@ -3077,6 +3161,14 @@ def _known_body_pattern(source: str) -> Optional[TranslationResult]:
             predicate_arities=predicate_arities,
         )
         lowered = _attach_translator_ir(source, lowered)
+        if any("{" in segment for segment in braced_if) and (
+            lowered.translator_ir is not None
+            and "nested_if_lowering" not in lowered.translator_ir.lowering_rules
+        ):
+            # A branch carried its own braces (nested if / block): record
+            # the spec §4.5 rule. Flat `if c { a } else { b }` bodies keep
+            # their existing rule set.
+            lowered.translator_ir.lowering_rules.append("nested_if_lowering")
         _unify_branch_result_types(
             lowered,
             (then_src.strip(), then_branch),
@@ -3280,6 +3372,18 @@ def translate_body(body_expr: str) -> TranslationResult:
     if unbraced is not None:
         # An empty block has no value; translate_body("") marks it partial.
         inner = translate_body(unbraced)
+        inner_rules = (
+            inner.translator_ir.lowering_rules if inner.translator_ir else []
+        )
+        if any(
+            rule
+            in ("perform_statement_lowering", "let_statement_lowering")
+            for rule in inner_rules
+        ):
+            # Braces around an already-lowered statement sequence are
+            # transparent; re-deriving IR from the outer tokens would
+            # re-flag the consumed `;` / `perform` surface as unsupported.
+            return inner
         return _attach_translator_ir(stripped, inner)
     statement_seq = _statement_sequence_tail(stripped)
     if statement_seq is not None:

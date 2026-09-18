@@ -1,0 +1,108 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-18T15:05:00Z",
+  "mumei_version": "0.6.19",
+  "z3_version": "4.8.12",
+  "file": "arithmetic/saturating.mm",
+  "atoms": [
+    {
+      "name": "clamp_to_range",
+      "z3_check_result": "unknown",
+      "content_hash": "3b5d7f9a1c4e6b8d0f2a4c6e8a0b2d4f6a8c0e2a4c6e8b0d2f4a6c8e0b2d4f6a8c",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "arithmetic/saturating.mm"
+        },
+        "traceability_hash": "8d0e2f4a6b8c0e2a4c6e8b0d2f4a6c8e0a2c4e6b8d0f2a4c6e8b0d2f4a6c8e0b",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 1,
+        "checked_refinements": 0,
+        "ensures_implication_checks": 1,
+        "diagnostics": []
+      },
+      "proof_hash": "7c9e1a3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c",
+      "dependencies": [],
+      "effects": [],
+      "requires": "lo <= hi",
+      "ensures": "result >= lo && result <= hi && (result == x || result == lo || result == hi)",
+      "body_expr": "{ if x < lo { lo } else { if x > hi { hi } else { x } } }",
+      "body_summary": "{ if x < lo { lo } else { if x > hi { hi } else { x } } }",
+      "z3_result_class": "unknown",
+      "logic_fragment_tag": "linear_arithmetic",
+      "logic_fragment_tags": [],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "x": "x",
+        "lo": "lo",
+        "hi": "hi",
+        "result": "result"
+      },
+      "bridge_lemma_hash": "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347",
+      "translator_ir": {
+        "sort": "refinement_predicate",
+        "binders": [
+          {
+            "mumei_name": "x",
+            "lean_name": "x",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "lo",
+            "lean_name": "lo",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "hi",
+            "lean_name": "hi",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(lo <= hi) -> (result >= lo && result <= hi && (result == x || result == lo || result == hi))",
+        "provenance_span": {
+          "file": "arithmetic/saturating.mm",
+          "line": 14,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [],
+        "proof_trace_hints": [],
+        "requires_bridge_lemmas": []
+      },
+      "symbol_provenance": [],
+      "solver_process_metadata": {
+        "task_id": null,
+        "cache_key": "4d6f8a0c2e4b6d8f0a2c4e6b8d0f2a4c6e8b0d2f4a6c8e0b2d4f6a8c0e2f4a6c",
+        "generation_id": "",
+        "solver_config_fingerprint": "4eb8092c0cb08dd4c8d6494173a480c7fae3ce88feef61311d32f80092aad8dc",
+        "timeout_ms": 10000,
+        "cancel_reason": null,
+        "process_start_time": "",
+        "process_end_time": "2026-09-18T15:05:00Z"
+      }
+    }
+  ],
+  "certificate_hash": "9e0f2a4c6b8d0f2a4c6e8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c2e4b6d8f0a",
+  "all_verified": true
+}

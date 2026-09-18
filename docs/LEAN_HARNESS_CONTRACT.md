@@ -186,6 +186,13 @@ The bridge ships fourteen live generated theorem paths. Each lowers a Z3 `unknow
   Lake builds the regenerated theorems with `known_witness_used = false`.
   This is the sixteenth live generated theorem path; it adds no bridge
   lemma, so `bridge_lemma_hash` is unchanged.
+- `arithmetic/saturating.mm::clamp_to_range`: the nested-`if` path emits
+  `Generated.Arithmetic.Saturating.clamp_to_range_correct`;
+  `{ if c { a } else { if … } }` bodies lower through `nested_if_lowering`
+  (spec §4.5) and Lake builds the regenerated theorem with
+  `known_witness_used = false`. This is the seventeenth live generated
+  theorem path; it adds no bridge lemma, so `bridge_lemma_hash` is
+  unchanged.
 
 ## Scope
 

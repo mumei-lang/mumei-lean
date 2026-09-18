@@ -313,6 +313,33 @@ Substitution stays conservative — the block remains partial when:
 inference sees the substituted tail (`{ let msg = "ok"; msg }` is a
 `String` body).
 
+### 4.5 Nested conditionals in `if { } else { }` bodies
+
+A mumei body may nest conditionals inside either branch:
+
+```text
+{ if x < lo { lo } else { if x > hi { hi } else { x } } }
+```
+
+`_parse_braced_if` splits a brace-delimited conditional by brace depth
+instead of a flat regex, so branch bodies may contain their own `{ … }`
+blocks — nested `if`, `else if` chains (`else if c { b } else { d }` is
+taken verbatim as the else source), or any block form §4.1–§4.4 lowers.
+Each branch recurses through `translate_body`, and the merged result is
+the Lean `if … then … else …` term
+(`{ if x < lo { lo } else { if x > hi { hi } else { x } }` →
+`if x < lo then lo else if x > hi then hi else x`). The lowering is a
+syntactic embedding of mumei's conditional semantics, adds no bridge
+lemma, and leaves `bridge_lemma_hash` unchanged. The rule is
+`nested_if_lowering` (§8), recorded only when a branch actually carried
+braces — flat `if c { a } else { b }` bodies keep their prior rule set.
+
+Malformed shapes stay partial: trailing tokens after the else block,
+`else ifx` (not a chain), a missing `else`, or a nested `if` without its
+own `else`. Generated theorems for nested-if bodies are discharged by
+`mumei_arith_deep`, whose `split <;> omega` stage splits the `if` goals
+without a new ladder candidate.
+
 ## 5. Semantic Gap Bridge Rules
 
 ### 5.1 Integer Overflow Bridge
@@ -820,6 +847,7 @@ emitted in `TranslatorIR.lowering_rules`.
 | `builtin_name_binder_lowering` | A built-in helper name appears only as a bare identifier and is bound as an `Int` theorem parameter; no bridge lemma is required. | §4.1 |
 | `perform_statement_lowering` | A body block is a sequence of leading `perform <Effect>.<op>` statements followed by a pure tail; only the tail lowers and no bridge lemma is required. | §4.3 |
 | `let_statement_lowering` | A body block's leading `let <name> = <expr>` statements substitute into the final tail expression; the substituted tail lowers and no bridge lemma is required. | §4.4 |
+| `nested_if_lowering` | A braced `if c { a } else { b }` body carries brace-enclosed content (a nested conditional or block) in a branch; each branch recurses through the translator and no bridge lemma is required. | §4.5 |
 
 A translator implementation is compliant iff:
 

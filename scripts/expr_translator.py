@@ -1762,6 +1762,12 @@ def _lower_struct_projection_tokens(
             # ``perform Eff.op`` names an effect operation, not a field read.
             index += 1
             continue
+        if index > 0 and lowered[index - 1] == ("UNK", "."):
+            # The base is itself a member of a qualified name that was not
+            # lowered (e.g. `perform A.b.c`); leave the remaining dots raw
+            # instead of half-rewriting the qualified tail.
+            index += 1
+            continue
         if followed_by == ("OP", "("):
             # ``p.f(…)`` is a method call, not a field read.
             index += 1

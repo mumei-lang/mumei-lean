@@ -335,8 +335,8 @@ lemma, and leaves `bridge_lemma_hash` unchanged. The rule is
 braces — flat `if c { a } else { b }` bodies keep their prior rule set.
 
 Malformed shapes stay partial: trailing tokens after the else block,
-`else ifx` (not a chain), a missing `else`, or a nested `if` without its
-own `else`. Generated theorems for nested-if bodies are discharged by
+`else ifx` (not a chain), a missing `else`, an empty condition
+(`if { a } else { b }`), or a nested `if` without its own `else`. Generated theorems for nested-if bodies are discharged by
 `mumei_arith_deep`, whose `split <;> omega` stage splits the `if` goals
 without a new ladder candidate.
 

@@ -3065,6 +3065,10 @@ def _parse_braced_if(source: str) -> Optional[Tuple[str, str, str]]:
     if then_open == -1:
         return None
     cond_src = source[2:then_open]
+    if not cond_src.strip():
+        # `if { a } else { b }` is not a conditional — the previous flat
+        # regex required a non-empty condition; keep that conservative.
+        return None
     then_close = _matching_brace_index(source, then_open)
     if then_close is None:
         return None

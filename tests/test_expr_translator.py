@@ -1526,6 +1526,8 @@ def test_translate_body_lowers_nested_braced_if():
         "{ if x < lo { lo } else ifx { y } }",
         # Missing else.
         "{ if x < lo { lo } }",
+        # An empty condition is not a conditional.
+        "{ if { a } else { b } }",
         # A nested if without its own else stays partial.
         "{ if x < lo { lo } else { if x > hi { hi } } }",
     ],

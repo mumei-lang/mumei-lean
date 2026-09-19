@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+import tactic_search
 from ingest_cert import collect_unknown_atoms, render_theorem
 from tactic_search import (
     STAGE_BUILD_FAILURE,
@@ -148,9 +149,9 @@ def test_search_reports_timeout_without_adopting(monkeypatch, tmp_path: Path):
     atom = _distrib_atom()
 
     def _timeout(*args, **kwargs):
-        raise subprocess.TimeoutExpired(cmd="lake", timeout=kwargs["timeout"])
+        return subprocess.TimeoutExpired(cmd="lake", timeout=1.0)
 
-    monkeypatch.setattr(subprocess, "run", _timeout)
+    monkeypatch.setattr(tactic_search, "_run_probe", _timeout)
     result = search_tactic(
         atom,
         stage=STAGE_BUILD_FAILURE,
@@ -167,9 +168,9 @@ def test_search_without_lake_is_skipped(monkeypatch, tmp_path: Path):
     atom = _distrib_atom()
 
     def _missing(*args, **kwargs):
-        raise FileNotFoundError("lake")
+        return None  # missing lake binary
 
-    monkeypatch.setattr(subprocess, "run", _missing)
+    monkeypatch.setattr(tactic_search, "_run_probe", _missing)
     result = search_tactic(
         atom,
         stage=STAGE_BUILD_FAILURE,
@@ -191,16 +192,20 @@ def test_search_adopts_the_first_candidate_without_diagnostics(
         if candidate_id != "ring"
     ]
 
-    class _Proc:
-        returncode = 1
-        stdout = "\n".join(
-            f"{tmp_path}/probe.lean:{spans[candidate_id][0] + 10}:2: "
-            "error: tactic failed"
-            for candidate_id in failing
+    def _fail(*args, **kwargs):
+        probe_name = Path(args[0][-1]).name
+        return subprocess.CompletedProcess(
+            args[0],
+            1,
+            stdout="\n".join(
+                f"{tmp_path}/{probe_name}:{spans[candidate_id][0] + 10}:2: "
+                "error: tactic failed"
+                for candidate_id in failing
+            ),
+            stderr="",
         )
-        stderr = ""
 
-    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Proc())
+    monkeypatch.setattr(tactic_search, "_run_probe", _fail)
     result = search_tactic(
         atom,
         stage=STAGE_BUILD_FAILURE,
@@ -216,15 +221,20 @@ def test_sorry_warning_disqualifies_a_candidate(monkeypatch, tmp_path: Path):
     atom = _distrib_atom()
     _, spans = build_probe_module(atom)
 
-    class _Proc:
-        returncode = 0
-        stdout = "\n".join(
-            f"{tmp_path}/probe.lean:{start + 10}:2: warning: declaration uses 'sorry'"
-            for start, _ in spans.values()
+    def _warn(*args, **kwargs):
+        probe_name = Path(args[0][-1]).name
+        return subprocess.CompletedProcess(
+            args[0],
+            0,
+            stdout="\n".join(
+                f"{tmp_path}/{probe_name}:{start + 10}:2: "
+                "warning: declaration uses 'sorry'"
+                for start, _ in spans.values()
+            ),
+            stderr="",
         )
-        stderr = ""
 
-    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Proc())
+    monkeypatch.setattr(tactic_search, "_run_probe", _warn)
     result = search_tactic(
         atom,
         stage=STAGE_BUILD_FAILURE,

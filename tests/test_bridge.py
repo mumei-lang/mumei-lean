@@ -26,6 +26,10 @@ def _atom(name: str, z3: str = "unknown") -> dict:
         "proof_hash": "p",
         "dependencies": [],
         "effects": [],
+        # mumei stamps the translator contract on every atom; without it
+        # the bridge marks the atom stale instead of promoting it.
+        "translator_version": bridge.TRANSLATOR_VERSION,
+        "bridge_lemma_hash": bridge.BRIDGE_LEMMA_HASH,
     }
 
 

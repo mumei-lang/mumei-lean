@@ -392,22 +392,21 @@ def _has_unattributable_failures(
 
 
 def _translator_contract_current(atom: dict) -> bool:
-    translator_version = atom.get("translator_version", TRANSLATOR_VERSION)
-    bridge_lemma_hash = atom.get("bridge_lemma_hash", BRIDGE_LEMMA_HASH)
+    # Absent identifiers are stale, matching the Rust-side
+    # `lean_certificate_metadata_is_current` which compares the
+    # (possibly empty) fields against the compiled-in constants.
     return (
-        translator_version == TRANSLATOR_VERSION
-        and bridge_lemma_hash == BRIDGE_LEMMA_HASH
+        atom.get("translator_version") == TRANSLATOR_VERSION
+        and atom.get("bridge_lemma_hash") == BRIDGE_LEMMA_HASH
     )
 
 
 def _lean_result_contract_current(metadata: Optional[dict]) -> bool:
     if metadata is None:
         return True
-    translator_version = metadata.get("translator_version", TRANSLATOR_VERSION)
-    bridge_lemma_hash = metadata.get("bridge_lemma_hash", BRIDGE_LEMMA_HASH)
     return (
-        translator_version == TRANSLATOR_VERSION
-        and bridge_lemma_hash == BRIDGE_LEMMA_HASH
+        metadata.get("translator_version") == TRANSLATOR_VERSION
+        and metadata.get("bridge_lemma_hash") == BRIDGE_LEMMA_HASH
     )
 
 

@@ -42,6 +42,8 @@ def _unknown_atom(name: str = "quintic_pos", **overrides) -> dict:
         "status": "unknown",
         "content_hash": "",
         "proof_hash": "",
+        "translator_version": bridge.TRANSLATOR_VERSION,
+        "bridge_lemma_hash": bridge.BRIDGE_LEMMA_HASH,
     }
     atom.update(overrides)
     return atom

@@ -18,14 +18,15 @@ finite-state decidability, and generic simp closure).
 `scripts/ingest_cert.py` emits
 
 ```
-  mumei_arith <;> sorry
+  mumei_arith
 ```
 
-as the default body so theorems `mumei_arith` cannot fully close still
-type-check (with a `sorry` warning that `scripts/export_cert.py` reads
-as a failure marker). When `mumei_arith` discharges every subgoal the
-`sorry` is unreachable, no warning is emitted, and the bridge marks
-the atom as `lean_verified` in the resulting `.lean-cert.json`.
+as the default body; when it cannot fully close the goal `lake build`
+fails (or the tactic search adopts a stronger candidate), which
+`scripts/export_cert.py` reads as a failure marker. When `mumei_arith`
+discharges every subgoal, the
+build succeeds and the bridge marks the atom as `lean_verified` in the
+resulting `.lean-cert.json`.
 -/
 
 namespace MumeiLean

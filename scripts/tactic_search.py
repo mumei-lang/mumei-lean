@@ -25,8 +25,11 @@ build`` yields ``lean_verified``. When no candidate succeeds the atom keeps its
 from __future__ import annotations
 
 import dataclasses
+import os
 import re
+import signal
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -80,7 +83,10 @@ PROBE_DIR_NAME = ".tactic_search"
 STAGE_RESIDUAL = "residual"
 STAGE_BUILD_FAILURE = "build_failure"
 
-_DIAGNOSTIC_RE = re.compile(r"^[^\s]*probe\.lean:(\d+):\d+: (error|warning): (.*)$")
+def _diagnostic_re(probe_name: str) -> "re.Pattern[str]":
+    return re.compile(
+        rf"^[^\s]*{re.escape(probe_name)}:(\d+):\d+: (error|warning): (.*)$"
+    )
 
 
 @dataclass
@@ -211,11 +217,13 @@ def build_probe_module(
 def _failed_candidates(
     output: str,
     spans: Dict[str, Tuple[int, int]],
+    probe_name: str,
 ) -> set:
     """Candidate ids whose line span carries an error or ``sorry`` warning."""
+    diagnostic_re = _diagnostic_re(probe_name)
     failed = set()
     for raw_line in output.splitlines():
-        match = _DIAGNOSTIC_RE.match(raw_line.strip())
+        match = diagnostic_re.match(raw_line.strip())
         if match is None:
             continue
         line_no = int(match.group(1))
@@ -229,11 +237,63 @@ def _failed_candidates(
     return failed
 
 
+def _run_probe(
+    cmd: List[str],
+    *,
+    cwd: Path,
+    timeout_s: float,
+) -> "subprocess.CompletedProcess[str] | subprocess.TimeoutExpired | None":
+    """Run the lean probe under ``cwd`` with a wall-clock timeout.
+
+    On POSIX the probe runs in its own process group so a timeout kills the
+    `elan`/`lake` wrapper *and* the `lean` child — ``subprocess.run`` only
+    terminates the direct child. Returns ``None`` when the command is
+    missing, and the ``TimeoutExpired`` instance when the group timed out.
+    """
+    if os.name == "posix":
+        try:
+            proc = subprocess.Popen(  # noqa: S603 - explicit lake invocation
+                cmd,
+                cwd=str(cwd),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+        except FileNotFoundError:
+            return None
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout_s)
+        except subprocess.TimeoutExpired as exc:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.wait()
+            return exc
+        return subprocess.CompletedProcess(
+            cmd, proc.returncode, stdout, stderr
+        )
+    try:
+        return subprocess.run(  # noqa: S603 - explicit lake invocation
+            cmd,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+    except FileNotFoundError:
+        return None
+    except subprocess.TimeoutExpired as exc:
+        return exc
+
+
 def search_tactic(
     atom: IngestedAtom,
     *,
     stage: str,
     lake_cmd: Sequence[str] = ("lake",),
+    repo_dir: Optional[Path] = None,
     probe_dir: Optional[Path] = None,
     timeout_s: float = DEFAULT_TACTIC_SEARCH_TIMEOUT_S,
     candidates: Sequence[Tuple[str, str]] = TACTIC_CANDIDATES,
@@ -274,20 +334,26 @@ def search_tactic(
         candidates=candidates,
     )
     source, spans = build_probe_module(atom, candidates)
-    probe_root = probe_dir or (REPO_ROOT / PROBE_DIR_NAME)
+    repo_root = repo_dir or REPO_ROOT
+    probe_root = probe_dir or (repo_root / PROBE_DIR_NAME)
     probe_root.mkdir(parents=True, exist_ok=True)
-    probe_path = probe_root / "probe.lean"
-    probe_path.write_text(source, encoding="utf-8")
-
+    # A per-invocation probe filename keeps concurrent bridge runs on the
+    # same checkout from racing on (or reading a torn) shared probe.lean.
+    fd, probe_name = tempfile.mkstemp(
+        prefix="probe-", suffix=".lean", dir=probe_root
+    )
+    probe_path = Path(probe_name)
     try:
-        proc = subprocess.run(  # noqa: S603 - explicit lake invocation
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(source)
+        proc = _run_probe(
             [*lake_cmd, "env", "lean", str(probe_path)],
-            cwd=str(REPO_ROOT),
-            capture_output=True,
-            text=True,
-            timeout=timeout_s,
+            cwd=repo_root,
+            timeout_s=timeout_s,
         )
-    except FileNotFoundError:
+    finally:
+        probe_path.unlink(missing_ok=True)
+    if proc is None:
         return TacticSearchResult(
             atom_name=atom.name,
             stage=stage,
@@ -300,7 +366,7 @@ def search_tactic(
             history_ranked=history_ranked,
             history_fingerprint=history_fingerprint,
         )
-    except subprocess.TimeoutExpired:
+    if isinstance(proc, subprocess.TimeoutExpired):
         return TacticSearchResult(
             atom_name=atom.name,
             stage=stage,
@@ -313,7 +379,9 @@ def search_tactic(
             history_fingerprint=history_fingerprint,
         )
 
-    failed = _failed_candidates(proc.stdout + "\n" + proc.stderr, spans)
+    failed = _failed_candidates(
+        proc.stdout + "\n" + proc.stderr, spans, probe_path.name
+    )
     tried: List[str] = []
     for candidate_id, _tactic in candidates:
         tried.append(candidate_id)

@@ -17,7 +17,7 @@ containing one ``theorem`` per atom of the form::
 
     theorem <atom_name>_correct
         (x y result : Int) : <requires> → <ensures> := by
-      sorry
+      mumei_arith
 
 The generated files are intentionally not committed to the repository
 (see ``.gitignore``); ``scripts/bridge.py`` regenerates them on
@@ -548,8 +548,11 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
                     logic_fragment_tag=logic_fragment_tag,
                     logic_fragment_tags=tags,
                     proof_hash=str(atom.get("proof_hash", "")),
-                    translator_version=str(atom.get("translator_version", TRANSLATOR_VERSION)),
-                    bridge_lemma_hash=str(atom.get("bridge_lemma_hash", BRIDGE_LEMMA_HASH)),
+                    # Absent identifiers stay empty so the stale-translator
+                    # gate in bridge.py marks them stale instead of adopting
+                    # the current constants (mumei-side parity).
+                    translator_version=str(atom.get("translator_version") or ""),
+                    bridge_lemma_hash=str(atom.get("bridge_lemma_hash") or ""),
                     binder_mapping=_string_dict(atom.get("binder_mapping", {})),
                     manual_lemma_reason=(str(manual_reason) if manual_reason else None),
                     translator_ir=translator_ir,

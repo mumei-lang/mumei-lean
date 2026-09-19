@@ -1310,14 +1310,30 @@ def normalize_guard_trace_translator_ir(translator_ir: Dict[str, Any]) -> Dict[s
     return normalized
 
 
+_LEAN_CONSTRUCTOR_RE = re.compile(r"[A-Za-z][A-Za-z0-9_']*")
+
+
+def _require_lean_ctor_ops(ops: Any, kind: str) -> List[str]:
+    """Validate ``ops`` as a list of Lean constructor identifiers.
+
+    Each entry is interpolated verbatim as ``<Kind>Op.<op>`` in the
+    emitted theorem, so anything that is not a plain identifier would
+    inject arbitrary Lean source into the generated file.
+    """
+    if not isinstance(ops, list) or not all(isinstance(op, str) for op in ops):
+        raise ValueError(f"{kind} must include an ordered list of op strings")
+    bad = [op for op in ops if not _LEAN_CONSTRUCTOR_RE.fullmatch(op)]
+    if bad:
+        raise ValueError(f"{kind} ops must be Lean identifiers: {bad!r}")
+    return [str(op) for op in ops]
+
+
 def render_guard_trace_theorem(
     atom_name: str,
     guard_trace: Dict[str, Any],
     provenance_prefix: str = "",
 ) -> str:
-    ops = guard_trace.get("ops")
-    if not isinstance(ops, list) or not all(isinstance(op, str) for op in ops):
-        raise ValueError("guard trace must include an ordered list of op strings")
+    ops = _require_lean_ctor_ops(guard_trace.get("ops"), "guard trace")
     theorem_name = f"{_sanitize_lean_identifier(atom_name)}_correct"
     ops_expr = ", ".join(f"GuardOp.{op}" for op in ops)
     expected_outcome = guard_trace.get("expected_outcome")
@@ -1403,9 +1419,7 @@ def render_access_control_theorem(
     access_control: Dict[str, Any],
     provenance_prefix: str = "",
 ) -> str:
-    ops = access_control.get("ops")
-    if not isinstance(ops, list) or not all(isinstance(op, str) for op in ops):
-        raise ValueError("access control must include an ordered list of op strings")
+    ops = _require_lean_ctor_ops(access_control.get("ops"), "access control")
     theorem_name = f"{_sanitize_lean_identifier(atom_name)}_correct"
     ops_expr = ", ".join(f"AccessOp.{op}" for op in ops)
     expected_outcome = access_control.get("expected_outcome")
@@ -1489,9 +1503,7 @@ def render_cei_theorem(
     cei: Dict[str, Any],
     provenance_prefix: str = "",
 ) -> str:
-    ops = cei.get("ops")
-    if not isinstance(ops, list) or not all(isinstance(op, str) for op in ops):
-        raise ValueError("CEI must include an ordered list of op strings")
+    ops = _require_lean_ctor_ops(cei.get("ops"), "CEI")
     theorem_name = f"{_sanitize_lean_identifier(atom_name)}_correct"
     ops_expr = ", ".join(f"CeiOp.{op}" for op in ops)
     expected_outcome = cei.get("expected_outcome")

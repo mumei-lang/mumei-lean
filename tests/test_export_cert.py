@@ -172,7 +172,7 @@ def test_upgrade_certificate_can_attach_harness_contract():
         lean_version="x",
         harness_contract=harness_contract,
     )
-    assert upgraded["harness_contract"] == harness_contract
+    assert json.loads(upgraded["harness_contract"]) == harness_contract
 
 
 def test_upgrade_certificate_does_not_promote_manual_metadata():

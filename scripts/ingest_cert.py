@@ -112,6 +112,90 @@ def _translate_expr(source: str) -> TranslationResult:
     return translate_contract(source)
 
 
+# ---------------------------------------------------------------------------
+# Certificate-input hygiene
+#
+# Every field of a ``.proof-cert.json`` is *untrusted input*: the certificate
+# may be hand-edited or produced by an arbitrary caller before reaching the
+# bridge.  Strings below flow into generated Lean source, so each is either
+# validated against the syntax the emitter itself can produce (identifiers,
+# types) or escaped for the comment context it lands in.  Anything that fails
+# validation is dropped — the affected binder/theorem then simply fails to
+# elaborate, which leaves the atom unverified (fail-closed).
+# ---------------------------------------------------------------------------
+
+_LEAN_IDENT_FULL_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_']*")
+
+# Grammar for the (small) Lean type language this emitter can produce:
+#   ty    := app ("→" ty)?          -- ``→`` is right-associative
+#   app   := atom atom*             -- e.g. ``List Int``
+#   atom  := IDENT | "(" ty ")"
+_LEAN_TYPE_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_'.]*|\(|\)|→")
+
+
+def _is_safe_lean_ident(value: object) -> bool:
+    """True iff ``value`` is a single plain Lean identifier."""
+    return isinstance(value, str) and bool(_LEAN_IDENT_FULL_RE.fullmatch(value))
+
+
+def _is_safe_lean_type(source: object) -> bool:
+    """True iff ``source`` parses fully under the emitted-type grammar.
+
+    Rejects anything containing characters outside identifier/parens/arrow
+    tokens (``:``, ``:=``, ``-/`` and friends), which is what makes verbatim
+    interpolation of certificate ``lean_type`` fields safe.
+    """
+    if not isinstance(source, str) or not source.strip():
+        return False
+    tokens = _LEAN_TYPE_TOKEN_RE.findall(source)
+    # Token coverage check: removing the tokens must leave only whitespace.
+    residual = _LEAN_TYPE_TOKEN_RE.sub("", source)
+    if residual.strip() or not tokens:
+        return False
+
+    def parse_atom(pos: int) -> int:
+        tok = tokens[pos]
+        if tok == "(":
+            pos = parse_ty(pos + 1)
+            if pos >= len(tokens) or tokens[pos] != ")":
+                raise ValueError("unbalanced parens")
+            return pos + 1
+        if tok in (")", "→"):
+            raise ValueError("unexpected token")
+        return pos + 1
+
+    def _atom_start(tok: str) -> bool:
+        return tok == "(" or bool(_LEAN_IDENT_FULL_RE.fullmatch(tok))
+
+    def parse_app(pos: int) -> int:
+        pos = parse_atom(pos)
+        while pos < len(tokens) and _atom_start(tokens[pos]):
+            pos = parse_atom(pos)
+        return pos
+
+    def parse_ty(pos: int) -> int:
+        pos = parse_app(pos)
+        if pos < len(tokens) and tokens[pos] == "→":
+            pos = parse_ty(pos + 1)
+        return pos
+
+    try:
+        return parse_ty(0) == len(tokens)
+    except (ValueError, IndexError):
+        return False
+
+
+def _comment_safe(value: object) -> str:
+    """Make ``value`` safe to embed in a Lean ``--``/``/-- -/`` comment.
+
+    Strips CR/LF (which would end a line comment) and the ``/-`` / ``-/``
+    sequences that could prematurely close or re-open a block comment.
+    """
+    text = str(value)
+    text = text.replace("-/", "-").replace("/-", "/")
+    return "".join(ch if ch not in "\r\n\x00" else " " for ch in text)
+
+
 @dataclass
 class IngestedAtom:
     module_key: str
@@ -608,12 +692,36 @@ def _first_manual_reason(*translations: Optional[TranslationResult]) -> Optional
     return None
 
 
+_MODULE_PREFIX_SEGMENT_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
+
+
+def _validate_module_prefix(prefix: str) -> str:
+    """Require ``prefix`` to be a dotted sequence of Lean-safe segments.
+
+    The prefix becomes the leading namespace *and* the leading directory
+    of the emitted path, so anything else (``/``, ``..``, empty segments)
+    would let it escape ``--out-dir``/``generated`` when joined into a
+    file path downstream.
+    """
+    segments = prefix.split(".")
+    if (
+        not segments
+        or any(not _MODULE_PREFIX_SEGMENT_RE.fullmatch(seg) for seg in segments)
+    ):
+        raise ValueError(
+            "invalid --module-prefix "
+            f"{prefix!r}: expected dotted Lean identifiers like 'Generated'"
+        )
+    return prefix
+
+
 def _module_to_lean_namespace(module_key: str, prefix: str) -> str:
     """Map ``std/core`` → ``Generated.Std.Core`` (or ``<prefix>.Std.Core``).
 
     Lean module name segments must start with an upper-case letter and
     contain only ``[A-Za-z0-9_]``; we sanitise accordingly.
     """
+    prefix = _validate_module_prefix(prefix)
     parts = [p for p in module_key.replace("\\", "/").split("/") if p]
     sanitised: List[str] = []
     for part in parts:
@@ -644,7 +752,13 @@ def module_to_path(module_key: str, prefix: str) -> Path:
 
 
 def _atom_result_name(atom_name: str) -> str:
-    parts = [p for p in atom_name.split("_") if p]
+    # atom_name is certificate-supplied; reduce each segment to identifier
+    # characters so the emitted ``def`` name cannot carry injected syntax.
+    parts = [
+        "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in p)
+        for p in atom_name.split("_")
+    ]
+    parts = [p for p in parts if p and not p[0].isdigit()]
     if not parts:
         return "atomResult"
     return parts[0] + "".join(part[:1].upper() + part[1:] for part in parts[1:]) + "Result"
@@ -807,6 +921,11 @@ def _sort_ascending_proof(atom: IngestedAtom) -> Optional[str]:
     if "insertion_sort_ascending" not in atom.name:
         return None
     ensures = atom.raw_ensures.strip()
+    # The emitted theorem is a fixed sortedness statement; require the
+    # contract itself to carry the quantified ordering obligation so an
+    # unrelated atom cannot ride this path just by name.
+    if "forall(" not in ensures.replace(" ", ""):
+        return None
     if "arr[i] <= arr[i + 1]" not in ensures and "arr[i] <= arr[i+1]" not in ensures:
         return None
 
@@ -846,6 +965,12 @@ def _forall_exists_swap_proof(atom: IngestedAtom) -> Optional[str]:
     """
     if _bridge_pattern(atom) != "forall_exists_swap":
         return None
+    # The emitted theorem proves a concrete ∀∃ swap; gate on the raw
+    # contract actually containing a forall/exists alternation so the
+    # marker alone cannot promote an unrelated obligation.
+    combined = atom.raw_requires + "\n" + atom.raw_ensures
+    if "forall(" not in combined or "exists(" not in combined:
+        return None
     mapping = _lean_binder_mapping(atom)
     bound = mapping.get("n", "n")
     arr = mapping.get("arr", "arr")
@@ -876,6 +1001,11 @@ def _int_nonnegative_induction_proof(atom: IngestedAtom) -> Optional[str]:
     See LEAN_TRANSLATOR_SPEC.md section 5.13.
     """
     if _bridge_pattern(atom) != "int_nonnegative_induction":
+        return None
+    # The emitted goal is the universally quantified nonnegativity
+    # statement; the raw contract must actually be a ``forall`` over a
+    # nonnegativity-shaped obligation before this path applies.
+    if "forall(" not in atom.raw_ensures:
         return None
     mapping = _lean_binder_mapping(atom)
     bound = mapping.get("n", "n")
@@ -911,10 +1041,13 @@ def _lean_binder_mapping(atom: IngestedAtom) -> dict[str, str]:
             lean_name = str(raw.get("lean_name") or "")
             if mumei_name and lean_name:
                 mapping.setdefault(mumei_name, lean_name)
+    # Mapping values are substituted verbatim into rendered Lean
+    # expressions; anything that is not a plain identifier could inject
+    # arbitrary syntax, so unsafe pairs are dropped (fail-closed).
     return {
         source: target
         for source, target in mapping.items()
-        if source and target
+        if _is_safe_lean_ident(source) and _is_safe_lean_ident(target)
     }
 
 
@@ -988,7 +1121,16 @@ def _decl_parts_from_translator_ir(
             or ""
         )
         lean_type = str(raw.get("lean_type") or "Int")
-        if not lean_name or lean_name in seen:
+        if (
+            not lean_name
+            or lean_name in seen
+            or not _is_safe_lean_ident(lean_name)
+            or not _is_safe_lean_type(lean_type)
+        ):
+            # Certificate-supplied binder text that is not valid Lean
+            # identifier/type syntax is dropped rather than interpolated:
+            # a skipped binder makes the goal fail to elaborate, which
+            # keeps the atom unverified instead of fabricating a proof.
             continue
         seen.add(lean_name)
         grouped.setdefault(lean_type, []).append(lean_name)
@@ -1038,57 +1180,63 @@ def _body_result_type(source: str, translation: TranslationResult) -> str:
 
 def _translator_ir_metadata(atom: IngestedAtom) -> List[str]:
     metadata = [
-        f"source_atom={atom.name}",
-        f"proof_hash={atom.proof_hash}",
-        f"translator_version={atom.translator_version}",
-        f"bridge_lemma_hash={atom.bridge_lemma_hash}",
+        f"source_atom={_comment_safe(atom.name)}",
+        f"proof_hash={_comment_safe(atom.proof_hash)}",
+        f"translator_version={_comment_safe(atom.translator_version)}",
+        f"bridge_lemma_hash={_comment_safe(atom.bridge_lemma_hash)}",
     ]
     sort = atom.translator_ir.get("sort") if isinstance(atom.translator_ir, dict) else None
     if sort:
-        metadata.append(f"translator_ir_sort={sort}")
+        metadata.append(f"translator_ir_sort={_comment_safe(sort)}")
     if atom.unknown_obligation_domain:
         metadata.append(
-            f"unknown_obligation_domain={atom.unknown_obligation_domain}"
+            f"unknown_obligation_domain={_comment_safe(atom.unknown_obligation_domain)}"
         )
     span = atom.translator_ir.get("provenance_span") if isinstance(atom.translator_ir, dict) else None
     if isinstance(span, dict) and span.get("file"):
         metadata.append(
             "source_span="
-            f"{span.get('file')}:{span.get('line', 0)}:{span.get('col', 0)}"
+            f"{_comment_safe(span.get('file'))}:{_comment_safe(span.get('line', 0))}:{_comment_safe(span.get('col', 0))}"
         )
     if atom.manual_lemma_reason:
-        metadata.append(f"manual_lemma_reason={atom.manual_lemma_reason}")
+        metadata.append(f"manual_lemma_reason={_comment_safe(atom.manual_lemma_reason)}")
     return metadata
 
 
 def _theorem_preamble(atom: IngestedAtom) -> str:
-    metadata = [f"z3_check_result={atom.z3_check_result}"]
+    metadata = [f"z3_check_result={_comment_safe(atom.z3_check_result)}"]
     if atom.z3_result_class:
-        metadata.append(f"z3_result_class={atom.z3_result_class}")
+        metadata.append(f"z3_result_class={_comment_safe(atom.z3_result_class)}")
     metadata.extend(_translator_ir_metadata(atom))
     if atom.escalation_reason:
-        metadata.append(f"escalation_reason={atom.escalation_reason}")
+        metadata.append(f"escalation_reason={_comment_safe(atom.escalation_reason)}")
     if atom.logic_fragment_tags:
-        metadata.append("logic_fragments=" + ",".join(atom.logic_fragment_tags))
+        metadata.append(
+            "logic_fragments="
+            + ",".join(_comment_safe(tag) for tag in atom.logic_fragment_tags)
+        )
 
     traceability_comments: List[str] = []
     if atom.escalation_reason:
         traceability_comments.append(
-            f"-- mumei_escalation_reason: {atom.escalation_reason}"
+            f"-- mumei_escalation_reason: {_comment_safe(atom.escalation_reason)}"
         )
     if atom.logic_fragment_tags:
         traceability_comments.append(
-            "-- mumei_logic_fragment_tags: " + ",".join(atom.logic_fragment_tags)
+            "-- mumei_logic_fragment_tags: "
+            + ",".join(_comment_safe(tag) for tag in atom.logic_fragment_tags)
         )
     if atom.z3_result_class:
-        traceability_comments.append(f"-- mumei_z3_result_class: {atom.z3_result_class}")
+        traceability_comments.append(
+            f"-- mumei_z3_result_class: {_comment_safe(atom.z3_result_class)}"
+        )
     traceability_block = "\n".join(traceability_comments)
     if traceability_block:
         traceability_block += "\n"
 
     return (
         traceability_block
-        + f"/-- Auto-generated from mumei atom `{atom.name}` "
+        + f"/-- Auto-generated from mumei atom `{_comment_safe(atom.name)}` "
         f"({' ; '.join(metadata)}). -/\n"
     )
 
@@ -1322,17 +1470,19 @@ def render_theorem(atom: IngestedAtom) -> str:
     notes: List[str] = []
     if atom.external_proof is not None:
         notes.append(
-            f"  {EXTERNAL_PROOF_NOTE_PREFIX}{atom.external_proof.source} "
-            f"sha256={atom.external_proof.script_sha256}"
+            f"  {EXTERNAL_PROOF_NOTE_PREFIX}{_comment_safe(atom.external_proof.source)} "
+            f"sha256={_comment_safe(atom.external_proof.script_sha256)}"
         )
     elif atom.auto_tactic is not None:
-        notes.append(f"  -- tactic_search_adopted: {atom.auto_tactic}")
+        notes.append(
+            f"  -- tactic_search_adopted: {_comment_safe(atom.auto_tactic)}"
+        )
     if req.is_partial or ens.is_partial or (
         atom.manual_lemma_reason and atom.proof_body_override is None
     ):
         notes.append(
             "  -- manual_lemma_required: "
-            f"{atom.manual_lemma_reason or req.manual_lemma_reason or ens.manual_lemma_reason}"
+            f"{_comment_safe(atom.manual_lemma_reason or req.manual_lemma_reason or ens.manual_lemma_reason)}"
         )
     if body_tr is not None and not use_body_semantics:
         notes.append("  -- body semantics unsupported; using contract-only fallback")
@@ -1343,33 +1493,9 @@ def render_theorem(atom: IngestedAtom) -> str:
     if note_block:
         note_block += "\n"
 
-    metadata = [f"z3_check_result={atom.z3_check_result}"]
-    if atom.z3_result_class:
-        metadata.append(f"z3_result_class={atom.z3_result_class}")
-    metadata.extend(_translator_ir_metadata(atom))
-    if atom.escalation_reason:
-        metadata.append(f"escalation_reason={atom.escalation_reason}")
-    if atom.logic_fragment_tags:
-        metadata.append("logic_fragments=" + ",".join(atom.logic_fragment_tags))
-    traceability_comments: List[str] = []
-    if atom.escalation_reason:
-        traceability_comments.append(
-            f"-- mumei_escalation_reason: {atom.escalation_reason}"
-        )
-    if atom.logic_fragment_tags:
-        traceability_comments.append(
-            "-- mumei_logic_fragment_tags: " + ",".join(atom.logic_fragment_tags)
-        )
-    if atom.z3_result_class:
-        traceability_comments.append(f"-- mumei_z3_result_class: {atom.z3_result_class}")
-    traceability_block = "\n".join(traceability_comments)
-    if traceability_block:
-        traceability_block += "\n"
     decl = (
         def_decl +
-        traceability_block +
-        f"/-- Auto-generated from mumei atom `{atom.name}` "
-        f"({' ; '.join(metadata)}). -/\n"
+        _theorem_preamble(atom) +
         f"theorem {_lean_theorem_name(atom.name)} {params_decl}{h_body_param} :\n"
         f"    ({requires_lean}) → ({ensures_lean}) := by\n"
         f"{note_block}{body}\n"
@@ -1381,11 +1507,14 @@ def _render_known_witness_delegate(atom: IngestedAtom) -> Optional[str]:
     witness = KNOWN_LEAN_WITNESSES.get(atom.name)
     if witness is None or atom.module_key != witness["module_key"]:
         return None
-    metadata = [f"z3_check_result={atom.z3_check_result}", "known_witness_used=true"]
+    metadata = [
+        f"z3_check_result={_comment_safe(atom.z3_check_result)}",
+        "known_witness_used=true",
+    ]
     metadata.extend(_translator_ir_metadata(atom))
     if atom.name == "abs_saturating":
         return (
-            f"/-- Auto-generated from mumei atom `{atom.name}` "
+            f"/-- Auto-generated from mumei atom `{_comment_safe(atom.name)}` "
             f"({' ; '.join(metadata)}). -/\n"
             "theorem abs_saturating_correct (x result : Int)\n"
             "    (h_body : result = MumeiLean.StdMathAbs.absSaturatingResult x) :\n"
@@ -1452,7 +1581,7 @@ def render_module(module_key: str, prefix: str, atoms: List[IngestedAtom]) -> st
         "/-!\n"
         f"# {namespace}\n\n"
         f"Auto-generated by `scripts/ingest_cert.py` for mumei module "
-        f"`{module_key}`.\n\n"
+        f"`{_comment_safe(module_key)}`.\n\n"
         "Do **not** edit this file by hand: it is regenerated on every\n"
         "`bridge.py` invocation. Atoms whose `z3_check_result` is\n"
         "`unknown` in the source `.proof-cert.json` are emitted here as\n"
@@ -1463,7 +1592,20 @@ def render_module(module_key: str, prefix: str, atoms: List[IngestedAtom]) -> st
         + "\n".join(open_lines)
         + "\n\n"
     )
-    body = "\n".join(render_theorem(a) for a in atoms)
+    rendered: List[str] = []
+    for atom in atoms:
+        try:
+            rendered.append(render_theorem(atom))
+        except ValueError as exc:
+            # A renderer refusing certificate-supplied content (e.g. an
+            # ops entry that is not a Lean constructor identifier) must
+            # not sink the rest of the module: emit no theorem so the
+            # atom is simply never promoted to ``lean_verified``.
+            rendered.append(
+                f"-- omitted atom `{_comment_safe(atom.name)}`: "
+                f"{_comment_safe(exc)}\n"
+            )
+    body = "\n".join(rendered)
     footer = f"\nend {namespace}\n"
     return header + body + footer
 

@@ -925,10 +925,14 @@ def test_verify_known_witnesses_requires_canonical_module(
         ],
         tmp_path,
         tmp_path / "logs",
+        "Generated",
     )
 
     assert proved == [("std/list", "list_length")]
-    assert calls == [["lake", "build", "MumeiLean.StdMathAbs"]]
+    assert calls == [
+        ["lake", "build", "MumeiLean.StdMathAbs"],
+        ["lake", "build", "Generated.Std.List"],
+    ]
 
 
 def test_verify_known_witnesses_builds_domain_witness_modules(
@@ -1005,6 +1009,7 @@ def test_verify_known_witnesses_builds_domain_witness_modules(
         ],
         tmp_path,
         tmp_path / "logs",
+        "Generated",
     )
 
     assert set(proved) == {(module_key, name) for name, module_key, _ in witnesses}
@@ -1012,6 +1017,10 @@ def test_verify_known_witnesses_builds_domain_witness_modules(
         ["lake", "build", "MumeiLean.Patterns"],
         ["lake", "build", "MumeiLean.Settlement"],
         ["lake", "build", "MumeiLean.SmartContract"],
+        ["lake", "build", "Generated.Examples.Nlae_integration_demo"],
+        ["lake", "build", "Generated.Std.Contract.Vault"],
+        ["lake", "build", "Generated.Std.Finance.Settlement"],
+        ["lake", "build", "Generated.Std.Math.Patterns"],
     ]
 
 
@@ -1030,7 +1039,9 @@ def test_known_witness_adds_partial_atom_to_proved_payload(
     monkeypatch.setattr(
         bridge,
         "_verify_known_witnesses",
-        lambda atoms, repo_dir, log_dir: [("std/list", "list_length")],
+        lambda atoms, repo_dir, log_dir, module_prefix: [
+            ("std/list", "list_length")
+        ],
     )
 
     rc = main(
@@ -1096,7 +1107,7 @@ def test_main_escalation_bundle_exports_metrics_and_metadata(
     assert candidate["lean_metadata"]["logic_fragment_tags"] == ["quantifier_alternation"]
     assert candidate["lean_result_metadata"]["status"] == "lean_verified"
     assert "escalation_reason=z3_unknown" in candidate["lean_metadata"]["diagnostics"]
-    assert upgraded["harness_contract"]["policy"] == "mumei-lean-bridge-harness/v1"
+    assert json.loads(upgraded["harness_contract"])["policy"] == "mumei-lean-bridge-harness/v1"
     assert candidate["lean_metadata"]["harness"]["failure_taxonomy"] == "proved"
     metrics = json.loads(summary.read_text())["metrics"]
     assert metrics["escalation_attempts"] == 1

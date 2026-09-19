@@ -1652,6 +1652,16 @@ def test_translate_body_lowers_task_and_task_group_all():
     )
     assert rebind.is_partial is False
     assert rebind.lean_expr == "( n + 2 )"
+
+    # Extra enclosing braces are transparent: the consumed `task`/`task_group`
+    # surface must not be re-flagged as unsupported tokens.
+    wrapped = expr_translator.translate_body(
+        "{ { task_group:all { task { a }; task { b } } } }"
+    )
+    assert wrapped.is_partial is False
+    assert wrapped.lean_expr == "b"
+    assert wrapped.manual_lemma_reason is None
+    assert "task_group_all_lowering" in wrapped.translator_ir.lowering_rules
     assert "rebind_statement_lowering" in rebind.translator_ir.lowering_rules
 
     # Task bodies compose with other lowering rules (let + array index).
@@ -1692,6 +1702,11 @@ def test_translate_body_lowers_task_and_task_group_all():
         # Rebind is only allowed on let-bound names.
         "{ task { acc = acc + 1; acc } }",
         "{ let x = 1; y = x + 1; x }",
+        # Reserved concurrency tokens with no lowering stay partial rather
+        # than leaking the raw keyword into the emitted Lean.
+        "{ await t }",
+        "{ async { a } }",
+        "{ cancel t }",
     ],
 )
 def test_translate_body_keeps_task_group_edge_cases_partial(source):

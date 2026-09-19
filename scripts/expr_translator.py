@@ -856,8 +856,10 @@ _STATEMENT_KEYWORDS: Set[str] = {
     # a residual ``task``/``task_group`` token (a task nested in a ``let``
     # RHS, trailing text after a task block, ``task_group:some``) means the
     # shape was not the supported one and must stay partial rather than
-    # leak raw mumei braces into the emitted Lean.
-    "task", "task_group",
+    # leak raw mumei braces into the emitted Lean. ``async``/``await``/
+    # ``cancel`` are likewise reserved concurrency tokens with no
+    # lowering — the same reasoning keeps their surfaces partial.
+    "task", "task_group", "async", "await", "cancel",
 }
 
 STATEMENT_BLOCK_REASON = "statement_block_requires_manual_lemma"
@@ -3635,12 +3637,19 @@ def translate_body(body_expr: str) -> TranslationResult:
         )
         if any(
             rule
-            in ("perform_statement_lowering", "let_statement_lowering")
+            in (
+                "perform_statement_lowering",
+                "let_statement_lowering",
+                "task_value_lowering",
+                "task_group_all_lowering",
+                "task_group_any_lowering",
+            )
             for rule in inner_rules
         ):
             # Braces around an already-lowered statement sequence are
             # transparent; re-deriving IR from the outer tokens would
-            # re-flag the consumed `;` / `perform` surface as unsupported.
+            # re-flag the consumed `;` / `perform` / `task` surface as
+            # unsupported.
             return inner
         return _attach_translator_ir(stripped, inner)
     statement_seq = _statement_sequence_tail(stripped)

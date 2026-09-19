@@ -298,6 +298,11 @@ Generated Lean is a deterministic intermediate verifier artifact.
 - Theorem name: `<atom>_correct` for each emitted proof-capable atom.
 - If `body_expr` is supported, the bridge emits a `def <atom>Result` plus an
   `h_body` equality so postconditions can be proved from body semantics.
+  The `def`'s parameter types come from the atom-level identifier merges
+  (array / string / predicate usages across requires, ensures, and body),
+  matching the theorem signature — a name that is `List Int` only via a
+  `requires` clause is still `List Int` in the def, or `h_body`'s call
+  would be ill-typed.
 - If only contracts are supported, the bridge emits the contract-only theorem
   shape (`requires -> ensures`).
 - Partial translations and atoms with `manual_lemma_reason` may appear in

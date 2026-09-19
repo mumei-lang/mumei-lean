@@ -1473,15 +1473,20 @@ def render_theorem(atom: IngestedAtom) -> str:
             "List Int" if is_any_group else (result_type_override or "Int")
         )
         mapped_def_params = _map_identifier_list(def_params, binder_mapping)
+        # The def's parameters span every clause (idents is the union of
+        # requires/ensures/body free names), so their types must come from
+        # the atom-level merges — an identifier array-typed only in
+        # ``requires`` would otherwise be declared ``Int`` here while the
+        # theorem binds it ``List Int``, making ``h_body`` ill-typed.
         mapped_predicate_arities = {
             binder_mapping.get(name, name): arity
-            for name, arity in body_tr.predicate_arities.items()
+            for name, arity in predicate_arities.items()
         }
         def_param_parts = _decl_parts_for_identifiers(
             mapped_def_params,
-            _map_identifier_list(body_tr.array_identifiers, binder_mapping),
-            _map_identifier_list(body_tr.string_identifiers, binder_mapping),
-            _map_identifier_list(body_tr.predicate_identifiers, binder_mapping),
+            _map_identifier_list(array_idents, binder_mapping),
+            _map_identifier_list(string_idents, binder_mapping),
+            _map_identifier_list(predicate_idents, binder_mapping),
             mapped_predicate_arities,
         )
         def_params_decl = f" {' '.join(def_param_parts)}" if def_param_parts else ""

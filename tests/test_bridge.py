@@ -1486,6 +1486,20 @@ def test_collect_atoms_shares_array_names_across_clauses():
     assert "(arr : List Int)" in text
 
 
+def test_render_theorem_def_params_use_atom_level_types():
+    """The ``def`` signature must type params from the atom-level merges:
+    ``arr`` indexed only in ``requires`` still needs ``(arr : List Int)``
+    in the def, or ``h_body``'s call is ill-typed."""
+    atom = _atom("xclause", z3="unknown")
+    atom["requires"] = "n >= 0 && forall(i, 0, n, arr[i] >= 0)"
+    atom["ensures"] = "result <= len(arr)"
+    atom["body_expr"] = "0"
+    [ingested] = collect_unknown_atoms(_cert("std/xclause.mm", [atom]))
+    text = ingest_cert.render_theorem(ingested)
+    assert "def xclauseResult (n : Int) (arr : List Int) : Int" in text
+    assert "h_body : result = xclauseResult n arr" in text
+
+
 def test_attribute_failures_keeps_per_atom_attribution_for_generated_files():
     """Same log shape, but the diagnostic belongs to a generated file: only
     that atom fails and the rest of the payload stays attributable."""

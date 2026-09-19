@@ -278,7 +278,14 @@ change to the contract constants must be synchronised across projects in the sam
   on each cert atom and ingest restores them as `forall(…)` requires
   conjuncts, so `sum_array` and `queue_total_is_nonnegative` also reach
   `lean_verified` via `--external-proofs` on real emitted certs (pinned
-  e2e). All three 群 3 atoms are demonstrated end-to-end.
+  e2e). All three 群 3 atoms are demonstrated end-to-end. The post
+  conjunct's `result` binder now takes the atom's declared return type
+  (`role: "result"` `translator_ir` binder: `[t]`/`array<t>` → `List t`),
+  so list-returning loop VCs — previously stuck `unknown` under the
+  hardcoded `Int` binder — elaborate and verify; pinned e2e by the
+  `svcomp_style_list_returning_loop` fixture (`copy_prefix`, `-> [i64]`,
+  `len(result) >= 0` ensures) reaching `lean_verified` via
+  `--external-proofs`.
   Reference
   regression gates:
 

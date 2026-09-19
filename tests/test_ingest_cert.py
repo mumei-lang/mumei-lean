@@ -374,6 +374,106 @@ def test_render_theorem_types_conditional_body_from_its_branches(body_expr, ensu
     assert "body semantics unsupported" not in rendered
 
 
+@pytest.mark.parametrize(
+    ("result_mumei_type", "result_lean_type", "expected_type"),
+    [
+        ("[i64]", "List Int", "List Int"),
+        ("array<i64>", "List Int", "List Int"),
+        # No declared ``lean_type``: the ``mumei_type`` maps through
+        # ``declared_lean_type`` — including non-``Int`` element types.
+        ("[i64]", None, "List Int"),
+        ("array<bool>", None, "List Bool"),
+        # An unmappable element type still resolves ``List Int`` through
+        # the declared-array-name partition, matching parameter typing.
+        ("[foo]", None, "List Int"),
+    ],
+)
+def test_render_theorem_loop_vc_result_uses_declared_list_type(
+    result_mumei_type, result_lean_type, expected_type
+):
+    # Spec §4.8: a while-loop atom whose declared return type is
+    # ``[i64]``/``array<i64>`` quantifies the post-conjunct ``result`` at
+    # ``List Int`` (the certificate's declared binder type is
+    # authoritative), so ``len(result)`` in ``ensures`` elaborates
+    # instead of staying ``unknown`` on an ill-typed ``Int`` binder.
+    raw = _make_atom(
+        "copy_prefix",
+        requires="n >= 0 && len(arr) >= n",
+        ensures="len(result) >= 0",
+        body_expr=(
+            "{ let out = arr; let i = 0; while i < n "
+            "invariant: i >= 0 && i <= n decreases: n - i "
+            "{ i = i + 1 }; out }"
+        ),
+    )
+    raw["translator_ir"] = {
+        "sort": "contract_obligation",
+        "theorem_goal": "",
+        "binders": [
+            {
+                "mumei_name": "arr",
+                "lean_name": "arr",
+                "mumei_type": "array<i64>",
+                "lean_type": "List Int",
+                "role": "param",
+            },
+            {
+                "mumei_name": "n",
+                "lean_name": "n",
+                "mumei_type": "i64",
+                "lean_type": "Int",
+                "role": "param",
+            },
+            {
+                key: value
+                for key, value in {
+                    "mumei_name": "result",
+                    "lean_name": "result",
+                    "mumei_type": result_mumei_type,
+                    "lean_type": result_lean_type,
+                    "role": "result",
+                }.items()
+                if value is not None
+            },
+        ],
+        "lowering_rules": ["contract_lowering", "type_system_mapping"],
+    }
+    [atom] = collect_unknown_atoms(_make_certificate("m.mm", [raw]))
+    rendered = render_theorem(atom)
+    assert f"∀ (result : {expected_type})" in rendered, rendered
+    assert "result = (arr)" in rendered
+    assert "result.length : Int" in rendered
+    # The scalar ``Int`` binder for ``result`` is gone entirely — the
+    # signature binds no ``result`` parameter either (loop-VC shape).
+    assert "(result : Int)" not in rendered
+    assert "h_body" not in rendered
+    assert "def " not in rendered
+
+
+def test_render_theorem_loop_vc_result_defaults_to_int():
+    # Without a declared ``role: "result"`` binder type the post conjunct
+    # keeps the scalar ``Int`` binder (the prior shape).
+    cert = _make_certificate(
+        "m.mm",
+        [
+            _make_atom(
+                "sum_loop",
+                requires="n >= 0",
+                ensures="result >= 0",
+                body_expr=(
+                    "{ let s = 0; let i = 0; while i < n "
+                    "invariant: i >= 0 && i <= n && s >= 0 "
+                    "decreases: n - i { s = s + i; i = i + 1 }; s }"
+                ),
+            )
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "∀ (result : Int)" in rendered, rendered
+    assert "result = (s)" in rendered
+
+
 def test_render_theorem_does_not_type_mismatched_conditional_body():
     cert = _make_certificate(
         "m.mm",

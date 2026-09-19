@@ -473,8 +473,15 @@ theorem <atom>_correct (<params>) :
       (I[init]) ∧
       (∀ <carried> : Int, (I ∧ c) → I[σ']) ∧
       (∀ <carried> : Int, (I ∧ c) → (0 ≤ D ∧ D[σ'] < D)) ∧   -- absent without decreases
-      (∀ <carried> : Int, (I ∧ ¬ c) → ∀ (result : Int), result = ⟦tail⟧ → ⟦ensures⟧)
+      (∀ <carried> : Int, (I ∧ ¬ c) → ∀ (result : T), result = ⟦tail⟧ → ⟦ensures⟧)
 ```
+
+where `T` is the atom's declared return type: the `role: "result"`
+binder's `lean_type` (or its `mumei_type` mapped via
+`declared_lean_type` — `[t]`/`array<t>` → `List t`, scalars via
+`_FORMAL_SPEC_TYPE_MAPPINGS`), then `List Int` when the declared-array
+name partition marks `result` (e.g. a `[…]` return whose element type
+does not map), and finally `Int`.
 
 This mirrors the mumei verifier's own loop checks (invariant at entry,
 preserved per iteration, measure descending, exit state discharges
@@ -494,11 +501,12 @@ the base substitution **and stays a theorem parameter** — the conjuncts still
 externally bound carried name would leave the base conjunct referencing an
 unbound identifier (ill-typed Lean). The theorem signature itself is built
 from the certificate's `translator_ir` binders minus `role: result` — see
-below for declared-type authority. Known limitation (safe direction): the
-post conjunct always ∀-binds `result` at `Int`, so a while loop whose
-declared return type is `[t]` emits `len(result)`/`result[i]` forms that
-fail to elaborate — such atoms stay `unknown` rather than verify a mistyped
-contract.
+below for declared-type authority. The post conjunct ∀-binds `result` at
+the declared return type, so a while loop returning `[t]` emits
+`len(result)`/`result[i]` forms that elaborate as `List` operations;
+when the certificate declares no result type the declared-array
+partition and finally the scalar `Int` default apply — a mistyped
+binder can only fail elaboration, never fabricate a proof.
 
 **`len(arr)` on arrays.** When an identifier appears both in `arr[i]` /
 `sum(arr, …)` position (i.e. it will be bound as `List Int`) and as the

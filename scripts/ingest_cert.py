@@ -496,6 +496,17 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
                     if unknown_obligation_domain == "smart_contract"
                     else "rtgs"
                 )
+            # Quantifier hypotheses: mumei extracts ``forall``/``exists``
+            # conjuncts out of ``requires`` into ``forall_constraints`` and
+            # renders the text ``true``, so restore them before translation
+            # — a loop step VC needs e.g. ``arr[i] >= 0`` elementwise.
+            forall_text = "".join(
+                f" && {q.get('q_type', 'forall')}({q.get('var')}, "
+                f"{q.get('start')}, {q.get('end')}, {q.get('condition')})"
+                for q in atom.get("forall_constraints") or []
+                if isinstance(q, dict)
+            )
+            requires = requires + forall_text
             # Array-ness is atom-level: a name indexed in one clause is
             # typed ``List Int`` everywhere, so ``len(x)`` in any clause
             # must emit ``((x.length : Int))``. Declared array types from

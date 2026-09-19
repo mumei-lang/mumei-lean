@@ -1,23 +1,23 @@
 {
-  "version": "1.1",
-  "timestamp": "2026-09-19T13:00:00Z",
+  "version": "1.0",
+  "timestamp": "2026-09-19T06:00:00Z",
   "mumei_version": "0.6.19",
   "z3_version": "4.8.12",
-  "file": "benchmarks/domain_compliance/regtech_exhaustiveness.mm",
+  "file": "benchmarks/domain_compliance/rtgs_balance_conservation.mm",
   "atoms": [
     {
-      "name": "all_transactions_within_limit",
+      "name": "queue_total_is_nonnegative",
       "z3_check_result": "unknown",
-      "content_hash": "a501d1a487f19e92d15f1dd5f51932bbcf0817ba11e691c4960831036337b819",
+      "content_hash": "38ba02b7de47ed8b7a3650eeecd7fd1dd8a102cca955b257679a68d6935ba0f5",
       "status": "unknown",
       "spec_validation_result": {
         "status": "satisfiable",
         "is_satisfiable": true,
         "trace_id": null,
         "spec_metadata": {
-          "source_file": "benchmarks/domain_compliance/regtech_exhaustiveness.mm"
+          "source_file": "benchmarks/domain_compliance/rtgs_balance_conservation.mm"
         },
-        "traceability_hash": "938c43c89e6bd32d7a28e0876b9245d30b99bbab7320a95de5a8933fcb772006",
+        "traceability_hash": "eea673c4a9ea32e16bb8fc041f8060970cd140e0f9a5ea465ae8845318457ed4",
         "traceability_coverage": 0.75,
         "checked_requires": true,
         "checked_ensures": 1,
@@ -25,12 +25,12 @@
         "ensures_implication_checks": 0,
         "diagnostics": []
       },
-      "proof_hash": "77a9fc266111ce0cb14d29e68052d14c1bb61d27a9893a9503d234ce17984a11",
+      "proof_hash": "884475c36e580886dae845a7fc4fc82e8139a25ef3e2d44c984643c4b89517a5",
       "dependencies": [
         "len"
       ],
       "effects": [],
-      "requires": "n >= 0 && len(amounts) >= n && limit > 0 && true",
+      "requires": "n >= 0 && len(balances) >= n && true",
       "ensures": "result >= 0",
       "forall_constraints": [
         {
@@ -38,11 +38,11 @@
           "var": "i",
           "start": "0",
           "end": "n",
-          "condition": "amounts[i] >= 0 && amounts[i] <= limit"
+          "condition": "balances[i] >= 0"
         }
       ],
-      "body_expr": "{ let count = 0; let i = 0; while i < n invariant: i >= 0 && i <= n && count >= 0 decreases: n - i { count = count + 1; i = i + 1; }; count }",
-      "body_summary": "{ let count = 0; let i = 0; while i < n invariant: i >= 0 && i <= n && count >= 0 decreases: n - i { count = count + 1; i = i + 1; }; count }",
+      "body_expr": "{ let total = 0; let i = 0; while i < n invariant: i >= 0 && i <= n && total >= 0 decreases: n - i { total = total + balances[i]; i = i + 1; }; total }",
+      "body_summary": "{ let total = 0; let i = 0; while i < n invariant: i >= 0 && i <= n && total >= 0 decreases: n - i { total = total + balances[i]; i = i + 1; }; total }",
       "z3_result_class": "unknown",
       "logic_fragment_tag": "quantifier_alternation",
       "logic_fragment_tags": [
@@ -51,8 +51,7 @@
       ],
       "translator_version": "mumei-lean-translator-ir-v2",
       "binder_mapping": {
-        "amounts": "amounts",
-        "limit": "limit",
+        "balances": "balances",
         "n": "n",
         "result": "result"
       },
@@ -61,8 +60,8 @@
         "sort": "loop_invariant",
         "binders": [
           {
-            "mumei_name": "amounts",
-            "lean_name": "amounts",
+            "mumei_name": "balances",
+            "lean_name": "balances",
             "mumei_type": "[i64]",
             "lean_type": "List Int",
             "role": "param"
@@ -75,13 +74,6 @@
             "role": "param"
           },
           {
-            "mumei_name": "limit",
-            "lean_name": "limit",
-            "mumei_type": "i64",
-            "lean_type": "Int",
-            "role": "param"
-          },
-          {
             "mumei_name": "result",
             "lean_name": "result",
             "mumei_type": "i64",
@@ -89,10 +81,10 @@
             "role": "result"
           }
         ],
-        "theorem_goal": "(n >= 0 && len(amounts) >= n && limit > 0 && true) -> (result >= 0)",
+        "theorem_goal": "(n >= 0 && len(balances) >= n && true) -> (result >= 0)",
         "provenance_span": {
-          "file": "benchmarks/domain_compliance/regtech_exhaustiveness.mm",
-          "line": 42,
+          "file": "benchmarks/domain_compliance/rtgs_balance_conservation.mm",
+          "line": 49,
           "col": 1,
           "len": 4
         },
@@ -122,6 +114,6 @@
       "solver_process_metadata": null
     }
   ],
-  "certificate_hash": "76aaf657c4187e291f62c1aeb48241ffe4e08aaaee91c98c3b71439a765e3090",
+  "certificate_hash": "0db88794a27b40d7124b76b552f53427a3f4a036d33acc1588ea1582f9f6bedd",
   "all_verified": false
 }

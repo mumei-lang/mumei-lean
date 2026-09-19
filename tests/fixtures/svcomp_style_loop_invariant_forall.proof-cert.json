@@ -1,23 +1,23 @@
 {
-  "version": "1.1",
-  "timestamp": "2026-09-19T13:00:00Z",
+  "version": "1.0",
+  "timestamp": "2026-09-19T06:00:00Z",
   "mumei_version": "0.6.19",
   "z3_version": "4.8.12",
-  "file": "benchmarks/domain_compliance/regtech_exhaustiveness.mm",
+  "file": "benchmarks/svcomp_style/loop_invariant.mm",
   "atoms": [
     {
-      "name": "all_transactions_within_limit",
+      "name": "sum_array",
       "z3_check_result": "unknown",
-      "content_hash": "a501d1a487f19e92d15f1dd5f51932bbcf0817ba11e691c4960831036337b819",
+      "content_hash": "f331dfec07e36550a53c6aeaac639efe9abee07eb04d110770983f425ca06b5d",
       "status": "unknown",
       "spec_validation_result": {
         "status": "satisfiable",
         "is_satisfiable": true,
         "trace_id": null,
         "spec_metadata": {
-          "source_file": "benchmarks/domain_compliance/regtech_exhaustiveness.mm"
+          "source_file": "benchmarks/svcomp_style/loop_invariant.mm"
         },
-        "traceability_hash": "938c43c89e6bd32d7a28e0876b9245d30b99bbab7320a95de5a8933fcb772006",
+        "traceability_hash": "07b83b54430c43251922c4976bd3e1d7c9dce66f8d7f059d25960ecc874a35db",
         "traceability_coverage": 0.75,
         "checked_requires": true,
         "checked_ensures": 1,
@@ -25,12 +25,12 @@
         "ensures_implication_checks": 0,
         "diagnostics": []
       },
-      "proof_hash": "77a9fc266111ce0cb14d29e68052d14c1bb61d27a9893a9503d234ce17984a11",
+      "proof_hash": "2f1bc8cefba10cfb7957b05f2acb81bbe16171650329e27bbae57df8974b4d8b",
       "dependencies": [
         "len"
       ],
       "effects": [],
-      "requires": "n >= 0 && len(amounts) >= n && limit > 0 && true",
+      "requires": "n >= 0 && len(arr) >= n && true",
       "ensures": "result >= 0",
       "forall_constraints": [
         {
@@ -38,11 +38,11 @@
           "var": "i",
           "start": "0",
           "end": "n",
-          "condition": "amounts[i] >= 0 && amounts[i] <= limit"
+          "condition": "arr[i] >= 0"
         }
       ],
-      "body_expr": "{ let count = 0; let i = 0; while i < n invariant: i >= 0 && i <= n && count >= 0 decreases: n - i { count = count + 1; i = i + 1; }; count }",
-      "body_summary": "{ let count = 0; let i = 0; while i < n invariant: i >= 0 && i <= n && count >= 0 decreases: n - i { count = count + 1; i = i + 1; }; count }",
+      "body_expr": "{ let sum = 0; let i = 0; while i < n invariant: i >= 0 && i <= n && sum >= 0 decreases: n - i { sum = sum + arr[i]; i = i + 1; }; sum }",
+      "body_summary": "{ let sum = 0; let i = 0; while i < n invariant: i >= 0 && i <= n && sum >= 0 decreases: n - i { sum = sum + arr[i]; i = i + 1; }; sum }",
       "z3_result_class": "unknown",
       "logic_fragment_tag": "quantifier_alternation",
       "logic_fragment_tags": [
@@ -51,8 +51,7 @@
       ],
       "translator_version": "mumei-lean-translator-ir-v2",
       "binder_mapping": {
-        "amounts": "amounts",
-        "limit": "limit",
+        "arr": "arr",
         "n": "n",
         "result": "result"
       },
@@ -61,8 +60,8 @@
         "sort": "loop_invariant",
         "binders": [
           {
-            "mumei_name": "amounts",
-            "lean_name": "amounts",
+            "mumei_name": "arr",
+            "lean_name": "arr",
             "mumei_type": "[i64]",
             "lean_type": "List Int",
             "role": "param"
@@ -75,13 +74,6 @@
             "role": "param"
           },
           {
-            "mumei_name": "limit",
-            "lean_name": "limit",
-            "mumei_type": "i64",
-            "lean_type": "Int",
-            "role": "param"
-          },
-          {
             "mumei_name": "result",
             "lean_name": "result",
             "mumei_type": "i64",
@@ -89,10 +81,10 @@
             "role": "result"
           }
         ],
-        "theorem_goal": "(n >= 0 && len(amounts) >= n && limit > 0 && true) -> (result >= 0)",
+        "theorem_goal": "(n >= 0 && len(arr) >= n && true) -> (result >= 0)",
         "provenance_span": {
-          "file": "benchmarks/domain_compliance/regtech_exhaustiveness.mm",
-          "line": 42,
+          "file": "benchmarks/svcomp_style/loop_invariant.mm",
+          "line": 2,
           "col": 1,
           "len": 4
         },
@@ -122,6 +114,6 @@
       "solver_process_metadata": null
     }
   ],
-  "certificate_hash": "76aaf657c4187e291f62c1aeb48241ffe4e08aaaee91c98c3b71439a765e3090",
+  "certificate_hash": "c6ea3ec352bbb16f1d826700a39d81c27d94729494f02891d378de7034bd2b88",
   "all_verified": false
 }

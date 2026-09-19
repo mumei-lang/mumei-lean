@@ -1554,6 +1554,24 @@ def test_declared_array_names_skips_quantifier_binders():
     assert "(q : List Int)" not in text.split(":=")[0]
 
 
+def test_forall_constraints_restored_into_requires():
+    """``forall_constraints`` carries the quantified conjuncts that
+    ``requires`` renders as ``true``; they must be restored into the
+    requires text before translation or a loop step VC lacks its
+    elementwise hypothesis (real cert shape: ``sum_array``)."""
+    payload = json.loads(
+        (
+            Path(__file__).resolve().parent
+            / "fixtures"
+            / "svcomp_style_loop_invariant_forall.proof-cert.json"
+        ).read_text()
+    )
+    [ingested] = collect_unknown_atoms(payload)
+    text = ingest_cert.render_theorem(ingested)
+    assert "∀ i : Int, 0 ≤ i → i < n → arr.get! i.toNat ≥ 0" in text
+    assert "(arr : List Int)" in text
+
+
 def test_attribute_failures_keeps_per_atom_attribution_for_generated_files():
     """Same log shape, but the diagnostic belongs to a generated file: only
     that atom fails and the rest of the payload stays attributable."""

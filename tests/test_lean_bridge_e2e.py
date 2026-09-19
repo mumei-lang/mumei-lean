@@ -1597,6 +1597,117 @@ def test_loop_vc_declared_array_types_provable_via_external_proof(
         _cleanup_generated_file(GENERATED_REGTECH_LOOP)
 
 
+GENERATED_LOOP_FORALL = (
+    REPO_ROOT
+    / "generated"
+    / "Generated"
+    / "Benchmarks"
+    / "Svcomp_style"
+    / "Loop_invariant.lean"
+)
+
+GENERATED_RTGS_LOOP = (
+    REPO_ROOT
+    / "generated"
+    / "Generated"
+    / "Benchmarks"
+    / "Domain_compliance"
+    / "Rtgs_balance_conservation.lean"
+)
+
+# Real-cert shape: ``requires`` renders the ``forall`` conjunct as ``true``
+# and ``forall_constraints`` carries it structurally; ingest restores it as
+# ``∀ i, 0 ≤ i → i < n → arr[i] ≥ 0``, which the step conjunct needs.
+SUM_ARRAY_FORALL_PROOF_SCRIPT = """intro h
+obtain ⟨hn, -, -, hall⟩ := h
+refine ⟨?_, ?_, ?_, ?_⟩
+· refine ⟨by omega, by omega, by omega⟩
+· intro sum i hi
+  obtain ⟨h1, h2, h3, h4⟩ := hi
+  have harr := hall i h1 h4
+  refine ⟨by omega, by omega, by omega⟩
+· intro sum i hi
+  obtain ⟨h1, -, -, h4⟩ := hi
+  omega
+· intro sum i hi result hr
+  obtain ⟨-, -, h3, -⟩ := hi
+  omega"""
+
+RTGS_LOOP_PROOF_SCRIPT = """intro h
+obtain ⟨hn, -, -, hall⟩ := h
+refine ⟨?_, ?_, ?_, ?_⟩
+· refine ⟨by omega, by omega, by omega⟩
+· intro total i hi
+  obtain ⟨h1, h2, h3, h4⟩ := hi
+  have hb := hall i h1 h4
+  refine ⟨by omega, by omega, by omega⟩
+· intro total i hi
+  obtain ⟨h1, -, -, h4⟩ := hi
+  omega
+· intro total i hi result hr
+  obtain ⟨-, -, h3, -⟩ := hi
+  omega"""
+
+
+@pytest.mark.lake_available
+@pytest.mark.parametrize(
+    "fixture,generated,atom,script",
+    [
+        (
+            "svcomp_style_loop_invariant_forall.proof-cert.json",
+            GENERATED_LOOP_FORALL,
+            "sum_array",
+            SUM_ARRAY_FORALL_PROOF_SCRIPT,
+        ),
+        (
+            "domain_compliance_rtgs_loop_forall.proof-cert.json",
+            GENERATED_RTGS_LOOP,
+            "queue_total_is_nonnegative",
+            RTGS_LOOP_PROOF_SCRIPT,
+        ),
+    ],
+    ids=["sum_array", "queue_total_is_nonnegative"],
+)
+def test_loop_vc_forall_constraints_provable_via_external_proof(
+    lake_available, tmp_path: Path, fixture, generated, atom, script
+):
+    """Real-cert loop VCs with elementwise ``forall`` hypotheses restored
+    from ``forall_constraints`` verify via the B-4 external-proof route
+    (群 3: ``sum_array`` and ``queue_total_is_nonnegative``)."""
+    proofs = tmp_path / "proofs.json"
+    proofs.write_text(
+        json.dumps(
+            {"proofs": [{"atom": atom, "attempts": 1, "tactic_script": script}]}
+        )
+    )
+    out_cert = tmp_path / "loop.lean-cert.json"
+    out_dir = tmp_path / "generated"
+    _cleanup_generated_file(generated)
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / fixture),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+            "--no-tactic-search",
+            "--external-proofs",
+            str(proofs),
+        )
+        _assert_bridge_ok(proc)
+        generated_src = generated.read_text()
+        assert "∀ i : Int, 0 ≤ i" in generated_src
+        payload = json.loads(out_cert.read_text())
+        found = next(a for a in payload["atoms"] if a["name"] == atom)
+        assert found["z3_check_result"] == "lean_verified"
+        meta = found["lean_metadata"]
+        assert meta["ai_proof_used"] is True
+        assert meta["known_witness_used"] is False
+    finally:
+        _cleanup_generated_file(generated)
+
+
 GENERATED_QUINTIC = REPO_ROOT / "generated" / "Generated" / "Std" / "Quintic.lean"
 QUINTIC_GOOD_SCRIPT = (
     "intro hx\nsubst h_body\nunfold quinticPosResult\n"

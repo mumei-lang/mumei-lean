@@ -273,9 +273,12 @@ change to the contract constants must be synchronised across projects in the sam
   Real-cert demonstrator: `all_transactions_within_limit` reaches
   `lean_verified` via `--external-proofs` (pinned e2e), while `sum_array`
   and `queue_total_is_nonnegative` emit their VCs but stay unprovable —
-  the emitted certificate renders spec-level `forall` conjuncts as `true`,
-  dropping the elementwise hypotheses their step conjuncts need; surfacing
-  `forall_constraints` in the proof cert is the next mumei-side gap.
+  the emitted certificate rendered spec-level `forall` conjuncts as
+  `true`; the gap is now closed — mumei serializes `forall_constraints`
+  on each cert atom and ingest restores them as `forall(…)` requires
+  conjuncts, so `sum_array` and `queue_total_is_nonnegative` also reach
+  `lean_verified` via `--external-proofs` on real emitted certs (pinned
+  e2e). All three 群 3 atoms are demonstrated end-to-end.
   Reference
   regression gates:
 

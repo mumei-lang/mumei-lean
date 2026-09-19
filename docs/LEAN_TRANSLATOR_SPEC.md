@@ -407,6 +407,17 @@ like `let x = task { 5 }; x`) cannot leak raw mumei braces into the
 emitted Lean — the residual token flags `statement_block_requires_manual_lemma`
 and the body stays partial.
 
+The same treatment covers every other reserved concurrency/ownership
+token with no lowering — `async`, `await`, `cancel`, `send`, `recv`,
+`chan`, `acquire`, `consume`, `exclusive`, `shared`, `ref`, `as`,
+`invariant`, `decreases` — plus the channel send/recv arrow: `ch <- v`
+and `<- ch` tokenise as separate `<` / `-` ops and would otherwise be
+reinterpreted as the comparison `ch < -v`, so a raw-source guard flags
+`channel_arrow_requires_manual_lemma` (the `->` arrow is guarded the
+same way). Extra enclosing braces around an already-lowered
+`task`/`task_group` body are transparent, matching the `perform`/`let`
+statement-sequence rule.
+
 `obligation_class` is producer-declared metadata: mumei-emitted
 certificates do not carry it (the field exists only in `translator_ir`
 payloads written by tooling that knows the class), so `obligation_class_of`

@@ -1707,6 +1707,24 @@ def test_translate_body_lowers_task_and_task_group_all():
         "{ await t }",
         "{ async { a } }",
         "{ cancel t }",
+        # Channel / resource / ownership surfaces are statements with no
+        # lowering — `acquire r {…}` is real body syntax.
+        "{ send ch v }",
+        "{ recv ch }",
+        "{ acquire r { x } }",
+        "{ consume r }",
+        "{ chan c }",
+        "{ exclusive x }",
+        "{ shared x }",
+        "{ ref x }",
+        "{ x as Int }",
+        "{ invariant x > 0 }",
+        # `ch <- v` / `<- ch` tokenise as `<` `-`; without the raw-source
+        # guard they would be silently reinterpreted as `ch < -v`.
+        "{ ch <- v }",
+        "{ <- ch }",
+        "{ x->f }",
+        "{ task { ch <- v } }",
     ],
 )
 def test_translate_body_keeps_task_group_edge_cases_partial(source):

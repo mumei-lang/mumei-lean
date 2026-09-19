@@ -860,7 +860,20 @@ _STATEMENT_KEYWORDS: Set[str] = {
     # ``cancel`` are likewise reserved concurrency tokens with no
     # lowering — the same reasoning keeps their surfaces partial.
     "task", "task_group", "async", "await", "cancel",
+    # Channel / resource / ownership keywords. ``acquire r {…}`` is real
+    # body syntax; ``send``/``recv``/``chan`` and the qualifier or
+    # clause keywords below have no lowering either, so a residual
+    # surface stays partial instead of leaking raw juxtaposition.
+    "send", "recv", "chan", "acquire", "consume", "exclusive",
+    "shared", "ref", "as", "invariant", "decreases",
 }
+
+# Channel send/recv and the ``->`` arrow tokenise as separate ``<``/``-``
+# (or ``-``/``>``) ops at the translator level — ``{ ch <- v }`` would
+# otherwise be silently reinterpreted as the comparison ``ch < -v``.
+# Adjacency is only visible in the raw source (``x < -1`` tokenises
+# identically but is spelled ``< -``), so this is a string-level check.
+_CHANNEL_ARROW_RE = re.compile(r"<-|->")
 
 STATEMENT_BLOCK_REASON = "statement_block_requires_manual_lemma"
 CONDITIONAL_BRANCH_TYPE_REASON = "conditional_branch_type_mismatch"
@@ -3628,6 +3641,18 @@ def translate_body(body_expr: str) -> TranslationResult:
             array_identifiers=[],
             string_identifiers=[],
         )
+    if _CHANNEL_ARROW_RE.search(stripped):
+        result = _make_translation_result(
+            stripped,
+            lean_expr="",
+            identifiers=[],
+            is_trivial=False,
+            is_partial=True,
+            array_identifiers=[],
+            string_identifiers=[],
+        )
+        _mark_partial(result, ["channel_arrow_requires_manual_lemma"])
+        return result
     unbraced = _unwrap_block_body(stripped)
     if unbraced is not None:
         # An empty block has no value; translate_body("") marks it partial.

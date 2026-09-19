@@ -1,0 +1,118 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-19T05:00:00Z",
+  "mumei_version": "0.6.19",
+  "z3_version": "4.8.12",
+  "file": "benchmarks/domain_compliance/regtech_exhaustiveness.mm",
+  "atoms": [
+    {
+      "name": "all_transactions_within_limit",
+      "z3_check_result": "unknown",
+      "content_hash": "a501d1a487f19e92d15f1dd5f51932bbcf0817ba11e691c4960831036337b819",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "benchmarks/domain_compliance/regtech_exhaustiveness.mm"
+        },
+        "traceability_hash": "938c43c89e6bd32d7a28e0876b9245d30b99bbab7320a95de5a8933fcb772006",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 1,
+        "checked_refinements": 0,
+        "ensures_implication_checks": 0,
+        "diagnostics": []
+      },
+      "proof_hash": "77a9fc266111ce0cb14d29e68052d14c1bb61d27a9893a9503d234ce17984a11",
+      "dependencies": [
+        "len"
+      ],
+      "effects": [],
+      "requires": "n >= 0 && len(amounts) >= n && limit > 0 && true",
+      "ensures": "result >= 0",
+      "body_expr": "{ let count = 0; let i = 0; while i < n invariant: i >= 0 && i <= n && count >= 0 decreases: n - i { count = count + 1; i = i + 1; }; count }",
+      "body_summary": "{ let count = 0; let i = 0; while i < n invariant: i >= 0 && i <= n && count >= 0 decreases: n - i { count = count + 1; i = i + 1; }; count }",
+      "z3_result_class": "unknown",
+      "logic_fragment_tag": "quantifier_alternation",
+      "logic_fragment_tags": [
+        "recursive_invariant",
+        "trigger_sensitive_quantifier"
+      ],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "amounts": "amounts",
+        "limit": "limit",
+        "n": "n",
+        "result": "result"
+      },
+      "bridge_lemma_hash": "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9",
+      "translator_ir": {
+        "sort": "loop_invariant",
+        "binders": [
+          {
+            "mumei_name": "amounts",
+            "lean_name": "amounts",
+            "mumei_type": "[i64]",
+            "lean_type": "List Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "n",
+            "lean_name": "n",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "limit",
+            "lean_name": "limit",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(n >= 0 && len(amounts) >= n && limit > 0 && true) -> (result >= 0)",
+        "provenance_span": {
+          "file": "benchmarks/domain_compliance/regtech_exhaustiveness.mm",
+          "line": 42,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "loop_invariant_recursion",
+          "refinement_predicate_lowering",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [
+          "refinement_predicate_lowering: Quantifiers and refinement predicates are lowered to Lean dependent types."
+        ],
+        "proof_trace_hints": [
+          "carry subtype predicate witnesses through quantifier lowering"
+        ],
+        "requires_bridge_lemmas": [
+          "mumei_subtype_predicate_bridge"
+        ]
+      },
+      "symbol_provenance": [
+        {
+          "symbol_name": "len",
+          "source": "uninterpreted_function",
+          "location": null
+        }
+      ],
+      "solver_process_metadata": null
+    }
+  ],
+  "certificate_hash": "186b6024c5d369afde3fc959bdf4f76625754a0bff655a11578dbcba9015b1c6",
+  "all_verified": false
+}

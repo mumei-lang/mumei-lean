@@ -498,10 +498,13 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
                 )
             # Array-ness is atom-level: a name indexed in one clause is
             # typed ``List Int`` everywhere, so ``len(x)`` in any clause
-            # must emit ``((x.length : Int))``.
+            # must emit ``((x.length : Int))``. Declared array types from
+            # the certificate's ``translator_ir`` binders are authoritative
+            # on top of the usage scan — a list parameter that is never
+            # indexed still needs ``len(x)`` lowered to ``.length``.
             shared_array_names = atom_array_names(
                 requires, ensures, str(body_expr)
-            )
+            ) | _declared_array_names(atom.get("translator_ir") or {})
             requires_translation = _translate_expr(
                 requires, shared_array_names
             )
@@ -1114,9 +1117,43 @@ def _map_identifier_list(
     return mapped
 
 
+def _declared_array_names(translator_ir: dict) -> set[str]:
+    """Parameter names the certificate's ``translator_ir`` declares as
+    array-typed (``[t]`` / ``array<t>`` / ``List Int``). Declared types are
+    authoritative over the usage scan: a parameter indexed nowhere (e.g. a
+    list only referenced by ``len(x)``) is still ``List Int`` in the source
+    contract, so ``len(x)`` must emit ``((x.length : Int))`` and the binder
+    must carry ``List Int`` — otherwise the theorem signature disagrees
+    with the declared contract shape."""
+    names: set[str] = set()
+    binders = (
+        translator_ir.get("binders", [])
+        if isinstance(translator_ir, dict)
+        else []
+    )
+    if not isinstance(binders, list):
+        return names
+    for binder in binders:
+        if not isinstance(binder, dict):
+            continue
+        name = str(binder.get("mumei_name") or "")
+        mumei_type = str(binder.get("mumei_type") or "")
+        lean_type = str(binder.get("lean_type") or "")
+        if not name:
+            continue
+        if (
+            lean_type == "List Int"
+            or (mumei_type.startswith("[") and mumei_type.endswith("]"))
+            or mumei_type.startswith("array<")
+        ):
+            names.add(name)
+    return names
+
+
 def _decl_parts_from_translator_ir(
     translator_ir: dict,
     binder_mapping: Optional[dict[str, str]] = None,
+    skip_roles: Optional[set[str]] = None,
 ) -> List[str]:
     raw_binders = (
         translator_ir.get("binders", [])
@@ -1132,7 +1169,9 @@ def _decl_parts_from_translator_ir(
         if not isinstance(raw, dict):
             continue
         role = str(raw.get("role") or "free")
-        if role in {"quantifier", "refinement_witness"}:
+        if role in {"quantifier", "refinement_witness"} or (
+            skip_roles and role in skip_roles
+        ):
             continue
         mumei_name = str(raw.get("mumei_name") or "")
         lean_name = str(
@@ -1342,6 +1381,12 @@ def render_theorem(atom: IngestedAtom) -> str:
         for ident in tr.array_identifiers:
             if ident not in array_idents:
                 array_idents.append(ident)
+    # Declared array types are authoritative over the usage scan: a
+    # parameter that is never indexed still carries ``List Int`` when the
+    # certificate's ``translator_ir`` declares it ``[t]``/``array<t>``.
+    for declared in _declared_array_names(atom.translator_ir):
+        if declared not in array_idents:
+            array_idents.append(declared)
     string_idents: List[str] = []
     for tr in (req, ens, body_tr):
         if tr is None:
@@ -1426,8 +1471,14 @@ def render_theorem(atom: IngestedAtom) -> str:
 
     decl_parts = (
         []
-        if result_type_override is not None or is_loop_vc
-        else _decl_parts_from_translator_ir(atom.translator_ir, binder_mapping)
+        if result_type_override is not None
+        else _decl_parts_from_translator_ir(
+            atom.translator_ir,
+            binder_mapping,
+            # A loop-VC theorem quantifies ``result`` inside the post
+            # conjunct instead of binding it in the signature.
+            skip_roles={"result"} if is_loop_vc else None,
+        )
     )
     if not decl_parts:
         decl_parts = []

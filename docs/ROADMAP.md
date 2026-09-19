@@ -264,9 +264,18 @@ change to the contract constants must be synchronised across projects in the sam
   `manual_lemma_required` under `mumei_arith_deep` and verifies via a
   supplied tactic script). Enabler: `len(arr)` on a `List Int`-typed
   identifier now lowers to `((arr.length : Int))` — `mumei_len` takes `Int`
-  and previously forced such contracts partial. `bridge_lemma_hash`
+  and previously forced such contracts partial; declared `translator_ir`
+  types are authoritative over the usage scan, so a `[i64]` parameter that
+  is never indexed still binds `List Int` (real-cert finding:
+  `all_transactions_within_limit`'s `amounts`). `bridge_lemma_hash`
   unchanged (`5716cfdd…` — no catalog change); live path count stays 20
   since loop-VC theorems are not `lean_verified` until a proof arrives.
+  Real-cert demonstrator: `all_transactions_within_limit` reaches
+  `lean_verified` via `--external-proofs` (pinned e2e), while `sum_array`
+  and `queue_total_is_nonnegative` emit their VCs but stay unprovable —
+  the emitted certificate renders spec-level `forall` conjuncts as `true`,
+  dropping the elementwise hypotheses their step conjuncts need; surfacing
+  `forall_constraints` in the proof cert is the next mumei-side gap.
   Reference
   regression gates:
 

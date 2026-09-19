@@ -1500,6 +1500,35 @@ def test_render_theorem_def_params_use_atom_level_types():
     assert "h_body : result = xclauseResult n arr" in text
 
 
+def test_render_theorem_loop_vc_uses_declared_array_types():
+    """A parameter declared ``[i64]`` in the certificate's
+    ``translator_ir`` keeps ``List Int`` even when nothing indexes it —
+    the usage scan alone would mistype it ``Int`` and emit ``mumei_len``
+    on the wrong side of the binder contract (real benchmark shape:
+    ``all_transactions_within_limit`` only calls ``len(amounts)``)."""
+    payload = json.loads(
+        (
+            Path(__file__).resolve().parent
+            / "fixtures"
+            / "domain_compliance_regtech_loop.proof-cert.json"
+        ).read_text()
+    )
+    [ingested] = collect_unknown_atoms(payload)
+    text = ingest_cert.render_theorem(ingested)
+    assert "theorem all_transactions_within_limit_correct " in text
+    assert "(amounts : List Int)" in text
+    assert "mumei_len" not in text
+    assert "((amounts.length : Int))" in text
+    # ``result`` is quantified inside the post conjunct, not a parameter.
+    signature_line = next(
+        line
+        for line in text.splitlines()
+        if "theorem all_transactions_within_limit_correct" in line
+    )
+    assert "(result : Int)" not in signature_line
+    assert "∀ (result : Int)" in text
+
+
 def test_attribute_failures_keeps_per_atom_attribution_for_generated_files():
     """Same log shape, but the diagnostic belongs to a generated file: only
     that atom fails and the rest of the payload stays attributable."""

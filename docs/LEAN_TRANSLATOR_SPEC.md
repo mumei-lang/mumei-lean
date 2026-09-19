@@ -506,6 +506,15 @@ atom (`atom_array_names(requires, ensures, body)`): a name indexed in any
 clause is `List Int` in the theorem signature, so `len` on it lowers to
 `.length` in *every* clause — `result <= len(arr)` in `ensures` would
 otherwise emit ill-typed `mumei_len arr` against the `List Int` binder.
+Declared types are authoritative over the usage scan: when the
+certificate's `translator_ir` binders mark a parameter `[t]`/`array<t>`/
+`List Int`, ingest unions that name into `atom_array_names` and the theorem
+signature, so a list parameter that is never indexed (e.g. only referenced
+via `len(x)`) still binds `List Int` and `len(x)` still lowers to
+`.length`. For loop-VC theorems the signature likewise comes from the
+certificate's `translator_ir` binders (with `role: result` excluded —
+`result` is quantified inside the post conjunct), falling back to the
+usage-scan partition when the certificate carries no binder table.
 
 ## 5. Semantic Gap Bridge Rules
 

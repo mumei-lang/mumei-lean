@@ -1698,13 +1698,14 @@ def render_theorem(atom: IngestedAtom) -> str:
         # return type (``role: "result"`` binder in ``translator_ir``):
         # a ``[t]``/``array<t>`` return needs ``List …`` here so
         # ``len(result)`` / ``result[i]`` ensures forms elaborate. The
-        # usage-scan partitions (``result`` indexed / passed to string
-        # predicates) cover certificates without a declared result type;
-        # otherwise the scalar ``Int`` default stays (spec §4.8).
+        # ``array_idents`` partition (which also covers declared array
+        # names whose element type does not map) is the only other
+        # reachable source — ``result`` is reserved, so the usage scan
+        # never marks it — and the scalar ``Int`` default stays last
+        # (spec §4.8).
         result_lean_type = (
             _declared_result_lean_type(atom.translator_ir)
             or ("List Int" if "result" in array_idents else None)
-            or ("String" if "result" in string_idents else None)
             or "Int"
         )
         conjuncts.append(

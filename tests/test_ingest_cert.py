@@ -374,8 +374,23 @@ def test_render_theorem_types_conditional_body_from_its_branches(body_expr, ensu
     assert "body semantics unsupported" not in rendered
 
 
-@pytest.mark.parametrize("result_mumei_type", ["[i64]", "array<i64>"])
-def test_render_theorem_loop_vc_result_uses_declared_list_type(result_mumei_type):
+@pytest.mark.parametrize(
+    ("result_mumei_type", "result_lean_type", "expected_type"),
+    [
+        ("[i64]", "List Int", "List Int"),
+        ("array<i64>", "List Int", "List Int"),
+        # No declared ``lean_type``: the ``mumei_type`` maps through
+        # ``declared_lean_type`` — including non-``Int`` element types.
+        ("[i64]", None, "List Int"),
+        ("array<bool>", None, "List Bool"),
+        # An unmappable element type still resolves ``List Int`` through
+        # the declared-array-name partition, matching parameter typing.
+        ("[foo]", None, "List Int"),
+    ],
+)
+def test_render_theorem_loop_vc_result_uses_declared_list_type(
+    result_mumei_type, result_lean_type, expected_type
+):
     # Spec §4.8: a while-loop atom whose declared return type is
     # ``[i64]``/``array<i64>`` quantifies the post-conjunct ``result`` at
     # ``List Int`` (the certificate's declared binder type is
@@ -410,18 +425,22 @@ def test_render_theorem_loop_vc_result_uses_declared_list_type(result_mumei_type
                 "role": "param",
             },
             {
-                "mumei_name": "result",
-                "lean_name": "result",
-                "mumei_type": result_mumei_type,
-                "lean_type": "List Int",
-                "role": "result",
+                key: value
+                for key, value in {
+                    "mumei_name": "result",
+                    "lean_name": "result",
+                    "mumei_type": result_mumei_type,
+                    "lean_type": result_lean_type,
+                    "role": "result",
+                }.items()
+                if value is not None
             },
         ],
         "lowering_rules": ["contract_lowering", "type_system_mapping"],
     }
     [atom] = collect_unknown_atoms(_make_certificate("m.mm", [raw]))
     rendered = render_theorem(atom)
-    assert "∀ (result : List Int)" in rendered, rendered
+    assert f"∀ (result : {expected_type})" in rendered, rendered
     assert "result = (arr)" in rendered
     assert "result.length : Int" in rendered
     # The scalar ``Int`` binder for ``result`` is gone entirely — the

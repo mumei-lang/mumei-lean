@@ -70,7 +70,7 @@ Spec: [`docs/LEAN_TRANSLATOR_SPEC.md`](LEAN_TRANSLATOR_SPEC.md) §5.6 (tactics),
 - ✅ `finite_field_commutativity_lowering` lowers `ff_eq` goals whose operands are swapped `ff_add` / `ff_mul` calls, and `scripts/ingest_cert.py` discharges them with `MumeiLean.Algebra.ff_add_comm_eq` / `ff_mul_comm_eq` instead of a `manual_lemma_reason`. Brace-wrapped finite-field bodies (`{ ff_mul(a, b, p) }`) now lower to the same term as the bare call.
 - ✅ `MumeiLean/Algebra.lean` gains `ff_add_comm_eq`, `ff_mul_comm_eq`, `ff_add_assoc_mod`, `ff_mul_assoc_mod`, `ff_pow_zero`, `ff_inv_zero`, `group_pow_zero`, `group_pow_add`, `group_conj_inv`, `mumei_group_pow_zero_int`; `MumeiLean/Quantifiers.lean` gains `bounded_forall_imp`, `bounded_forall_of_field_range`, `nested_bounded_forall_intro`; `MumeiLean/Crypto.lean` gains `hmac_modulus_bounds`, `commitment_modulus_bounds`; `MumeiLean/AdvancedPatterns.lean` gains the `mumei_field` coverage patterns `finite_field_commutativity_pattern` / `group_conjugation_pattern`.
 - ✅ `MumeiLean/Tactics.lean`: `mumei_arith` / `mumei_arith_deep` try `ring1` and `field_simp`, and the new `mumei_field` cascade (`ring1` → carrier `simp only` + `ring_nf` → `group` → `field_simp` → `ring_nf` → `omega` → `simp`) automates finite-field and group goals.
-- ✅ `bridge_lemma_hash` bumped to `ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347` with every pinned doc, fixture, `scripts/export_cert.py`, and mumei-agent's `_SOLIDITY_GUARD_TRACE_BRIDGE_LEMMA_HASH` updated in the same change set.
+- ✅ `bridge_lemma_hash` bumped to `5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9` with every pinned doc, fixture, `scripts/export_cert.py`, and mumei-agent's `_SOLIDITY_GUARD_TRACE_BRIDGE_LEMMA_HASH` updated in the same change set.
 - ✅ `MumeiLean/CertWriter.lean` no longer rewrites `z3_result_class` when a proof succeeds, matching `scripts/export_cert.py`; `tests/test_cert_roundtrip.py` pins `z3_result_class` / `escalation_reason` / `logic_fragment_tags` across the native parse → write → parse round trip.
 
 ## Obligation class bridge lemma catalog and escalation timing — ✅ Implemented
@@ -78,7 +78,7 @@ Spec: [`docs/LEAN_TRANSLATOR_SPEC.md`](LEAN_TRANSLATOR_SPEC.md) §5.6 (tactics),
 Spec: [`docs/LEAN_TRANSLATOR_SPEC.md`](LEAN_TRANSLATOR_SPEC.md) §10 (catalog) and §11 (timing).
 
 - ✅ Every one of the eight base obligation classes now has at least four backing bridge lemmas: `MumeiLean/Algebra.lean` gains the arithmetic (`arith_add_upper_bound`, `arith_add_monotone`, `arith_mul_nonneg_of_nonneg`, `arith_square_nonneg`, `arith_bounded_of_interval`) and RTGS (`rtgs_debit_leaves_nonnegative`, `rtgs_transfer_conserves_sum_of_amounts`) surface plus `ff_sub_self_eq_zero_mod` / `group_mul_left_cancel`; `MumeiLean/Quantifiers.lean` gains bounded-range decomposition (`bounded_forall_split_at`, `bounded_forall_shift`, `bounded_exists_of_nonempty_forall`); `MumeiLean/Crypto.lean` gains commitment/ZK stability lemmas; `MumeiLean/AdvancedPatterns.lean` gains the arithmetic, smart-contract, RTGS, and unknown-obligation templates.
-- ✅ `BRIDGE_LEMMA_HASH` is now *derived* from the catalog by `expr_translator.compute_bridge_lemma_hash()` and pinned to `ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347`; `tests/test_expr_translator.py::test_bridge_lemma_hash_matches_catalog` fails if the catalog and the constant drift. All pinned docs, fixtures, and `scripts/export_cert.py` were updated in the same diff, and mumei-agent's `_SOLIDITY_GUARD_TRACE_BRIDGE_LEMMA_HASH` must land the same value.
+- ✅ `BRIDGE_LEMMA_HASH` is now *derived* from the catalog by `expr_translator.compute_bridge_lemma_hash()` and pinned to `5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9`; `tests/test_expr_translator.py::test_bridge_lemma_hash_matches_catalog` fails if the catalog and the constant drift. All pinned docs, fixtures, and `scripts/export_cert.py` were updated in the same diff, and mumei-agent's `_SOLIDITY_GUARD_TRACE_BRIDGE_LEMMA_HASH` must land the same value.
 - ✅ Live generated theorem coverage is now **eleven** paths: the eight above plus `std/settlement.mm::rtgs_transfer_conservation` (`tests/fixtures/std_settlement_rtgs_conservation.proof-cert.json`), an `rtgs_obligation` conservation goal discharged by `mumei_arith` with `known_witness_used = false`, and `std/algebra/finite_field.mm::ff_mul_commutative` (`tests/fixtures/std_algebra_finite_field_ff_mul_commutative.proof-cert.json`), a `finite_field_obligation` whose swapped-operand `ff_eq` goal is discharged by `MumeiLean.Algebra.ff_mul_comm_eq`, and `std/algebra/finite_field.mm::ff_mul_associative` (`tests/fixtures/std_algebra_finite_field_ff_mul_associative.proof-cert.json`), a `finite_field_obligation` whose re-associated `ff_eq` goal is discharged by `MumeiLean.Algebra.ff_mul_assoc_mod` + `ff_eq_refl` (§5.15). The associativity path reuses existing catalog lemmas, so `bridge_lemma_hash` is unchanged.
 - ✅ Live generated theorem coverage is now **twelve** paths: `std/algebra/finite_field.mm::ff_mul_add_distributive` (`tests/fixtures/std_algebra_finite_field_ff_mul_add_distributive.proof-cert.json`) is a `finite_field_obligation` that no bridge lemma template covers; the automatic tactic search (`scripts/tactic_search.py`, §12) adopts `mumei_ff_mod` for it and the regenerated theorem builds with `known_witness_used = false`. The search only uses tactics, so `bridge_lemma_hash` is unchanged.
 - ✅ Live generated theorem coverage is now **thirteen** paths: `std/core_predicates.mm::predicate_guard_collapse` (`tests/fixtures/std_core_predicates_guard_collapse.proof-cert.json`) is a predicate-parametric, classically-valid guard collapse that no bridge lemma template covers and that none of the twelve arithmetic / modular / field candidates close; the widened ladder (§12.2) adopts `tauto` for it and the regenerated theorem builds with `known_witness_used = false`. The ladder gains `tauto`, `mumei_list`, `mumei_order` and `mumei_induct` for propositional, list, order and inductive goals, and candidate order is learned from the pinned `data/tactic_search_history.json` (`mumei-lean.tactic_search_history/v1`) as a deterministic permutation of the declared ladder (§12.5) — only adoptions that then passed a real `lake build` are recorded, so `bridge_lemma_hash` and `translator_version` are unchanged.
@@ -229,7 +229,21 @@ change to the contract constants must be synchronised across projects in the sam
   (spec §4.5, live path 17: `arithmetic/saturating.mm` fixture), and
   struct projection (1 atom) via `struct_projection_lowering`
   (spec §4.6, live path 18: `concurrency/task_struct_capture_double_move_fail.mm`
-  fixture) — C-1 group 1 is now fully lowered (23/23 atoms). Reference
+  fixture) — C-1 group 1 is now fully lowered (23/23 atoms). Wave 6 / mumei
+  P31 has begun: `task {…}` and `task_group:all {…}` bodies lower via
+  `task_value_lowering` / `task_group_all_lowering` (spec §4.7, live path 19:
+  `concurrency/task_group_all.mm` fixture `join_all_last_result`), backed by the
+  new `concurrency_obligation` class and its three `MumeiLean.Concurrency`
+  bridge lemmas — the first catalog change, so `bridge_lemma_hash` bumped to
+  `5716cfdd…` in lockstep across all pinned locations (mumei `types.rs` and the
+  `verified_sample` fixture, mumei-agent `foreign_code_strategy_helpers.py`,
+  every fixture/test/doc pin here). Also added along the way: `x = e` rebind
+  segments on `let`-bound names in statement sequences
+  (`rebind_statement_lowering`), which the `per_task_local_writes` shape needs.
+  `task_group:any {…}` still stays partial — its value is list membership over
+  the task results and needs a different generated theorem shape (remaining
+  P31 work, hash already carries the `task_group_any_result_mem` lemma).
+  Reference
   regression gates:
 
 ```bash

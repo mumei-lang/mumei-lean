@@ -765,7 +765,7 @@ def test_bridge_no_build_dry_run(tmp_path: Path):
     assert metadata["translator_version"] == "mumei-lean-translator-ir-v2"
     assert (
         metadata["bridge_lemma_hash"]
-        == "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
+        == "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
     )
     assert payload["all_verified"] is False
 
@@ -1069,7 +1069,7 @@ def test_builtin_name_binder_and_block_body_upgrade_unknown_to_lean_verified(
             assert meta["known_witness_used"] is False
             assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
             assert meta["bridge_lemma_hash"] == (
-                "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
+                "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
             )
         push = next(a for a in payload["atoms"] if a["name"] == "stack_push")
         rules = push["lean_metadata"]["translator_ir"]["lowering_rules"]
@@ -1121,7 +1121,7 @@ def test_perform_sequence_body_semantics_upgrade_unknown_to_lean_verified(
             assert meta["known_witness_used"] is False
             assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
             assert meta["bridge_lemma_hash"] == (
-                "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
+                "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
             )
             rules = meta["translator_ir"]["lowering_rules"]
             assert "perform_statement_lowering" in rules
@@ -1174,7 +1174,7 @@ def test_let_sequence_body_semantics_upgrade_unknown_to_lean_verified(
             assert meta["known_witness_used"] is False
             assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
             assert meta["bridge_lemma_hash"] == (
-                "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
+                "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
             )
             rules = meta["translator_ir"]["lowering_rules"]
             assert "let_statement_lowering" in rules
@@ -1224,7 +1224,7 @@ def test_nested_if_body_semantics_upgrade_unknown_to_lean_verified(
         assert meta["known_witness_used"] is False
         assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
         assert meta["bridge_lemma_hash"] == (
-            "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
+            "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
         )
         rules = meta["translator_ir"]["lowering_rules"]
         assert "nested_if_lowering" in rules
@@ -1277,13 +1277,63 @@ def test_struct_projection_body_semantics_upgrade_unknown_to_lean_verified(
         assert meta["known_witness_used"] is False
         assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
         assert meta["bridge_lemma_hash"] == (
-            "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
+            "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
         )
         rules = meta["translator_ir"]["lowering_rules"]
         assert "struct_projection_lowering" in rules
         assert payload["all_verified"] is True
     finally:
         _cleanup_generated_file(GENERATED_TASK_STRUCT)
+
+
+GENERATED_TASK_GROUP = (
+    REPO_ROOT / "generated" / "Generated" / "Concurrency" / "Task_group_all.lean"
+)
+
+
+@pytest.mark.lake_available
+def test_task_group_all_body_semantics_upgrade_unknown_to_lean_verified(
+    lake_available, tmp_path: Path
+):
+    """Spec §4.7: `task_group:all` yields its last task's value.
+
+    The fixture atom was partial (`unknown_token` on `task`/`:`/`;`)
+    before the task-group lowering; it must now build via body
+    semantics without a known witness.
+    """
+    out_cert = tmp_path / "task_group.lean-cert.json"
+    out_dir = tmp_path / "generated"
+    _cleanup_generated_file(GENERATED_TASK_GROUP)
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "concurrency_task_group_all.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+        _assert_bridge_ok(proc)
+        assert "0 partial translation" in proc.stdout
+        generated_src = GENERATED_TASK_GROUP.read_text()
+        assert "def joinAllLastResultResult (a b : Int) : Int :=" in generated_src
+        assert "(a ≥ 0 ∧ b ≥ 0) → (result = b)" in generated_src
+        payload = json.loads(out_cert.read_text())
+        atom = next(a for a in payload["atoms"] if a["name"] == "join_all_last_result")
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["status"] == "verified"
+        meta = atom["lean_metadata"]
+        assert meta["known_witness_used"] is False
+        assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
+        assert meta["bridge_lemma_hash"] == (
+            "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
+        )
+        rules = meta["translator_ir"]["lowering_rules"]
+        assert "task_group_all_lowering" in rules
+        assert meta["translator_ir"]["obligation_class"] == "concurrency_obligation"
+        assert payload["all_verified"] is True
+    finally:
+        _cleanup_generated_file(GENERATED_TASK_GROUP)
 
 
 GENERATED_QUINTIC = REPO_ROOT / "generated" / "Generated" / "Std" / "Quintic.lean"
@@ -1378,7 +1428,7 @@ def test_external_proof_matrix_never_promotes_unproved_atoms(
         meta = atom["lean_metadata"]
         assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
         assert meta["bridge_lemma_hash"] == (
-            "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
+            "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
         )
         if expect_rejected is not None:
             assert f"rejected: {expect_rejected}" in proc.stderr

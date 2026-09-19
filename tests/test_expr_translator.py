@@ -1622,6 +1622,76 @@ def test_translate_body_keeps_non_field_projection_partial(source):
     )
 
 
+def test_translate_body_lowers_task_and_task_group_all():
+    # Spec §4.7: a bare `task { e }` evaluates to `e`; `task_group:all`
+    # yields the last task's value. Both tag the concurrency obligation
+    # class and record their lowering rule.
+    bare = expr_translator.translate_body("{ task { n } }")
+    assert bare.is_partial is False
+    assert bare.lean_expr == "n"
+    assert bare.identifiers == ["n"]
+    assert "task_value_lowering" in bare.translator_ir.lowering_rules
+    assert bare.translator_ir.obligation_class == "concurrency_obligation"
+
+    group = expr_translator.translate_body(
+        "{ task_group:all { task { a }; task { b } } }"
+    )
+    assert group.is_partial is False
+    assert group.lean_expr == "b"
+    assert set(group.identifiers) == {"a", "b"}
+    assert "task_group_all_lowering" in group.translator_ir.lowering_rules
+    assert group.translator_ir.obligation_class == "concurrency_obligation"
+    assert (
+        "MumeiLean.Concurrency.task_group_all_result_last"
+        in group.translator_ir.requires_bridge_lemmas
+    )
+
+    # Sibling task bodies may carry their own let/rebind sequences.
+    rebind = expr_translator.translate_body(
+        "{ task_group:all { task { let acc = n; acc = acc + 2; acc } } }"
+    )
+    assert rebind.is_partial is False
+    assert rebind.lean_expr == "( n + 2 )"
+    assert "rebind_statement_lowering" in rebind.translator_ir.lowering_rules
+
+    # Task bodies compose with other lowering rules (let + array index).
+    inner = expr_translator.translate_body(
+        "{ task_group:all { task { let owned = buf; owned[i] } } }"
+    )
+    assert inner.is_partial is False
+    assert "buf" in inner.identifiers
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # `task_group:any` yields whichever task finishes first — list
+        # membership, which needs a different generated theorem shape.
+        "{ task_group:any { task { a }; task { b } } }",
+        # Group segments must be `task { … }` items.
+        "{ task_group:all { a; b } }",
+        "{ task_group:all { task { a }; b } }",
+        # An empty group has no last task.
+        "{ task_group:all { } }",
+        # Unrecognised join mode.
+        "{ task_group:some { task { a } } }",
+        # A task body that itself does not lower stays partial.
+        "{ task { while n > 0 { n } } }",
+        "{ task_group:all { task { a }; task { while n > 0 { n } } } }",
+        # Rebind is only allowed on let-bound names.
+        "{ task { acc = acc + 1; acc } }",
+        "{ let x = 1; y = x + 1; x }",
+    ],
+)
+def test_translate_body_keeps_task_group_edge_cases_partial(source):
+    result = expr_translator.translate_body(source)
+    assert result.is_partial is True, source
+    assert (
+        result.translator_ir is None
+        or "task_group_all_lowering" not in result.translator_ir.lowering_rules
+    )
+
+
 @pytest.mark.parametrize(
     "source",
     [

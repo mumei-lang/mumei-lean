@@ -407,6 +407,14 @@ like `let x = task { 5 }; x`) cannot leak raw mumei braces into the
 emitted Lean — the residual token flags `statement_block_requires_manual_lemma`
 and the body stays partial.
 
+`obligation_class` is producer-declared metadata: mumei-emitted
+certificates do not carry it (the field exists only in `translator_ir`
+payloads written by tooling that knows the class), so `obligation_class_of`
+falls back to `logic_fragment_tag` for tactic-history keys on real certs.
+Body-derived classes are therefore *not* merged back into stored IR on
+ingest — doing so would silently change every pre-existing atom's
+learning key.
+
 The lowering introduces the `concurrency_obligation` obligation class
 (§10) whose bridge lemmas (`MumeiLean.Concurrency.task_group_all_result_last`,
 `task_group_any_result_mem`, `task_value_result`) pin the task-value

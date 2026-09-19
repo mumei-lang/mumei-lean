@@ -1,0 +1,119 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-19T06:00:00Z",
+  "mumei_version": "0.6.19",
+  "z3_version": "4.8.12",
+  "file": "benchmarks/svcomp_style/loop_invariant.mm",
+  "atoms": [
+    {
+      "name": "sum_array",
+      "z3_check_result": "unknown",
+      "content_hash": "f331dfec07e36550a53c6aeaac639efe9abee07eb04d110770983f425ca06b5d",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "benchmarks/svcomp_style/loop_invariant.mm"
+        },
+        "traceability_hash": "07b83b54430c43251922c4976bd3e1d7c9dce66f8d7f059d25960ecc874a35db",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 1,
+        "checked_refinements": 0,
+        "ensures_implication_checks": 0,
+        "diagnostics": []
+      },
+      "proof_hash": "2f1bc8cefba10cfb7957b05f2acb81bbe16171650329e27bbae57df8974b4d8b",
+      "dependencies": [
+        "len"
+      ],
+      "effects": [],
+      "requires": "n >= 0 && len(arr) >= n && true",
+      "ensures": "result >= 0",
+      "forall_constraints": [
+        {
+          "q_type": "forall",
+          "var": "i",
+          "start": "0",
+          "end": "n",
+          "condition": "arr[i] >= 0"
+        }
+      ],
+      "body_expr": "{ let sum = 0; let i = 0; while i < n invariant: i >= 0 && i <= n && sum >= 0 decreases: n - i { sum = sum + arr[i]; i = i + 1; }; sum }",
+      "body_summary": "{ let sum = 0; let i = 0; while i < n invariant: i >= 0 && i <= n && sum >= 0 decreases: n - i { sum = sum + arr[i]; i = i + 1; }; sum }",
+      "z3_result_class": "unknown",
+      "logic_fragment_tag": "quantifier_alternation",
+      "logic_fragment_tags": [
+        "recursive_invariant",
+        "trigger_sensitive_quantifier"
+      ],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "arr": "arr",
+        "n": "n",
+        "result": "result"
+      },
+      "bridge_lemma_hash": "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9",
+      "translator_ir": {
+        "sort": "loop_invariant",
+        "binders": [
+          {
+            "mumei_name": "arr",
+            "lean_name": "arr",
+            "mumei_type": "[i64]",
+            "lean_type": "List Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "n",
+            "lean_name": "n",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(n >= 0 && len(arr) >= n && true) -> (result >= 0)",
+        "provenance_span": {
+          "file": "benchmarks/svcomp_style/loop_invariant.mm",
+          "line": 2,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "loop_invariant_recursion",
+          "refinement_predicate_lowering",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [
+          "refinement_predicate_lowering: Quantifiers and refinement predicates are lowered to Lean dependent types."
+        ],
+        "proof_trace_hints": [
+          "carry subtype predicate witnesses through quantifier lowering"
+        ],
+        "requires_bridge_lemmas": [
+          "mumei_subtype_predicate_bridge"
+        ]
+      },
+      "symbol_provenance": [
+        {
+          "symbol_name": "len",
+          "source": "uninterpreted_function",
+          "location": null
+        }
+      ],
+      "solver_process_metadata": null
+    }
+  ],
+  "certificate_hash": "c6ea3ec352bbb16f1d826700a39d81c27d94729494f02891d378de7034bd2b88",
+  "all_verified": false
+}

@@ -521,6 +521,12 @@ via `len(x)`) still binds `List Int` and `len(x)` still lowers to
 certificate's `translator_ir` binders (with `role: result` excluded —
 `result` is quantified inside the post conjunct), falling back to the
 usage-scan partition when the certificate carries no binder table.
+Quantifier hypotheses follow the same rule: mumei extracts each
+`forall`/`exists` conjunct out of `requires` (rendering it `true`) into
+`forall_constraints`, and ingest restores them as `forall(var, lo, hi,
+cond)` requires conjuncts before translation — the step VC's elementwise
+hypothesis (`arr[i] ≥ 0`) exists only there, so without restoration the
+emitted VC is structurally unprovable.
 
 ## 5. Semantic Gap Bridge Rules
 

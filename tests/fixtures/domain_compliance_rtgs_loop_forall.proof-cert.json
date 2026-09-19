@@ -1,0 +1,119 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-19T06:00:00Z",
+  "mumei_version": "0.6.19",
+  "z3_version": "4.8.12",
+  "file": "benchmarks/domain_compliance/rtgs_balance_conservation.mm",
+  "atoms": [
+    {
+      "name": "queue_total_is_nonnegative",
+      "z3_check_result": "unknown",
+      "content_hash": "38ba02b7de47ed8b7a3650eeecd7fd1dd8a102cca955b257679a68d6935ba0f5",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "benchmarks/domain_compliance/rtgs_balance_conservation.mm"
+        },
+        "traceability_hash": "eea673c4a9ea32e16bb8fc041f8060970cd140e0f9a5ea465ae8845318457ed4",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 1,
+        "checked_refinements": 0,
+        "ensures_implication_checks": 0,
+        "diagnostics": []
+      },
+      "proof_hash": "884475c36e580886dae845a7fc4fc82e8139a25ef3e2d44c984643c4b89517a5",
+      "dependencies": [
+        "len"
+      ],
+      "effects": [],
+      "requires": "n >= 0 && len(balances) >= n && true",
+      "ensures": "result >= 0",
+      "forall_constraints": [
+        {
+          "q_type": "forall",
+          "var": "i",
+          "start": "0",
+          "end": "n",
+          "condition": "balances[i] >= 0"
+        }
+      ],
+      "body_expr": "{ let total = 0; let i = 0; while i < n invariant: i >= 0 && i <= n && total >= 0 decreases: n - i { total = total + balances[i]; i = i + 1; }; total }",
+      "body_summary": "{ let total = 0; let i = 0; while i < n invariant: i >= 0 && i <= n && total >= 0 decreases: n - i { total = total + balances[i]; i = i + 1; }; total }",
+      "z3_result_class": "unknown",
+      "logic_fragment_tag": "quantifier_alternation",
+      "logic_fragment_tags": [
+        "recursive_invariant",
+        "trigger_sensitive_quantifier"
+      ],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "balances": "balances",
+        "n": "n",
+        "result": "result"
+      },
+      "bridge_lemma_hash": "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9",
+      "translator_ir": {
+        "sort": "loop_invariant",
+        "binders": [
+          {
+            "mumei_name": "balances",
+            "lean_name": "balances",
+            "mumei_type": "[i64]",
+            "lean_type": "List Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "n",
+            "lean_name": "n",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(n >= 0 && len(balances) >= n && true) -> (result >= 0)",
+        "provenance_span": {
+          "file": "benchmarks/domain_compliance/rtgs_balance_conservation.mm",
+          "line": 49,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "loop_invariant_recursion",
+          "refinement_predicate_lowering",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [
+          "refinement_predicate_lowering: Quantifiers and refinement predicates are lowered to Lean dependent types."
+        ],
+        "proof_trace_hints": [
+          "carry subtype predicate witnesses through quantifier lowering"
+        ],
+        "requires_bridge_lemmas": [
+          "mumei_subtype_predicate_bridge"
+        ]
+      },
+      "symbol_provenance": [
+        {
+          "symbol_name": "len",
+          "source": "uninterpreted_function",
+          "location": null
+        }
+      ],
+      "solver_process_metadata": null
+    }
+  ],
+  "certificate_hash": "0db88794a27b40d7124b76b552f53427a3f4a036d33acc1588ea1582f9f6bedd",
+  "all_verified": false
+}

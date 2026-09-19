@@ -16,7 +16,7 @@
       "requires": "n >= 0 && forall(i, 0, n, arr[i] >= 0)",
       "ensures": "forall(i, 0, n, arr[i] >= 0)",
       "translator_version": "mumei-lean-translator-ir-v2",
-      "bridge_lemma_hash": "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
+      "bridge_lemma_hash": "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
     },
     {
       "name": "pilot_array_offset",
@@ -29,7 +29,7 @@
       "requires": "n >= 0 && forall(i, 0, n, arr[i] >= 1)",
       "ensures": "forall(i, 0, n, arr[i] >= 0)",
       "translator_version": "mumei-lean-translator-ir-v2",
-      "bridge_lemma_hash": "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
+      "bridge_lemma_hash": "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
     }
   ],
   "package_name": "std",

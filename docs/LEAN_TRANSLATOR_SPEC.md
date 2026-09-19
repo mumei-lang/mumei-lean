@@ -369,6 +369,70 @@ names that would collide with an existing binder (`p.x` next to a real
 partial instead of silently equating them). Chained access `p.x.y`
 lowers to a single `p_x_y` binder.
 
+### 4.7 Structured-concurrency bodies (`task`, `task_group:all`)
+
+A mumei body may spawn structured tasks:
+
+```text
+body: {
+    task_group:all {
+        task { a };
+        task { b }
+    }
+};
+```
+
+A bare `task { e }` evaluates to its body `e`. A `task_group:all` runs
+every child task to completion and yields the *last* task's value, so the
+block lowers to the last task's translated body
+(`{ task_group:all { task { a }; task { b } } }` → `b`). Sibling tasks'
+effects are ordering obligations — carried by the atom's effect metadata,
+not part of the group value — mirroring how §4.3 `perform` statements are
+dropped. Every task item must be a `task { … }` block and every task body
+must itself translate cleanly; otherwise the block stays partial. Task
+bodies recurse through `translate_body`, so §4.1–§4.6 forms compose
+inside them (e.g. `task { let acc = n; acc = acc + 2; acc }` lowers via
+the let-sequence machinery — which also accepts `<name> = <expr>` rebind
+segments on `let`-bound names, recorded as `rebind_statement_lowering`).
+
+`task_group:any { … }` yields whichever task finishes first — its value
+is list membership over the task results and needs a different generated
+theorem shape, so it currently stays partial while still tagging the
+`concurrency_obligation` class for triage.
+
+`task` and `task_group` are also statement keywords: a `task` surface
+that does not occupy the whole body (trailing text such as
+`task { a } + x`, an empty `task { }`, or a task nested in a `let` RHS
+like `let x = task { 5 }; x`) cannot leak raw mumei braces into the
+emitted Lean — the residual token flags `statement_block_requires_manual_lemma`
+and the body stays partial.
+
+The same treatment covers every other reserved concurrency/ownership
+token with no lowering — `async`, `await`, `cancel`, `send`, `recv`,
+`chan`, `acquire`, `consume`, `exclusive`, `shared`, `ref`, `as`,
+`invariant`, `decreases` — plus the channel send/recv arrow: `ch <- v`
+and `<- ch` tokenise as separate `<` / `-` ops and would otherwise be
+reinterpreted as the comparison `ch < -v`, so a raw-source guard flags
+`channel_arrow_requires_manual_lemma` (the `->` arrow is guarded the
+same way). Extra enclosing braces around an already-lowered
+`task`/`task_group` body are transparent, matching the `perform`/`let`
+statement-sequence rule.
+
+`obligation_class` is producer-declared metadata: mumei-emitted
+certificates do not carry it (the field exists only in `translator_ir`
+payloads written by tooling that knows the class), so `obligation_class_of`
+falls back to `logic_fragment_tag` for tactic-history keys on real certs.
+Body-derived classes are therefore *not* merged back into stored IR on
+ingest — doing so would silently change every pre-existing atom's
+learning key.
+
+The lowering introduces the `concurrency_obligation` obligation class
+(§10) whose bridge lemmas (`MumeiLean.Concurrency.task_group_all_result_last`,
+`task_group_any_result_mem`, `task_value_result`) pin the task-value
+semantics in the trusted kernel — this catalog addition bumps
+`bridge_lemma_hash`. Recorded rules are `task_value_lowering`,
+`task_group_all_lowering`, and `task_group_any_lowering` (partial `any`).
+
 ## 5. Semantic Gap Bridge Rules
 
 ### 5.1 Integer Overflow Bridge
@@ -878,6 +942,10 @@ emitted in `TranslatorIR.lowering_rules`.
 | `let_statement_lowering` | A body block's leading `let <name> = <expr>` statements substitute into the final tail expression; the substituted tail lowers and no bridge lemma is required. | §4.4 |
 | `nested_if_lowering` | A braced `if c { a } else { b }` body carries brace-enclosed content (a nested conditional or block) in a branch; each branch recurses through the translator and no bridge lemma is required. | §4.5 |
 | `struct_projection_lowering` | A `base . field` member access appears; the field read becomes a scalar `base_field` binder consistently across `requires` / `ensures` / `body` and no bridge lemma is required. Qualified effect names (`perform Eff.op`), method calls (`p.f(…)`), postfix access on call results, non-identifier members, and colliding projected names stay partial. | §4.6 |
+| `rebind_statement_lowering` | A `x = e` statement rebinds a `let`-bound name inside a statement sequence; the new expression substitutes like a `let` binding and no bridge lemma is required. Parameter reassignment stays partial. | §4.4, §4.7 |
+| `task_value_lowering` | A bare `task { e }` body lowers to `e`; tags the `concurrency_obligation` class. | §4.7 |
+| `task_group_all_lowering` | A `task_group:all { task {…}; … }` body lowers to its last task's value; tags the `concurrency_obligation` class. | §4.7 |
+| `task_group_any_lowering` | A `task_group:any { task {…}; … }` body stays partial (list-membership theorem shape pending) but still tags the `concurrency_obligation` class. | §4.7 |
 
 A translator implementation is compliant iff:
 
@@ -903,7 +971,7 @@ Certificate atom field handling is fixed:
 | `manual_lemma_reason` | Stable reason a generated theorem needs human lemma work; dry runs should emit `manual_lemma_required`, not `lean_verified`. |
 | `stale_translator` | mumei-side rejection when `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract. |
 
-Current contract constants are `translator_version = mumei-lean-translator-ir-v2` and `bridge_lemma_hash = ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347`. These are also pinned in [`LEAN_HARNESS_CONTRACT.md`](LEAN_HARNESS_CONTRACT.md). `tests/test_contract_vocabulary.py` anchors both the constant-defining scripts (`scripts/export_cert.py`, `scripts/expr_translator.py`) and every pinned doc (this file, `LEAN_HARNESS_CONTRACT.md`, `BRIDGE_HARNESS_SPEC.md`, `INTEGRATION.md`) to the same expected literals, so any bump must update all of them in a single diff.
+Current contract constants are `translator_version = mumei-lean-translator-ir-v2` and `bridge_lemma_hash = 5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9`. These are also pinned in [`LEAN_HARNESS_CONTRACT.md`](LEAN_HARNESS_CONTRACT.md). `tests/test_contract_vocabulary.py` anchors both the constant-defining scripts (`scripts/export_cert.py`, `scripts/expr_translator.py`) and every pinned doc (this file, `LEAN_HARNESS_CONTRACT.md`, `BRIDGE_HARNESS_SPEC.md`, `INTEGRATION.md`) to the same expected literals, so any bump must update all of them in a single diff.
 
 `bridge_lemma_hash` is derived from the obligation-class bridge lemma catalog
 (§10) by `expr_translator.compute_bridge_lemma_hash()`: the canonical pre-image
@@ -919,7 +987,7 @@ lockstep.
 
 Every escalated atom is classified by `classify_obligation()` into exactly one
 obligation class, and `obligation_bridge_lemmas()` maps the class to the Lean
-entry points that may discharge it. The eight base classes below are the
+entry points that may discharge it. The nine base classes below are the
 documented taxonomy; the three `smart_contract_*` trace classes
 (`smart_contract_guard_trace_obligation`,
 `smart_contract_access_control_obligation`, `smart_contract_cei_obligation`)
@@ -934,6 +1002,7 @@ extend it for Solidity trace obligations and route to `MumeiLean.SmartContract`.
 | `arithmetic_obligation` | `MumeiLean.Algebra`, `MumeiLean.AdvancedPatterns` | `sc_subtraction_nonnegative`, `arith_add_upper_bound`, `arith_add_monotone`, `arith_mul_nonneg_of_nonneg`, `arith_square_nonneg`, `arith_bounded_of_interval`, `arithmetic_obligation_bounded_combination`, `arithmetic_obligation_monotone_step` |
 | `smart_contract_obligation` | `MumeiLean.AdvancedPatterns` | `sc_withdraw_allowed_intro`, `sc_no_negative_after_withdraw`, `smart_contract_obligation_guard_preserved`, `smart_contract_obligation_balance_preserved` |
 | `rtgs_obligation` | `MumeiLean.AdvancedPatterns`, `MumeiLean.Algebra` | `rtgs_balance_conserved_refl`, `rtgs_trace_safe_intro`, `rtgs_obligation_conservation`, `rtgs_obligation_trace_safe`, `rtgs_transfer_conserves_sum`, `rtgs_transfer_conserves_sum_of_amounts`, `rtgs_debit_leaves_nonnegative` |
+| `concurrency_obligation` | `MumeiLean.Concurrency` | `task_group_all_result_last`, `task_group_any_result_mem`, `task_value_result` |
 | `unknown_obligation` | `MumeiLean.AdvancedPatterns` | `unknown_obligation_intro`, `unknown_obligation_discharged_by_manual_lemma` |
 
 Catalog rules:

@@ -1622,6 +1622,120 @@ def test_translate_body_keeps_non_field_projection_partial(source):
     )
 
 
+def test_translate_body_lowers_task_and_task_group_all():
+    # Spec §4.7: a bare `task { e }` evaluates to `e`; `task_group:all`
+    # yields the last task's value. Both tag the concurrency obligation
+    # class and record their lowering rule.
+    bare = expr_translator.translate_body("{ task { n } }")
+    assert bare.is_partial is False
+    assert bare.lean_expr == "n"
+    assert bare.identifiers == ["n"]
+    assert "task_value_lowering" in bare.translator_ir.lowering_rules
+    assert bare.translator_ir.obligation_class == "concurrency_obligation"
+
+    group = expr_translator.translate_body(
+        "{ task_group:all { task { a }; task { b } } }"
+    )
+    assert group.is_partial is False
+    assert group.lean_expr == "b"
+    assert set(group.identifiers) == {"a", "b"}
+    assert "task_group_all_lowering" in group.translator_ir.lowering_rules
+    assert group.translator_ir.obligation_class == "concurrency_obligation"
+    assert (
+        "MumeiLean.Concurrency.task_group_all_result_last"
+        in group.translator_ir.requires_bridge_lemmas
+    )
+
+    # Sibling task bodies may carry their own let/rebind sequences.
+    rebind = expr_translator.translate_body(
+        "{ task_group:all { task { let acc = n; acc = acc + 2; acc } } }"
+    )
+    assert rebind.is_partial is False
+    assert rebind.lean_expr == "( n + 2 )"
+
+    # Extra enclosing braces are transparent: the consumed `task`/`task_group`
+    # surface must not be re-flagged as unsupported tokens.
+    wrapped = expr_translator.translate_body(
+        "{ { task_group:all { task { a }; task { b } } } }"
+    )
+    assert wrapped.is_partial is False
+    assert wrapped.lean_expr == "b"
+    assert wrapped.manual_lemma_reason is None
+    assert "task_group_all_lowering" in wrapped.translator_ir.lowering_rules
+    assert "rebind_statement_lowering" in rebind.translator_ir.lowering_rules
+
+    # Task bodies compose with other lowering rules (let + array index).
+    inner = expr_translator.translate_body(
+        "{ task_group:all { task { let owned = buf; owned[i] } } }"
+    )
+    assert inner.is_partial is False
+    assert "buf" in inner.identifiers
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # `task_group:any` yields whichever task finishes first — list
+        # membership, which needs a different generated theorem shape.
+        "{ task_group:any { task { a }; task { b } } }",
+        # Group segments must be `task { … }` items.
+        "{ task_group:all { a; b } }",
+        "{ task_group:all { task { a }; b } }",
+        # An empty group has no last task.
+        "{ task_group:all { } }",
+        # Unrecognised join mode.
+        "{ task_group:some { task { a } } }",
+        # A task body that itself does not lower stays partial.
+        "{ task { while n > 0 { n } } }",
+        "{ task_group:all { task { a }; task { while n > 0 { n } } } }",
+        # Conservative: a partial middle sibling also keeps the group
+        # partial even when the last task lowers.
+        "{ task_group:all { task { while n > 0 { n } }; task { b } } }",
+        # `task {…}` is a whole-body surface — trailing text, an empty
+        # block, or a task nested in a `let` RHS must not leak raw mumei
+        # braces into the emitted Lean.
+        "{ task { a } + x }",
+        "{ task { } }",
+        "{ let x = task { 5 }; x }",
+        "{ task { a } ; x }",
+        "{ task_group:all { task { a } } ; x }",
+        # Rebind is only allowed on let-bound names.
+        "{ task { acc = acc + 1; acc } }",
+        "{ let x = 1; y = x + 1; x }",
+        # Reserved concurrency tokens with no lowering stay partial rather
+        # than leaking the raw keyword into the emitted Lean.
+        "{ await t }",
+        "{ async { a } }",
+        "{ cancel t }",
+        # Channel / resource / ownership surfaces are statements with no
+        # lowering — `acquire r {…}` is real body syntax.
+        "{ send ch v }",
+        "{ recv ch }",
+        "{ acquire r { x } }",
+        "{ consume r }",
+        "{ chan c }",
+        "{ exclusive x }",
+        "{ shared x }",
+        "{ ref x }",
+        "{ x as Int }",
+        "{ invariant x > 0 }",
+        # `ch <- v` / `<- ch` tokenise as `<` `-`; without the raw-source
+        # guard they would be silently reinterpreted as `ch < -v`.
+        "{ ch <- v }",
+        "{ <- ch }",
+        "{ x->f }",
+        "{ task { ch <- v } }",
+    ],
+)
+def test_translate_body_keeps_task_group_edge_cases_partial(source):
+    result = expr_translator.translate_body(source)
+    assert result.is_partial is True, source
+    assert (
+        result.translator_ir is None
+        or "task_group_all_lowering" not in result.translator_ir.lowering_rules
+    )
+
+
 @pytest.mark.parametrize(
     "source",
     [

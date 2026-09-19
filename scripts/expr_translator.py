@@ -244,7 +244,7 @@ TRANSLATOR_VERSION = "mumei-lean-translator-ir-v2"
 # ``compute_bridge_lemma_hash``. Adding or renaming a backing lemma changes
 # this value, which mumei treats as ``stale_translator`` for certificates
 # produced by an older catalog.
-BRIDGE_LEMMA_HASH = "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
+BRIDGE_LEMMA_HASH = "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
 
 # Obligation class taxonomy for escalated atoms.
 # Each class maps to a set of Lean bridge lemma entry points.
@@ -258,6 +258,7 @@ OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE = "smart_contract_guard_trace_obliga
 OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL = "smart_contract_access_control_obligation"
 OBLIGATION_CLASS_SMART_CONTRACT_CEI = "smart_contract_cei_obligation"
 OBLIGATION_CLASS_RTGS = "rtgs_obligation"
+OBLIGATION_CLASS_CONCURRENCY = "concurrency_obligation"
 OBLIGATION_CLASS_UNKNOWN = "unknown_obligation"
 
 SMART_CONTRACT_GUARD_TRACE_LOWERING = "smart_contract_guard_trace_lowering"
@@ -381,6 +382,11 @@ _OBLIGATION_CLASS_BRIDGE_LEMMAS: Dict[str, List[str]] = {
         "MumeiLean.Algebra.rtgs_transfer_conserves_sum",
         "MumeiLean.Algebra.rtgs_transfer_conserves_sum_of_amounts",
         "MumeiLean.Algebra.rtgs_debit_leaves_nonnegative",
+    ],
+    OBLIGATION_CLASS_CONCURRENCY: [
+        "MumeiLean.Concurrency.task_group_all_result_last",
+        "MumeiLean.Concurrency.task_group_any_result_mem",
+        "MumeiLean.Concurrency.task_value_result",
     ],
     OBLIGATION_CLASS_UNKNOWN: [
         "MumeiLean.AdvancedPatterns.unknown_obligation_intro",
@@ -845,7 +851,29 @@ def mark_builtin_name_binder_conflict(
 # and is never lowered to a Lean term.
 _STATEMENT_KEYWORDS: Set[str] = {
     "while", "loop", "for", "return", "break", "continue", "mut", "fn",
+    # Structured-concurrency surfaces are statements too: ``task {…}`` and
+    # ``task_group:all|any {…}`` lower only through ``_task_group_body``, so
+    # a residual ``task``/``task_group`` token (a task nested in a ``let``
+    # RHS, trailing text after a task block, ``task_group:some``) means the
+    # shape was not the supported one and must stay partial rather than
+    # leak raw mumei braces into the emitted Lean. ``async``/``await``/
+    # ``cancel`` are likewise reserved concurrency tokens with no
+    # lowering — the same reasoning keeps their surfaces partial.
+    "task", "task_group", "async", "await", "cancel",
+    # Channel / resource / ownership keywords. ``acquire r {…}`` is real
+    # body syntax; ``send``/``recv``/``chan`` and the qualifier or
+    # clause keywords below have no lowering either, so a residual
+    # surface stays partial instead of leaking raw juxtaposition.
+    "send", "recv", "chan", "acquire", "consume", "exclusive",
+    "shared", "ref", "as", "invariant", "decreases",
 }
+
+# Channel send/recv and the ``->`` arrow tokenise as separate ``<``/``-``
+# (or ``-``/``>``) ops at the translator level — ``{ ch <- v }`` would
+# otherwise be silently reinterpreted as the comparison ``ch < -v``.
+# Adjacency is only visible in the raw source (``x < -1`` tokenises
+# identically but is spelled ``< -``), so this is a string-level check.
+_CHANNEL_ARROW_RE = re.compile(r"<-|->")
 
 STATEMENT_BLOCK_REASON = "statement_block_requires_manual_lemma"
 CONDITIONAL_BRANCH_TYPE_REASON = "conditional_branch_type_mismatch"
@@ -1228,6 +1256,12 @@ def classify_obligation(tokens: List[tuple], lowering_rules: List[str]) -> str:
         return OBLIGATION_CLASS_SMART_CONTRACT
     if has_rtgs:
         return OBLIGATION_CLASS_RTGS
+    if (
+        "task_group_all_lowering" in lowering_rules
+        or "task_group_any_lowering" in lowering_rules
+        or "task_value_lowering" in lowering_rules
+    ):
+        return OBLIGATION_CLASS_CONCURRENCY
     if has_quantifier:
         return OBLIGATION_CLASS_QUANTIFIER
     if has_unknown:
@@ -1623,6 +1657,17 @@ def _attach_translator_ir(
         for rule in prior_rules:
             if rule not in result.translator_ir.lowering_rules:
                 result.translator_ir.lowering_rules.append(rule)
+        if any(
+            rule in CONCURRENCY_LOWERING_RULES
+            for rule in result.translator_ir.lowering_rules
+        ):
+            # Task lowering rules survive the rebuild via ``prior_rules``
+            # but the freshly rebuilt obligation class / lemma list were
+            # derived from the outer tokens; re-tag them.
+            result.translator_ir.obligation_class = OBLIGATION_CLASS_CONCURRENCY
+            for lemma in _OBLIGATION_CLASS_BRIDGE_LEMMAS[OBLIGATION_CLASS_CONCURRENCY]:
+                if lemma not in result.translator_ir.requires_bridge_lemmas:
+                    result.translator_ir.requires_bridge_lemmas.append(lemma)
     return result
 
 
@@ -2928,6 +2973,14 @@ _LET_STATEMENT_RE = re.compile(
     re.DOTALL,
 )
 
+# A ``<name> = <expr>`` rebind statement. Only allowed on a name already
+# bound by an earlier ``let`` — parameter reassignment stays partial so a
+# binding never masquerades as a fresh definition of an external input.
+_REBIND_STATEMENT_RE = re.compile(
+    r"([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)\s*(.+)\Z",
+    re.DOTALL,
+)
+
 
 def _enclosed_block_inner(source: str) -> Optional[str]:
     """Inner text when ``{`` … ``}`` enclose the whole source.
@@ -3066,11 +3119,18 @@ def _statement_sequence_tail(source: str) -> Optional[Tuple[str, List[str]]]:
                 rules.append("perform_statement_lowering")
             continue
         match = _LET_STATEMENT_RE.fullmatch(text)
-        if match is None:
+        if match is not None:
+            bindings.append((match.group(1), match.group(2).strip()))
+            if "let_statement_lowering" not in rules:
+                rules.append("let_statement_lowering")
+            continue
+        rebind = _REBIND_STATEMENT_RE.fullmatch(text)
+        bound_names = {name for name, _value in bindings}
+        if rebind is None or rebind.group(1) not in bound_names:
             return None
-        bindings.append((match.group(1), match.group(2).strip()))
-        if "let_statement_lowering" not in rules:
-            rules.append("let_statement_lowering")
+        bindings.append((rebind.group(1), rebind.group(2).strip()))
+        if "rebind_statement_lowering" not in rules:
+            rules.append("rebind_statement_lowering")
 
     tail = segments[-1].strip()
     if not tail or _PERFORM_STATEMENT_RE.fullmatch(tail):
@@ -3095,6 +3155,120 @@ def _statement_sequence_tail(source: str) -> Optional[Tuple[str, List[str]]]:
         if tail is None:
             return None
     return tail, rules
+
+
+# ``task_group:all|any { task { … }; … }`` / bare ``task { … }`` heads.
+CONCURRENCY_LOWERING_RULES = {
+    "task_value_lowering",
+    "task_group_all_lowering",
+    "task_group_any_lowering",
+}
+_TASK_GROUP_HEAD_RE = re.compile(r"task_group\s*:\s*(all|any)\s*", re.DOTALL)
+_TASK_HEAD_RE = re.compile(r"task\b\s*", re.DOTALL)
+
+
+def _annotate_concurrency_result(
+    result: TranslationResult, rule: str
+) -> TranslationResult:
+    """Tag a task-lowered result with the concurrency obligation class."""
+    ir = result.translator_ir
+    if ir is None:
+        return result
+    if rule not in ir.lowering_rules:
+        ir.lowering_rules.append(rule)
+    ir.obligation_class = OBLIGATION_CLASS_CONCURRENCY
+    for lemma in _OBLIGATION_CLASS_BRIDGE_LEMMAS[OBLIGATION_CLASS_CONCURRENCY]:
+        if lemma not in ir.requires_bridge_lemmas:
+            ir.requires_bridge_lemmas.append(lemma)
+    return result
+
+
+def _task_group_body(source: str) -> Optional[TranslationResult]:
+    """Lower ``task { e }`` and ``task_group:all { task {…}; … }`` bodies.
+
+    A bare ``task`` evaluates to its body. A ``task_group:all`` runs every
+    child task to completion and yields the last task's value — sibling
+    tasks' effects are ordering obligations, not part of the group value,
+    mirroring how ``perform`` statements are dropped. Every task body must
+    itself translate cleanly (a partial sibling could hide a param the
+    value expression needs). ``task_group:any`` needs the list-membership
+    theorem shape, so it stays partial until that emission lands.
+
+    Returns ``None`` when the source is not a task surface at all;
+    malformed task syntax lowers to a partial result.
+    """
+    src = source.strip()
+    task_match = _TASK_HEAD_RE.match(src)
+    if task_match is not None:
+        inner = _enclosed_block_inner(src[task_match.end():])
+        if inner is None or not inner.strip():
+            return None
+        lowered = translate_body("{ " + inner + " }")
+        if lowered.is_partial:
+            return lowered
+        return _annotate_concurrency_result(lowered, "task_value_lowering")
+
+    group_match = _TASK_GROUP_HEAD_RE.match(src)
+    if group_match is None:
+        return None
+    inner = _enclosed_block_inner(src[group_match.end():])
+    if inner is None:
+        return None
+    segments = _split_statement_segments(inner)
+    if segments is None:
+        return None
+    tasks: List[str] = []
+    for segment in segments:
+        text = segment.strip()
+        item = _TASK_HEAD_RE.match(text)
+        task_inner = (
+            _enclosed_block_inner(text[item.end():]) if item is not None else None
+        )
+        if task_inner is None or not task_inner.strip():
+            return None
+        tasks.append(task_inner)
+    if not tasks:
+        return None
+    lowered_tasks = [translate_body("{ " + task + " }") for task in tasks]
+    if group_match.group(1) == "any":
+        # The group's value is whichever task finishes first: modelled as
+        # list membership, which needs a different generated theorem shape.
+        partial = _make_translation_result(
+            source,
+            lean_expr="",
+            identifiers=[],
+            is_trivial=False,
+            is_partial=True,
+            array_identifiers=[],
+            string_identifiers=[],
+        )
+        return _annotate_concurrency_result(partial, "task_group_any_lowering")
+    partial_tasks = [t for t in lowered_tasks if t.is_partial]
+    if partial_tasks:
+        # Conservative: a sibling that failed to lower could hide inputs
+        # the group's value still depends on — stay partial instead of
+        # claiming the last task's value.
+        return partial_tasks[0]
+    result = lowered_tasks[-1]
+    identifiers = list(result.identifiers)
+    for task_result in lowered_tasks[:-1]:
+        for name in task_result.identifiers:
+            if name not in identifiers:
+                identifiers.append(name)
+        result.array_identifiers += [
+            name
+            for name in task_result.array_identifiers
+            if name not in result.array_identifiers
+        ]
+        if task_result.translator_ir is not None:
+            for rule in task_result.translator_ir.lowering_rules:
+                if (
+                    result.translator_ir is not None
+                    and rule not in result.translator_ir.lowering_rules
+                ):
+                    result.translator_ir.lowering_rules.append(rule)
+    result.identifiers = identifiers
+    return _annotate_concurrency_result(result, "task_group_all_lowering")
 
 
 def normalize_body_source(source: str) -> str:
@@ -3467,6 +3641,18 @@ def translate_body(body_expr: str) -> TranslationResult:
             array_identifiers=[],
             string_identifiers=[],
         )
+    if _CHANNEL_ARROW_RE.search(stripped):
+        result = _make_translation_result(
+            stripped,
+            lean_expr="",
+            identifiers=[],
+            is_trivial=False,
+            is_partial=True,
+            array_identifiers=[],
+            string_identifiers=[],
+        )
+        _mark_partial(result, ["channel_arrow_requires_manual_lemma"])
+        return result
     unbraced = _unwrap_block_body(stripped)
     if unbraced is not None:
         # An empty block has no value; translate_body("") marks it partial.
@@ -3476,12 +3662,19 @@ def translate_body(body_expr: str) -> TranslationResult:
         )
         if any(
             rule
-            in ("perform_statement_lowering", "let_statement_lowering")
+            in (
+                "perform_statement_lowering",
+                "let_statement_lowering",
+                "task_value_lowering",
+                "task_group_all_lowering",
+                "task_group_any_lowering",
+            )
             for rule in inner_rules
         ):
             # Braces around an already-lowered statement sequence are
             # transparent; re-deriving IR from the outer tokens would
-            # re-flag the consumed `;` / `perform` surface as unsupported.
+            # re-flag the consumed `;` / `perform` / `task` surface as
+            # unsupported.
             return inner
         return _attach_translator_ir(stripped, inner)
     statement_seq = _statement_sequence_tail(stripped)
@@ -3500,6 +3693,12 @@ def translate_body(body_expr: str) -> TranslationResult:
                 if rule not in rules:
                     rules.append(rule)
         return inner
+    task_lowered = _task_group_body(stripped)
+    if task_lowered is not None:
+        # Spec §4.7: ``task { e }`` evaluates to its body; ``task_group:all``
+        # yields the last task's value (``task_group:any`` stays partial
+        # pending the list-membership theorem shape).
+        return task_lowered
     tokens, _ = _lower_struct_projection_tokens(_tokenize(stripped))
     if _statement_keywords(tokens):
         # A statement block has no value to lower; `_unsupported_reasons`

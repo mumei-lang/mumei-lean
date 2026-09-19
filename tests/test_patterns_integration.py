@@ -29,6 +29,8 @@ def _pattern_cert() -> dict:
                 "proof_hash": "p-clamp",
                 "dependencies": [],
                 "effects": [],
+                "translator_version": bridge.TRANSLATOR_VERSION,
+                "bridge_lemma_hash": bridge.BRIDGE_LEMMA_HASH,
             },
             {
                 "name": "bounded_mul_with_overflow_check",
@@ -41,6 +43,8 @@ def _pattern_cert() -> dict:
                 "proof_hash": "p-mul",
                 "dependencies": [],
                 "effects": [],
+                "translator_version": bridge.TRANSLATOR_VERSION,
+                "bridge_lemma_hash": bridge.BRIDGE_LEMMA_HASH,
             },
         ],
         "package_name": "std-math-patterns",

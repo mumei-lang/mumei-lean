@@ -50,8 +50,9 @@ total (`abs_saturating`, `bounded_mul_with_overflow_check`,
 `poly_bound_monotone`, `exists_pivot_partition`, `sum_nonneg_inductive`,
 `rtgs_transfer_conservation`, `ff_mul_commutative`, `ff_mul_associative`,
 `ff_mul_add_distributive`, `predicate_guard_collapse`, `ff_pow_square_expands`,
-`cei_compliant_withdraw` / `guarded_state_update`, `move_once` / `read_before_move`,
-`clamp_to_range`, `take_point`, `join_all_last_result`); see
+`cei_compliant_withdraw` / `guarded_state_update` (perform sequence),
+`move_once` / `read_before_move` (let sequence), `clamp_to_range` (nested if),
+`take_point` (struct projection), `join_all_last_result` (task group all)); see
 `docs/LEAN_HARNESS_CONTRACT.md` and `docs/LEAN_TRANSLATOR_SPEC.md` §5 for the
 per-path lowering.
 
@@ -152,7 +153,7 @@ open MumeiLean
 /-- Auto-generated from mumei atom `inc` (z3_check_result=unknown). -/
 theorem inc_correct (x result : Int) :
     (x > 0) → (result ≥ x) := by
-  mumei_arith <;> sorry
+  mumei_arith
 
 end Generated.Std.Math
 ```
@@ -169,7 +170,7 @@ theorem abs_saturating_auto_correct (x result : Int)
     (True) → (result ≥ 0) := by
   rw [h_body]
   unfold absSaturatingAutoResult
-  mumei_arith_deep <;> sorry
+  mumei_arith_deep
 ```
 
 The expression translator (`scripts/expr_translator.py`) handles a
@@ -185,7 +186,7 @@ v4 surface:
 | Conditionals | `if cond then a else b`                                       |
 | Match       | `match x { 0 => a, 1 => b, _ => c }` (→ Lean `match x with ...`) |
 | Quantifier  | `forall(i, lo, hi, body)`, `exists(i, lo, hi, body)`, `forall x: body`, `exists(x, body)` (→ Lean `∀` / `∃`) |
-| Arrays      | `arr[i]` (→ guarded `mumei_array_get arr i h`, with `arr.get! i.toNat` only as the partial fallback) |
+| Arrays      | `arr[i]` (→ `arr.get! i.toNat`; bounds are tracked via `semantic_gap_notes` / bridge-rule metadata, not a guarded accessor) |
 | Calls       | `len(x)` (→ `mumei_len x`), `abs(x)` (→ `mumei_abs x`), `min(a, b)`, `max(a, b)`, `old(x)` (→ `old_x`) |
 | Strings     | `starts_with(s, prefix)` (→ `mumei_starts_with s prefix`), `ends_with(s, suffix)` (→ `mumei_ends_with s suffix`), `not_contains(s, sub)` (→ `mumei_not_contains s sub`) |
 | Finite field | `ff_add(a,b,p)`, `ff_sub`, `ff_mul`, `ff_neg`, `ff_pow`, `ff_inv`, `ff_div`, `ff_in_field(a,p)`, `is_prime(p)`, `mod_eq(a,b,p)` (→ `MumeiLean.Algebra.*`) |

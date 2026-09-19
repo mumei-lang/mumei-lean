@@ -22,7 +22,9 @@
       "logic_fragment_tags": [
         "linear_arithmetic",
         "std_math_abs"
-      ]
+      ],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "bridge_lemma_hash": "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
     }
   ]
 }

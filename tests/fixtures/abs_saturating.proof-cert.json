@@ -14,7 +14,9 @@
       "dependencies": [],
       "effects": [],
       "requires": "true",
-      "ensures": "result >= 0"
+      "ensures": "result >= 0",
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "bridge_lemma_hash": "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
     }
   ],
   "package_name": "std",

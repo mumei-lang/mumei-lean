@@ -23,6 +23,7 @@ from tactic_history import (
     load_history,
     save_history,
 )
+import tactic_search
 from tactic_search import (
     STAGE_BUILD_FAILURE,
     STAGE_RESIDUAL,
@@ -202,7 +203,13 @@ def test_search_records_the_ranking_it_used(monkeypatch, tmp_path: Path):
         stdout = ""
         stderr = ""
 
-    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Proc())
+    monkeypatch.setattr(
+        tactic_search,
+        "_run_probe",
+        lambda *a, **k: subprocess.CompletedProcess(
+            a[0] if a else [], 0, "", ""
+        ),
+    )
     result = search_tactic(
         atom,
         stage=STAGE_BUILD_FAILURE,
@@ -225,7 +232,13 @@ def test_search_without_history_probes_the_declared_ladder(monkeypatch, tmp_path
         stdout = ""
         stderr = ""
 
-    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Proc())
+    monkeypatch.setattr(
+        tactic_search,
+        "_run_probe",
+        lambda *a, **k: subprocess.CompletedProcess(
+            a[0] if a else [], 0, "", ""
+        ),
+    )
     result = search_tactic(
         atom,
         stage=STAGE_BUILD_FAILURE,
@@ -256,7 +269,13 @@ def test_history_ranked_is_false_when_this_obligation_was_not_reordered(
         stdout = ""
         stderr = ""
 
-    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Proc())
+    monkeypatch.setattr(
+        tactic_search,
+        "_run_probe",
+        lambda *a, **k: subprocess.CompletedProcess(
+            a[0] if a else [], 0, "", ""
+        ),
+    )
     result = search_tactic(
         atom,
         stage=STAGE_BUILD_FAILURE,
@@ -275,7 +294,13 @@ def _stage_run(atom, history, path: Path, monkeypatch, capsys) -> str:
         stdout = ""
         stderr = ""
 
-    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Proc())
+    monkeypatch.setattr(
+        tactic_search,
+        "_run_probe",
+        lambda *a, **k: subprocess.CompletedProcess(
+            a[0] if a else [], 0, "", ""
+        ),
+    )
     _run_tactic_search_stage(
         [atom],
         STAGE_BUILD_FAILURE,

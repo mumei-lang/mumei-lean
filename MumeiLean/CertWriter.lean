@@ -28,6 +28,16 @@ namespace MumeiLean
 
 open Lean (Json)
 
+/-- Current translator contract identifiers. Kept in lockstep with
+`TRANSLATOR_VERSION` / `BRIDGE_LEMMA_HASH` in `scripts/export_cert.py`:
+an atom whose recorded identifiers differ — or are absent — is treated
+as stale and is never promoted, matching
+`lean_certificate_metadata_is_current` on the mumei side. -/
+def currentTranslatorVersion : String := "mumei-lean-translator-ir-v2"
+
+def currentBridgeLemmaHash : String :=
+  "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
+
 /-- Render a list of atom proof outcomes as a deterministic string
 list — used by Python at debug time. -/
 def renderResults (rs : List (String × ProofResult)) : List String :=
@@ -84,29 +94,55 @@ def atomToJson (a : AtomCertificateData) : Json :=
       | some m => leanResultMetadataToJson m),
   ]
 
+/-- Mirror of `_unknown_lean_candidate` in `scripts/export_cert.py`:
+the atom's Z3 outcome must be in the unknown/escalation class before a
+Lean result may upgrade it. -/
+def isUnknownCandidate (a : AtomCertificateData) : Bool :=
+  a.z3CheckResult == "unknown"
+    || a.z3ResultClass == "unknown"
+    || a.z3CheckResult == "spurious_candidate"
+    || a.escalationReason == "spurious_candidate"
+
+/-- Mirror of `_translator_contract_current` in `scripts/export_cert.py`:
+absent identifiers are stale, not current. -/
+def translatorContractCurrent (a : AtomCertificateData) : Bool :=
+  a.translatorVersion == currentTranslatorVersion
+    && a.bridgeLemmaHash == currentBridgeLemmaHash
+
 /-- Apply a single `(name, result)` pair to an atom: when the proof
-result is `verified`, upgrade the atom's `z3_check_result` to
-`"lean_verified"` and its `status` to `"verified"`; failed/timeout
-results leave the atom's existing fields intact (the mumei resolver
-already treats them as unproven, so the original `z3_check_result`
-— typically `"unknown"` — is the most informative value to preserve).
+result is `verified` *and* the atom passes the `_atom_proved` gates
+(unknown-class escalation candidate, current translator contract, no
+unsuperseded `manual_lemma_reason`), upgrade the atom's
+`z3_check_result` to `"lean_verified"` and its `status` to `"verified"`;
+failed/timeout results leave the atom's existing fields intact (the
+mumei resolver already treats them as unproven, so the original
+`z3_check_result` — typically `"unknown"` — is the most informative
+value to preserve).
 
 This mirrors `scripts/export_cert.py`, which only mutates atoms that
 pass `_atom_proved`; failed/timeout atoms are forwarded verbatim. The
-unknown-escalation metadata (`z3_result_class`, `escalation_reason`,
-`logic_fragment_tags`) is never rewritten: mumei's benchmark consumes it
-to attribute the escalation that produced the Lean proof. -/
+metadata-dependent supersession check (`_manual_lemma_reason_superseded`)
+has no Lean-side input, so any `manual_lemma_reason` is treated
+conservatively as blocking. The unknown-escalation metadata
+(`z3_result_class`, `escalation_reason`, `logic_fragment_tags`) is never
+rewritten: mumei's benchmark consumes it to attribute the escalation
+that produced the Lean proof. -/
 def applyResult
     (results : List (String × ProofResult))
     (a : AtomCertificateData) : AtomCertificateData :=
   match results.find? (fun (n, _) => n == a.name) with
   | some (_, .verified) =>
-    { a with
-        z3CheckResult := ProofResult.verified.toZ3CheckResult,
-        status        := ProofResult.verified.toStatus,
-        leanResultMetadata :=
-          a.leanResultMetadata.map fun m =>
-            { m with status := ProofResult.verified.toZ3CheckResult } }
+    if isUnknownCandidate a
+        && translatorContractCurrent a
+        && a.manualLemmaReason.isNone then
+      { a with
+          z3CheckResult := ProofResult.verified.toZ3CheckResult,
+          status        := ProofResult.verified.toStatus,
+          leanResultMetadata :=
+            a.leanResultMetadata.map fun m =>
+              { m with status := ProofResult.verified.toZ3CheckResult } }
+    else
+      a
   | _ => a
 
 /-- Compute the `all_verified` field after applying `results`: true iff
@@ -129,6 +165,9 @@ def writeLeanCertificateJson
     (leanVersion : String) : Json :=
   let upgradedAtoms := cert.atoms.map (applyResult results)
   let allVerified   := computeAllVerified upgradedAtoms
+  -- `certificate_hash` is deliberately omitted: it covers the canonical
+  -- serialisation of the *pre-upgrade* atoms, so re-emitting it would
+  -- certify stale content (export_cert.py pops it for the same reason).
   Json.mkObj [
     ("version",          Json.str cert.version),
     ("timestamp",        Json.str cert.generatedAt),
@@ -139,7 +178,6 @@ def writeLeanCertificateJson
     ("file",             Json.str cert.file),
     ("package_name",     optStr cert.packageName),
     ("package_version",  optStr cert.packageVersion),
-    ("certificate_hash", Json.str cert.certificateHash),
     ("all_verified",     Json.bool allVerified),
     ("atoms",            Json.arr (upgradedAtoms.map atomToJson).toArray),
   ]

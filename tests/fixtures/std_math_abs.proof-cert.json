@@ -16,7 +16,9 @@
       "requires": "true",
       "ensures": "result >= 0",
       "body_summary": "absolute value saturating at i64::MAX when x is i64::MIN",
-      "body_expr": "if x == (0 - 9223372036854775807 - 1) then 9223372036854775807 else if x >= 0 then x else 0 - x"
+      "body_expr": "if x == (0 - 9223372036854775807 - 1) then 9223372036854775807 else if x >= 0 then x else 0 - x",
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "bridge_lemma_hash": "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
     }
   ],
   "package_name": "std",

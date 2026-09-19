@@ -27,7 +27,24 @@ def _atom(name: str, z3: str = "unknown") -> dict:
         "proof_hash": "p",
         "dependencies": [],
         "effects": [],
+        # mumei stamps the translator contract on every atom; certs that
+        # predate it are treated as stale, so fixtures must set both.
+        "translator_version": TRANSLATOR_VERSION,
+        "bridge_lemma_hash": BRIDGE_LEMMA_HASH,
     }
+
+
+#: Contract fields stamped by `_metadata_for_atoms` on every emitted
+#: `lean_result_metadata` entry — metadata fixtures asserting promotion must
+#: carry them or the stale-translator gate correctly rejects the result.
+_CONTRACT = {
+    "translator_version": TRANSLATOR_VERSION,
+    "bridge_lemma_hash": BRIDGE_LEMMA_HASH,
+}
+
+
+def _meta(**kw) -> dict:
+    return {**_CONTRACT, **kw}
 
 
 def _certificate(atoms: list) -> dict:
@@ -84,10 +101,10 @@ def test_upgrade_certificate_known_witness_override_marks_atom_verified():
         lean_version="leanprover/lean4:v4.15.0",
         known_witness_override=["abs_saturating"],
         atom_metadata={
-            "abs_saturating": {
-                "status": LEAN_VERIFIED,
-                "proof_path": "MumeiLean/StdMathAbs.lean",
-            }
+            "abs_saturating": _meta(
+                status=LEAN_VERIFIED,
+                proof_path="MumeiLean/StdMathAbs.lean",
+            ),
         },
     )
     atom = upgraded["atoms"][0]
@@ -183,12 +200,12 @@ def test_upgrade_certificate_does_not_promote_manual_metadata():
         failed_atoms=[],
         lean_version="x",
         atom_metadata={
-            "unknown_placeholder": {
-                "status": "manual_lemma_required",
-                "manual_lemma_reason": (
+            "unknown_placeholder": _meta(
+                status="manual_lemma_required",
+                manual_lemma_reason=(
                     "unknown_obligation_requires_manual_lemma"
                 ),
-            },
+            ),
         },
     )
     atom = upgraded["atoms"][0]
@@ -205,7 +222,7 @@ def test_upgrade_certificate_only_promotes_unknown_candidates():
         proved_atoms=["closed"],
         failed_atoms=[],
         lean_version="x",
-        atom_metadata={"closed": {"status": LEAN_VERIFIED}},
+        atom_metadata={"closed": _meta(status=LEAN_VERIFIED)},
     )
 
     atom = upgraded["atoms"][0]
@@ -259,10 +276,10 @@ def test_upgrade_certificate_promotes_spurious_candidate_path():
         failed_atoms=[],
         lean_version="x",
         atom_metadata={
-            "exists_pivot_partition": {
-                "status": LEAN_VERIFIED,
-                "proof_path": "Generated/Std/List.lean",
-            }
+            "exists_pivot_partition": _meta(
+                status=LEAN_VERIFIED,
+                proof_path="Generated/Std/List.lean",
+            ),
         },
     )
     atom = upgraded["atoms"][0]
@@ -280,10 +297,10 @@ def test_upgrade_certificate_preserves_sc_rtgs_escalation_metadata():
         failed_atoms=[],
         lean_version="x",
         atom_metadata={
-            "withdraw_guard": {
-                "status": LEAN_VERIFIED,
-                "logic_fragment_tags": ["smart_contract"],
-            },
+            "withdraw_guard": _meta(
+                status=LEAN_VERIFIED,
+                logic_fragment_tags=["smart_contract"],
+            ),
         },
     )
     atom = upgraded["atoms"][0]
@@ -361,8 +378,8 @@ def test_upgrade_certificate_handles_escalation_bundle_metadata():
         failed_atoms=["manual"],
         lean_version="x",
         atom_metadata={
-            "inc": {"status": LEAN_VERIFIED, "proof_path": "Generated/Math.lean"},
-            "manual": {"status": "manual_required"},
+            "inc": _meta(status=LEAN_VERIFIED, proof_path="Generated/Math.lean"),
+            "manual": _meta(status="manual_required"),
         },
     )
     by_name = {a["name"]: a for a in upgraded["candidates"]}
@@ -495,7 +512,7 @@ def _upgrade_with_metadata(metadata: dict) -> str:
         proved_atoms=["inc"],
         failed_atoms=[],
         lean_version="leanprover/lean4:v4.15.0",
-        atom_metadata={"inc": metadata},
+        atom_metadata={"inc": {**_CONTRACT, **metadata}},
     )
     return upgraded["atoms"][0]["z3_check_result"]
 

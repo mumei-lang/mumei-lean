@@ -150,7 +150,7 @@ Known helper calls lower as follows:
 
 | Mumei call | Lean 4 call |
 |---|---|
-| `len(x)` | `mumei_len ⟦x⟧` |
+| `len(x)` | `mumei_len ⟦x⟧` (`⟦x⟧` scalar), or `((⟦x⟧.length : Int))` when `x` is an array-typed identifier — see §4.8 |
 | `abs(x)` | `mumei_abs ⟦x⟧` |
 | `min(a, b)` | `min ⟦a⟧ ⟦b⟧` |
 | `max(a, b)` | `max ⟦a⟧ ⟦b⟧` |
@@ -442,6 +442,70 @@ The lowering introduces the `concurrency_obligation` obligation class
 semantics in the trusted kernel — this catalog addition bumps
 `bridge_lemma_hash`. Recorded rules are `task_value_lowering`,
 `task_group_all_lowering`, and `task_group_any_lowering` (partial `any`).
+
+### 4.8 While-loop invariant bodies (verification-condition emission)
+
+A body of the shape
+
+```text
+{ let-init*; while <cond> invariant: <I> [decreases: <D>] { <assigns> }; <tail> }
+```
+
+lowers to the loop's verification conditions instead of a value term. The
+translator collects the loop-carried variables (the names assigned inside the
+loop body — every body statement must be a scalar rebind `x = e`), resolves the
+pre-loop `let` initialisers, and records the pieces on
+`TranslationResult.loop_vc` (`LoopVCPieces`): the invariant `I`, its
+entry-specialisation `I[init]`, the post-iteration image `I[σ']` where `σ'`
+substitutes every carried name by its body RHS **simultaneously** (so the
+`i ↦ i + 1` image cannot rewrite inside the `sum ↦ sum + arr[i]` image), the
+loop condition, the (optional) `decreases` measure and its post image, and the
+tail expression.
+
+`render_theorem` then emits no `def`/`h_body` at all — the theorem goal itself
+is the VC conjunction, with the carried variables universally quantified
+inside the conjuncts and `result` bound inside the post conjunct (so neither
+becomes a theorem parameter):
+
+```text
+theorem <atom>_correct (<params>) :
+    (⟦requires⟧) →
+      (I[init]) ∧
+      (∀ <carried> : Int, (I ∧ c) → I[σ']) ∧
+      (∀ <carried> : Int, (I ∧ c) → (0 ≤ D ∧ D[σ'] < D)) ∧   -- absent without decreases
+      (∀ <carried> : Int, (I ∧ ¬ c) → ∀ (result : Int), result = ⟦tail⟧ → ⟦ensures⟧)
+```
+
+This mirrors the mumei verifier's own loop checks (invariant at entry,
+preserved per iteration, measure descending, exit state discharges
+`ensures`). Requiring the invariant inside each conjunct — rather than
+treating `I ∧ ¬ c` as a proved hypothesis — keeps the statement sound: if the
+invariant does not actually hold the theorem is simply unprovable, never
+falsely verified. Recorded rule: `while_loop_invariant_lowering`.
+
+Conservative partials: a `while` that is not the second-to-last segment, a
+loop without `invariant:`, a body containing anything but scalar rebinds
+(nested loops, array-element writes, `perform`), a missing tail, or any
+partial piece leaves the body partial (no rule recorded). A loop-carried name
+initialised only by an outer parameter (no `let`) keeps its incoming value as
+the base substitution **and stays a theorem parameter** — the conjuncts still
+∀-bind the loop's own name, but the base conjunct reads on the parameter. Only
+`let`-initialised carried vars are removed from the signature; dropping an
+externally bound carried name would leave the base conjunct referencing an
+unbound identifier (ill-typed Lean).
+
+**`len(arr)` on arrays.** When an identifier appears both in `arr[i]` /
+`sum(arr, …)` position (i.e. it will be bound as `List Int`) and as the
+argument of `len`, the call lowers to `((arr.length : Int))` — `mumei_len`
+takes `Int` and would emit ill-typed Lean. A `len(x)` whose argument is never
+indexed keeps the scalar `mumei_len` lowering; `x` then stays an `Int` binder.
+Loop pieces share one array-name scan over the whole `{ …; while …; tail }`
+source, so `len(arr)` in the condition sees `arr[j]` indexing that only
+occurs inside the invariant. At ingest level the scan widens to the whole
+atom (`atom_array_names(requires, ensures, body)`): a name indexed in any
+clause is `List Int` in the theorem signature, so `len` on it lowers to
+`.length` in *every* clause — `result <= len(arr)` in `ensures` would
+otherwise emit ill-typed `mumei_len arr` against the `List Int` binder.
 
 ## 5. Semantic Gap Bridge Rules
 
@@ -955,7 +1019,8 @@ emitted in `TranslatorIR.lowering_rules`.
 | `rebind_statement_lowering` | A `x = e` statement rebinds a `let`-bound name inside a statement sequence; the new expression substitutes like a `let` binding and no bridge lemma is required. Parameter reassignment stays partial. | §4.4, §4.7 |
 | `task_value_lowering` | A bare `task { e }` body lowers to `e`; tags the `concurrency_obligation` class. | §4.7 |
 | `task_group_all_lowering` | A `task_group:all { task {…}; … }` body lowers to its last task's value; tags the `concurrency_obligation` class. | §4.7 |
-| `task_group_any_lowering` | A `task_group:any { task {…}; … }` body stays partial (list-membership theorem shape pending) but still tags the `concurrency_obligation` class. | §4.7 |
+| `task_group_any_lowering` | A `task_group:any { task {…}; … }` body lowers to the candidate-value `List Int`; the theorem hypothesises `result ∈ <def>` and `fin_cases` splits membership; tags the `concurrency_obligation` class. | §4.7 |
+| `while_loop_invariant_lowering` | A `{ let-init*; while c invariant: I [decreases: D] { assigns }; tail }` body lowers to the loop's verification conditions; the theorem goal is `requires → I[init] ∧ (∀ carried, I ∧ c → I[σ']) ∧ (∀ carried, I ∧ c → 0 ≤ D ∧ D[σ'] < D) ∧ (∀ carried, I ∧ ¬c → result = tail → ensures)` with no `def`/`h_body` emitted. | §4.8 |
 
 A translator implementation is compliant iff:
 

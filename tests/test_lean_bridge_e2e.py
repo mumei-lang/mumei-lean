@@ -1386,6 +1386,135 @@ def test_task_group_any_body_semantics_upgrade_unknown_to_lean_verified(
         _cleanup_generated_file(GENERATED_TASK_GROUP_ANY)
 
 
+GENERATED_LOOP_INVARIANT = (
+    REPO_ROOT
+    / "generated"
+    / "Generated"
+    / "Benchmarks"
+    / "Svcomp_style"
+    / "Loop_invariant.lean"
+)
+
+LOOP_VC_PROOF_SCRIPT = """intro h
+obtain ⟨hn, -, hall⟩ := h
+refine ⟨?_, ?_, ?_, ?_⟩
+· refine ⟨by omega, by omega, by omega⟩
+· intro sum i hi
+  obtain ⟨h1, h2, h3, h4⟩ := hi
+  have harr := hall i h1 h4
+  refine ⟨by omega, by omega, by omega⟩
+· intro sum i hi
+  obtain ⟨h1, -, -, h4⟩ := hi
+  omega
+· intro sum i hi result hr
+  obtain ⟨-, -, h3, -⟩ := hi
+  omega"""
+
+
+@pytest.mark.lake_available
+def test_while_loop_invariant_emits_vc_theorem_shape(
+    lake_available, tmp_path: Path
+):
+    """Spec §4.8: a while+invariant body emits the loop's verification
+    conditions as the theorem goal — no ``def``/``h_body`` — and the
+    generic ``mumei_arith_deep`` ladder cannot close it, so the atom
+    stays ``unknown`` and remains a B-4 external-proof input.
+    """
+    out_cert = tmp_path / "loop_invariant.lean-cert.json"
+    out_dir = tmp_path / "generated"
+    _cleanup_generated_file(GENERATED_LOOP_INVARIANT)
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "svcomp_style_loop_invariant.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+        assert proc.returncode == 1, proc.stdout + proc.stderr
+        assert "0 partial translation" in proc.stdout
+        generated_src = GENERATED_LOOP_INVARIANT.read_text()
+        assert "theorem sum_array_correct (n : Int) (arr : List Int)" in generated_src
+        assert "def " not in generated_src
+        assert "h_body" not in generated_src
+        # VC conjuncts: invariant base, step, decreases, exit→ensures.
+        assert "0 ≥ 0 ∧ 0 ≤ n ∧ 0 ≥ 0" in generated_src
+        assert "∀ sum i : Int" in generated_src
+        assert "¬ (i < n)" in generated_src
+        assert "result = (sum) → (result ≥ 0)" in generated_src
+        assert "sorry" not in generated_src
+        payload = json.loads(out_cert.read_text())
+        atom = next(a for a in payload["atoms"] if a["name"] == "sum_array")
+        assert atom["z3_check_result"] == "unknown"
+        meta = atom["lean_metadata"]
+        assert meta["status"] == "manual_lemma_required"
+        assert meta["known_witness_used"] is False
+        assert meta.get("ai_proof_used") is not True
+        rules = meta["translator_ir"]["lowering_rules"]
+        assert "while_loop_invariant_lowering" in rules
+    finally:
+        _cleanup_generated_file(GENERATED_LOOP_INVARIANT)
+
+
+@pytest.mark.lake_available
+def test_while_loop_invariant_vc_provable_via_external_proof(
+    lake_available, tmp_path: Path
+):
+    """Spec §4.8/B-4: the emitted VC theorem is provable — a supplied
+    external proof script (invariant intro + per-conjunct discharge)
+    lifts the atom to ``lean_verified``.
+    """
+    proofs = tmp_path / "proofs.json"
+    proofs.write_text(
+        json.dumps(
+            {
+                "proofs": [
+                    {
+                        "atom": "sum_array",
+                        "attempts": 1,
+                        "tactic_script": LOOP_VC_PROOF_SCRIPT,
+                    }
+                ]
+            }
+        )
+    )
+    out_cert = tmp_path / "loop_invariant.lean-cert.json"
+    out_dir = tmp_path / "generated"
+    _cleanup_generated_file(GENERATED_LOOP_INVARIANT)
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "svcomp_style_loop_invariant.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+            "--no-tactic-search",
+            "--external-proofs",
+            str(proofs),
+        )
+        _assert_bridge_ok(proc)
+        generated_src = GENERATED_LOOP_INVARIANT.read_text()
+        assert "sorry" not in generated_src
+        payload = json.loads(out_cert.read_text())
+        atom = next(a for a in payload["atoms"] if a["name"] == "sum_array")
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["status"] == "verified"
+        meta = atom["lean_metadata"]
+        assert meta["status"] == "lean_verified"
+        assert meta["ai_proof_used"] is True
+        assert meta["ai_proof_attempts"] == 1
+        assert meta["external_proof"]["source"] == "ai_generated_proof"
+        assert meta["known_witness_used"] is False
+        assert meta["bridge_lemma_hash"] == (
+            "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
+        )
+        assert payload["all_verified"] is True
+    finally:
+        _cleanup_generated_file(GENERATED_LOOP_INVARIANT)
+
+
 GENERATED_QUINTIC = REPO_ROOT / "generated" / "Generated" / "Std" / "Quintic.lean"
 QUINTIC_GOOD_SCRIPT = (
     "intro hx\nsubst h_body\nunfold quinticPosResult\n"

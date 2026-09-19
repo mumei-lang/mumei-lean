@@ -1762,6 +1762,98 @@ def test_translate_body_keeps_task_group_edge_cases_partial(source):
     )
 
 
+def test_translate_body_lowers_while_loop_invariant_to_vc():
+    # Spec §4.8: `{ let-init*; while c invariant: I decreases: D { assigns };
+    # tail }` lowers to the loop's verification conditions carried in
+    # `loop_vc`; the emitted theorem goal is
+    # `requires → base ∧ step ∧ decreases ∧ post`.
+    result = expr_translator.translate_body(
+        "{ let sum = 0; let i = 0; while i < n "
+        "invariant: i >= 0 && i <= n && sum >= 0 "
+        "decreases: n - i { sum = sum + arr[i]; i = i + 1 }; sum }"
+    )
+    assert result.is_partial is False
+    vc = result.loop_vc
+    assert vc is not None
+    assert "while_loop_invariant_lowering" in result.translator_ir.lowering_rules
+    # Carried vars are ``∀``-bound inside the goal conjuncts — they must
+    # not leak into free identifiers or IR binders.
+    assert set(result.identifiers) == {"n", "arr"}
+    binder_names = {
+        binder.mumei_name for binder in result.translator_ir.binders
+    }
+    assert "sum" not in binder_names
+    assert "i" not in binder_names
+    assert vc.carried_vars == ["sum", "i"]
+    assert vc.invariant_base == "0 ≥ 0 ∧ 0 ≤ n ∧ 0 ≥ 0"
+    # Post-state substitution is simultaneous: the `i ↦ i + 1` image must
+    # not rewrite `arr[i]` inside the `sum ↦ sum + arr[i]` image.
+    assert "( sum + arr.get! i.toNat ) ≥ 0" in vc.invariant_after
+    assert "( i + 1 ) ≥ 0" in vc.invariant_after
+    assert vc.decreases == "n - i"
+    assert vc.decreases_after == "n - ( i + 1 )"
+    assert vc.tail == "sum"
+    assert "arr" in result.array_identifiers
+
+
+def test_translate_body_while_loop_sequential_assign_env():
+    # Rebinds inside the loop body apply sequentially: `b = a * 2` reads
+    # the post-image of `a` (i.e. `b + 1`), not the incoming `a`.
+    result = expr_translator.translate_body(
+        "{ let a = x; let b = y; while i < n "
+        "invariant: a >= 0 && b >= 0 { a = b + 1; b = a * 2 }; b }"
+    )
+    assert result.is_partial is False
+    vc = result.loop_vc
+    assert vc is not None
+    assert vc.invariant_after == "( b + 1 ) ≥ 0 ∧ ( ( b + 1 ) * 2 ) ≥ 0"
+    assert vc.invariant_base == "x ≥ 0 ∧ y ≥ 0"
+    assert vc.tail == "b"
+
+
+def test_translate_body_while_loop_without_decreases():
+    result = expr_translator.translate_body(
+        "{ let i = 0; while i < n invariant: i >= 0 && i <= n "
+        "{ i = i + 1 }; i }"
+    )
+    assert result.is_partial is False
+    vc = result.loop_vc
+    assert vc is not None
+    assert vc.decreases is None
+    assert vc.decreases_after is None
+    assert vc.cond == "i < n"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # A `while` must be the second-to-last segment — a loop mid
+        # sequence stays partial.
+        "{ while i < n invariant: i <= n { i = i + 1 }; let z = 1; z }",
+        # `invariant:` is mandatory for the VC shape.
+        "{ while i < n { i = i + 1 }; i }",
+        # A nested while in the loop body is not a scalar rebind.
+        "{ let i = 0; while i < n invariant: i <= n "
+        "{ while j < n invariant: j <= n { j = j + 1 }; i = i + 1 }; i }",
+        # Non-scalar-assign targets (array elements) are out of scope.
+        "{ let i = 0; while i < n invariant: i <= n { arr[i] = 0 }; i }",
+        # A loop with no trailing value expression has no `result` to
+        # discharge `ensures` with.
+        "{ let i = 0; while i < n invariant: i <= n { i = i + 1 } }",
+        # Malformed head: `{` inside the condition.
+        "{ let i = 0; while i < { n } invariant: i <= n { i = i + 1 }; i }",
+    ],
+)
+def test_translate_body_keeps_while_loop_edge_cases_partial(source):
+    result = expr_translator.translate_body(source)
+    assert result.is_partial is True, source
+    assert (
+        result.translator_ir is None
+        or "while_loop_invariant_lowering"
+        not in result.translator_ir.lowering_rules
+    )
+
+
 @pytest.mark.parametrize(
     "source",
     [

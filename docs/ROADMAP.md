@@ -249,6 +249,24 @@ change to the contract constants must be synchronised across projects in the sam
   lowering rule. `bridge_lemma_hash` unchanged (the `task_group_any_result_mem`
   lemma already shipped with the class). P31's remaining gap is the
   statement-sequence-middle `task_group` shape (`read_cancellable_write`).
+  B-4 / C-1 group 3 landed next: `{ let-init*; while c invariant: I
+  [decreases: D] { assigns }; tail }` bodies now emit the loop's verification
+  conditions as the theorem goal — `requires → I[init] ∧ (∀ carried, I∧c →
+  I[σ']) ∧ (∀ carried, I∧c → 0 ≤ D ∧ D[σ'] < D) ∧ (∀ carried, I∧¬c → result =
+  tail → ensures)` — with carried vars ∀-bound inside the conjuncts and no
+  `def`/`h_body` (spec §4.8, `while_loop_invariant_lowering`). Post-state
+  substitution is simultaneous so `i ↦ i+1` does not rewrite inside
+  `sum ↦ sum + arr[i]`; sequential rebind images compose correctly. These
+  theorems deliberately stay `unknown` under the deterministic ladder —
+  that is what makes them usable B-4 external-proof inputs instead of
+  partial bodies that never reach emission (verified by the
+  `svcomp_style_loop_invariant` fixture: `sum_array` stays
+  `manual_lemma_required` under `mumei_arith_deep` and verifies via a
+  supplied tactic script). Enabler: `len(arr)` on a `List Int`-typed
+  identifier now lowers to `((arr.length : Int))` — `mumei_len` takes `Int`
+  and previously forced such contracts partial. `bridge_lemma_hash`
+  unchanged (`5716cfdd…` — no catalog change); live path count stays 20
+  since loop-VC theorems are not `lean_verified` until a proof arrives.
   Reference
   regression gates:
 

@@ -1367,9 +1367,23 @@ def render_theorem(atom: IngestedAtom) -> str:
         and "task_group_any_lowering"
         in (body_tr.translator_ir.lowering_rules or [])
     )
+    # A ``while … invariant: …`` body lowers to the loop's verification
+    # conditions (spec §4.8): the theorem goal becomes
+    # ``requires → base ∧ step ∧ decreases ∧ post`` instead of a
+    # ``result = <def>`` body-semantics statement. Carried loop vars are
+    # universally quantified inside the conjuncts and ``result`` is bound
+    # inside the post conjunct, so neither becomes a theorem parameter.
+    loop_vc = getattr(body_tr, "loop_vc", None) if use_body_semantics else None
+    is_loop_vc = (
+        loop_vc is not None
+        and body_tr is not None
+        and body_tr.translator_ir is not None
+        and "while_loop_invariant_lowering"
+        in (body_tr.translator_ir.lowering_rules or [])
+    )
     result_type_override = (
         _body_result_type(atom.body_expr, body_tr)
-        if use_body_semantics and not is_any_group
+        if use_body_semantics and not is_any_group and not is_loop_vc
         else None
     )
 
@@ -1386,6 +1400,7 @@ def render_theorem(atom: IngestedAtom) -> str:
     if (
         has_result
         and result_type_override is None
+        and not is_loop_vc
         and "result" not in scalar_params
         and "result" not in array_idents
     ):
@@ -1393,7 +1408,7 @@ def render_theorem(atom: IngestedAtom) -> str:
 
     decl_parts = (
         []
-        if result_type_override is not None
+        if result_type_override is not None or is_loop_vc
         else _decl_parts_from_translator_ir(atom.translator_ir, binder_mapping)
     )
     if not decl_parts:
@@ -1435,7 +1450,7 @@ def render_theorem(atom: IngestedAtom) -> str:
     def_params = [i for i in idents if i != "result"]
     def_decl = ""
     h_body_param = ""
-    if use_body_semantics:
+    if use_body_semantics and not is_loop_vc:
         body_type = (
             "List Int" if is_any_group else (result_type_override or "Int")
         )
@@ -1485,7 +1500,11 @@ def render_theorem(atom: IngestedAtom) -> str:
         body = finite_field_body
     elif use_body_semantics:
         tactic = atom.auto_tactic or "mumei_arith_deep"
-        if is_any_group:
+        if is_loop_vc:
+            # ``h_body`` does not exist — the goal itself is the loop's
+            # verification-condition conjunction.
+            body = f"  {tactic}"
+        elif is_any_group:
             # ``h_body : result ∈ [e₁, …, eₙ]`` — split into one goal per
             # candidate (``fin_cases`` substitutes ``result := eᵢ``), each
             # closed by the arithmetic cascade under ``requires``.
@@ -1520,11 +1539,48 @@ def render_theorem(atom: IngestedAtom) -> str:
     if note_block:
         note_block += "\n"
 
+    goal_lean = ensures_lean
+    if is_loop_vc:
+        # Spec §4.8: the goal is the loop's verification-condition
+        # conjunction — invariant at entry, preserved per iteration, the
+        # ``decreases`` measure descending, and the exit state discharging
+        # ``ensures``. Mirrors the mumei verifier's own loop checks.
+        carried = [binder_mapping.get(name, name) for name in loop_vc.carried_vars]
+        binder_list = " ".join(carried)
+        inv = _apply_identifier_mapping(loop_vc.invariant, binder_mapping)
+        inv_base = _apply_identifier_mapping(
+            loop_vc.invariant_base, binder_mapping
+        )
+        inv_after = _apply_identifier_mapping(
+            loop_vc.invariant_after, binder_mapping
+        )
+        cond = _apply_identifier_mapping(loop_vc.cond, binder_mapping)
+        tail = _apply_identifier_mapping(loop_vc.tail, binder_mapping)
+        conjuncts = [
+            f"({inv_base})",
+            f"(∀ {binder_list} : Int, ({inv} ∧ {cond}) → ({inv_after}))",
+        ]
+        if loop_vc.decreases is not None:
+            dec = _apply_identifier_mapping(loop_vc.decreases, binder_mapping)
+            dec_after = _apply_identifier_mapping(
+                loop_vc.decreases_after or "", binder_mapping
+            )
+            conjuncts.append(
+                f"(∀ {binder_list} : Int, ({inv} ∧ {cond}) → "
+                f"(0 ≤ {dec} ∧ {dec_after} < {dec}))"
+            )
+        conjuncts.append(
+            f"(∀ {binder_list} : Int, ({inv} ∧ ¬ ({cond})) → "
+            f"∀ ({result_binder} : Int), {result_binder} = ({tail}) → "
+            f"({ensures_lean}))"
+        )
+        goal_lean = " ∧\n      ".join(conjuncts)
+
     decl = (
         def_decl +
         _theorem_preamble(atom) +
         f"theorem {_lean_theorem_name(atom.name)} {params_decl}{h_body_param} :\n"
-        f"    ({requires_lean}) → ({ensures_lean}) := by\n"
+        f"    ({requires_lean}) → ({goal_lean}) := by\n"
         f"{note_block}{body}\n"
     )
     return decl

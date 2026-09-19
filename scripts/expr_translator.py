@@ -29,7 +29,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
 # Tokens we recognise. Order matters: longer prefixes must come first
 # so e.g. ``>=`` is not split into ``>`` + ``=``.
@@ -539,6 +539,49 @@ class TranslationResult:
     ``String`` / ``List Int`` / ``Prop``), when the translator could
     determine one structurally (e.g. by unifying conditional branches)."""
 
+    loop_vc: Optional["LoopVCPieces"] = None
+    """Structured verification-condition pieces for a ``while`` body
+    (spec §4.8). Present only when ``while_loop_invariant_lowering`` is in
+    ``lowering_rules`` — the emitted theorem is the conjunction of the
+    invariant's base/step/decreases/post obligations rather than a
+    ``result = <def>`` body-semantics statement."""
+
+
+@dataclass
+class LoopVCPieces:
+    """Lean fragments for a ``while`` body emitted as verification
+    conditions mirroring mumei's own loop checks (invariant base case,
+    inductive step, ``decreases`` termination, and the exit-state ensures
+    discharge). All fragments are already-translated Lean text over the
+    carried variable names plus the atom's free parameters."""
+
+    carried_vars: List[str]
+    """Variables the loop body assigns — universally quantified inside the
+    step/decreases/post conjuncts (never theorem parameters)."""
+
+    invariant: str
+    """Lean Prop for the loop invariant over the carried vars."""
+
+    invariant_base: str
+    """``invariant`` with each carried var replaced by its entry binding."""
+
+    invariant_after: str
+    """``invariant`` with each carried var replaced by its post-body
+    expression (sequential assignment semantics)."""
+
+    cond: str
+    """Lean Prop for the loop guard."""
+
+    decreases: Optional[str]
+    """Lean Int expression for the ``decreases:`` measure, when present."""
+
+    decreases_after: Optional[str]
+    """The measure after one body iteration, in entry-state terms."""
+
+    tail: str
+    """Lean Int expression for the block's value tail over the carried
+    (post-loop) variables."""
+
 
 _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "type_system_mapping",
@@ -570,6 +613,10 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "smart_contract_cei_lowering",
     "rtgs_settlement_lowering",
     "sort_ascending_bridge",
+    "task_value_lowering",
+    "task_group_all_lowering",
+    "task_group_any_lowering",
+    "while_loop_invariant_lowering",
 }
 
 _FORMAL_SPEC_TYPE_MAPPINGS: Dict[str, str] = {
@@ -2159,7 +2206,10 @@ def translate_group_theory(function_name: str, arg_srcs: List[str]) -> Optional[
     return f"({_KNOWN_FUNCTIONS[function_name]}{call_args})"
 
 
-def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
+def _emit_tokens(
+    tokens: List[tuple],
+    array_names: Optional[FrozenSet[str]] = None,
+) -> Tuple[str, bool]:
     """Token-level emit pass with ``forall(..)``, known calls, ``arr[i]``,
     and unknown function-call rewrites.
 
@@ -2208,8 +2258,8 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                             break
                         j += 1
                     if in_idx != -1:
-                        expr_src, p1 = _emit_tokens(tokens[eq_idx + 1 : in_idx])
-                        body_src, p2 = _emit_tokens(tokens[in_idx + 1 :])
+                        expr_src, p1 = _emit_tokens(tokens[eq_idx + 1 : in_idx], array_names)
+                        body_src, p2 = _emit_tokens(tokens[in_idx + 1 :], array_names)
                         pieces.append(f"(let {var_name} := {expr_src}; {body_src})")
                         is_partial = is_partial or p1 or p2
                         i = n
@@ -2253,9 +2303,9 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                 is_partial = True
                 i += 1
                 continue
-            cond_src, p1 = _emit_tokens(tokens[i + 1 : then_idx])
-            then_src, p2 = _emit_tokens(tokens[then_idx + 1 : else_idx])
-            else_src, p3 = _emit_tokens(tokens[else_idx + 1 :])
+            cond_src, p1 = _emit_tokens(tokens[i + 1 : then_idx], array_names)
+            then_src, p2 = _emit_tokens(tokens[then_idx + 1 : else_idx], array_names)
+            else_src, p3 = _emit_tokens(tokens[else_idx + 1 :], array_names)
             pieces.append(f"if {cond_src} then {then_src} else {else_src}")
             is_partial = is_partial or p1 or p2 or p3
             if i != 0 or not _if_else_tail_is_supported(tokens[else_idx + 1 :]):
@@ -2290,7 +2340,7 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                 is_partial = True
                 i += 1
                 continue
-            scrutinee_src, p_scrutinee = _emit_tokens(tokens[i + 1 : brace_idx])
+            scrutinee_src, p_scrutinee = _emit_tokens(tokens[i + 1 : brace_idx], array_names)
             arm_parts = _split_top_level(tokens, brace_idx + 1, close)
             arm_srcs: List[str] = []
             match_partial = p_scrutinee or close != n - 1
@@ -2305,7 +2355,7 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                     match_partial = True
                     continue
                 pattern_src = " ".join(text for _kind, text in pattern_tokens)
-                value_src, p_value = _emit_tokens(value_tokens)
+                value_src, p_value = _emit_tokens(value_tokens, array_names)
                 arm_srcs.append(f"| {pattern_src} => {value_src}")
                 match_partial = match_partial or p_value
             if not arm_srcs:
@@ -2324,7 +2374,7 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
             parsed = _parse_unbounded_quantifier(tokens, i)
             if parsed is not None:
                 var_name, lean_type, _body_start, body_tokens = parsed
-                body_src, p = _emit_tokens(body_tokens)
+                body_src, p = _emit_tokens(body_tokens, array_names)
                 symbol = "∀" if text == "forall" else "∃"
                 pieces.append(f"({symbol} {var_name} : {lean_type}, {body_src})")
                 is_partial = is_partial or p
@@ -2369,9 +2419,9 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                     continue
             if is_range_quantifier and parsed_range_binder is not None:
                 var_name, start_tokens, end_tokens = parsed_range_binder
-                start_src, p1 = _emit_tokens(start_tokens)
-                end_src, p2 = _emit_tokens(end_tokens)
-                body_src, p3 = _emit_tokens(parts[1])
+                start_src, p1 = _emit_tokens(start_tokens, array_names)
+                end_src, p2 = _emit_tokens(end_tokens, array_names)
+                body_src, p3 = _emit_tokens(parts[1], array_names)
                 if text == "forall":
                     pieces.append(
                         f"(∀ {var_name} : Int, {start_src} ≤ {var_name} → "
@@ -2385,16 +2435,16 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                 is_partial = is_partial or p1 or p2 or p3
             elif is_unbounded_quantifier and parsed_binder is not None:
                 var_name, _mumei_type, lean_type = parsed_binder
-                body_src, p = _emit_tokens(parts[1])
+                body_src, p = _emit_tokens(parts[1], array_names)
                 symbol = "∀" if text == "forall" else "∃"
                 pieces.append(f"({symbol} {var_name} : {lean_type}, {body_src})")
                 is_partial = is_partial or p
             elif parsed_binder is not None:
                 var_name, _mumei_type, lean_type = parsed_binder
                 start_tokens, end_tokens, body_tokens = parts[1], parts[2], parts[3]
-                start_src, p1 = _emit_tokens(start_tokens)
-                end_src, p2 = _emit_tokens(end_tokens)
-                body_src, p3 = _emit_tokens(body_tokens)
+                start_src, p1 = _emit_tokens(start_tokens, array_names)
+                end_src, p2 = _emit_tokens(end_tokens, array_names)
+                body_src, p3 = _emit_tokens(body_tokens, array_names)
                 if text == "forall":
                     pieces.append(
                         f"(∀ {var_name} : {lean_type}, {start_src} ≤ {var_name} → "
@@ -2422,7 +2472,7 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
             for elem in elem_parts:
                 if not elem:
                     continue
-                src, p = _emit_tokens(elem)
+                src, p = _emit_tokens(elem, array_names)
                 elem_srcs.append(src)
                 is_partial = is_partial or p
             pieces.append(f"[{', '.join(elem_srcs)}]")
@@ -2448,7 +2498,7 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                 i += 1
                 continue
             inner_tokens = tokens[i + 2 : close]
-            inner_src, p = _emit_tokens(inner_tokens)
+            inner_src, p = _emit_tokens(inner_tokens, array_names)
             num_only = (
                 len(inner_tokens) == 1 and inner_tokens[0][0] == "NUM"
             )
@@ -2494,7 +2544,7 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                     arg_parts = []
             arg_srcs: List[str] = []
             for ap in arg_parts:
-                src, p = _emit_tokens(ap)
+                src, p = _emit_tokens(ap, array_names)
                 arg_srcs.append(src)
                 is_partial = is_partial or p
             if text in _KNOWN_FUNCTIONS:
@@ -2509,6 +2559,19 @@ def _emit_tokens(tokens: List[tuple]) -> Tuple[str, bool]:
                     else:
                         pieces.append(f"old_ ({arg_srcs[0]})")
                         is_partial = True
+                elif (
+                    text == "len"
+                    and len(arg_parts) == 1
+                    and len(arg_parts[0]) == 1
+                    and arg_parts[0][0][0] == "ID"
+                    and arg_parts[0][0][1] in (array_names or ())
+                ):
+                    # ``len(arr)`` on an identifier that is *also* used in
+                    # ``arr[i]`` / ``sum(arr, …)`` position refers to the
+                    # ``List Int`` length — ``mumei_len`` takes ``Int`` and
+                    # would emit ill-typed Lean. ``List.length`` is ``Nat``,
+                    # so an explicit ``Int`` coercion is required.
+                    pieces.append(f"(({arg_srcs[0]}.length : Int))")
                 elif text == "holds":
                     predicate_arg = arg_parts[0]
                     if len(predicate_arg) == 1 and predicate_arg[0][0] == "ID":
@@ -2618,7 +2681,9 @@ def translate_contract(source: str) -> TranslationResult:
     tokens, projected_idents = _lower_struct_projection_tokens(
         _tokenize(stripped)
     )
-    lean_expr, is_partial = _emit_tokens(tokens)
+    lean_expr, is_partial = _emit_tokens(
+        tokens, frozenset(_list_typed_ident_names(tokens))
+    )
     # Collect identifiers that appear in ``arr[i]`` position. These need
     # ``List Int`` typing in the rendered theorem signature so that
     # ``arr.get! i`` type-checks.
@@ -2727,6 +2792,11 @@ def translate_contract(source: str) -> TranslationResult:
                         if at not in scalar_call_idents:
                             scalar_call_idents.append(at)
                         if at in array_idents or at in string_idents:
+                            if text == "len" and at in array_idents:
+                                # ``len(arr)`` on a ``List Int``-typed
+                                # identifier lowers to
+                                # ``(arr.length : Int)`` — legitimate.
+                                continue
                             is_partial = True
                             break
     # Stand-alone commas outside known function calls / ``forall(..)`` /
@@ -2907,9 +2977,48 @@ def translate_contract(source: str) -> TranslationResult:
 _IDENT_PATTERN = r"[A-Za-z_][A-Za-z0-9_]*"
 
 
+def _list_typed_ident_names(tokens: List[tuple]) -> Set[str]:
+    """Identifiers that will be typed ``List Int`` in the rendered theorem.
+
+    Covers ``arr[i]`` index targets and the ``List Int`` first arguments
+    of ``sum`` / ``count``. ``_emit_tokens`` consults this set so that
+    ``len(arr)`` on such an identifier lowers to ``(arr.length : Int)``
+    instead of the ill-typed ``(mumei_len arr)`` (``mumei_len : Int → Int``).
+    """
+    names: Set[str] = set()
+    for j, (kind, text) in enumerate(tokens):
+        if (
+            kind == "ID"
+            and text not in _RESERVED_IDENTS
+            and j + 1 < len(tokens)
+            and tokens[j + 1] == ("OP", "[")
+        ):
+            names.add(text)
+        elif (
+            kind == "ID"
+            and text in _ARRAY_FIRST_ARG_FUNCTIONS
+            and j + 1 < len(tokens)
+            and tokens[j + 1] == ("OP", "(")
+        ):
+            close = _find_matching(tokens, j + 1, "(", ")")
+            if close == -1:
+                continue
+            parts = _split_top_level(tokens, j + 2, close)
+            if (
+                parts
+                and len(parts[0]) == 1
+                and parts[0][0][0] == "ID"
+                and parts[0][0][1] not in _RESERVED_IDENTS
+            ):
+                names.add(parts[0][0][1])
+    return names
+
+
 def _fragment_translation(source: str) -> tuple[str, list[str], bool]:
     tokens, _ = _lower_struct_projection_tokens(_tokenize(source.strip()))
-    lean_expr, is_partial = _emit_tokens(tokens)
+    lean_expr, is_partial = _emit_tokens(
+        tokens, frozenset(_list_typed_ident_names(tokens))
+    )
     return lean_expr, _extract_identifiers(tokens), is_partial
 
 
@@ -3309,6 +3418,323 @@ def _task_group_body(source: str) -> Optional[TranslationResult]:
     return _annotate_concurrency_result(result, "task_group_all_lowering")
 
 
+_LOOP_CLAUSE_RE = re.compile(r"\b(invariant|decreases)\s*:", re.DOTALL)
+
+
+def _while_head_parts(segment: str) -> Optional[Tuple[str, str, Optional[str], str]]:
+    """Split ``while <cond> invariant: <I> [decreases: <D>] { <body> }``.
+
+    Returns ``(cond_src, invariant_src, decreases_src_or_None, body_src)``
+    — ``body_src`` is the text between the loop body's braces. ``invariant:``
+    is mandatory (it is what makes the loop dischargeable); a ``while``
+    surface without it is not this shape.
+    """
+    head = re.match(r"\s*while\b", segment)
+    if head is None:
+        return None
+    rest = segment[head.end() :]
+    # The body block opens at the first depth-0 ``{`` (string aware).
+    depth = 0
+    in_string = False
+    escaped = False
+    body_open = -1
+    for index, ch in enumerate(rest):
+        if escaped:
+            escaped = False
+            continue
+        if in_string:
+            if ch == "\\":
+                escaped = True
+                continue
+            if ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        elif ch == "{" and depth == 0:
+            body_open = index
+            break
+    if body_open == -1:
+        return None
+    abs_open = head.end() + body_open
+    abs_close = _matching_brace_index(segment, abs_open)
+    if abs_close is None or segment[abs_close + 1 :].strip():
+        return None
+    body_src = segment[abs_open + 1 : abs_close]
+    clauses = rest[:body_open]
+    marks = list(_LOOP_CLAUSE_RE.finditer(clauses))
+    if not marks or marks[0].group(1) != "invariant":
+        return None
+    cond_src = clauses[: marks[0].start()].strip()
+    invariant_src = clauses[marks[0].end() : marks[1].start() if len(marks) > 1 else len(clauses)].strip()
+    decreases_src: Optional[str] = None
+    if len(marks) > 1:
+        if marks[1].group(1) != "decreases" or len(marks) > 2:
+            return None
+        decreases_src = clauses[marks[1].end() :].strip()
+        if not decreases_src:
+            return None
+    if not cond_src or not invariant_src:
+        return None
+    return cond_src, invariant_src, decreases_src, body_src
+
+
+def _substitute_all(
+    source: str, mapping: Dict[str, str]
+) -> Optional[str]:
+    """Apply ``_substitute_identifier`` for every entry; ``None`` on failure."""
+    out = source
+    for name, image in mapping.items():
+        out = _substitute_identifier(out, name, image)
+        if out is None:
+            return None
+    return out
+
+
+def _substitute_simultaneous(
+    source: str, mapping: Dict[str, str]
+) -> Optional[str]:
+    """Replace every mapped name in one token pass.
+
+    ``_substitute_all`` applies entries sequentially, so an image carrying
+    another mapped name (``sum ↦ sum + arr[i]`` then ``i ↦ i + 1``) would
+    rewrite inside the inserted image — the post-body substitution must be
+    simultaneous: every carried var maps to its own post-body expression
+    in terms of pre-state names. Same safety guards as
+    ``_substitute_identifier``: a name rebound by ``let``/``forall``/
+    ``exists`` or in call position makes the substitution unsound.
+    """
+    if not mapping:
+        return source
+    tokens = _tokenize(source)
+    for name in mapping:
+        for idx, (kind, text) in enumerate(tokens):
+            if kind != "ID" or text != name:
+                continue
+            if idx + 1 < len(tokens) and tokens[idx + 1] == ("OP", "("):
+                return None
+            prev = tokens[idx - 1] if idx > 0 else None
+            if prev is not None and prev[0] == "KW" and prev[1] == "let":
+                return None
+            if (
+                idx >= 2
+                and tokens[idx - 1] == ("OP", "(")
+                and tokens[idx - 2][0] == "KW"
+                and tokens[idx - 2][1] in ("forall", "exists")
+            ):
+                return None
+    pieces: List[str] = []
+    for kind, text in tokens:
+        if kind == "ID" and text in mapping:
+            image = mapping[text]
+            pieces.append(
+                f"({image})" if len(_tokenize(image)) > 1 else image
+            )
+        else:
+            pieces.append(text)
+    return " ".join(pieces)
+
+
+def _while_loop_body(source: str) -> Optional[TranslationResult]:
+    """Lower ``{ …; while c invariant: I decreases: D { assigns }; tail }``.
+
+    A ``while`` body has no single value expression — the loop's
+    contribution to the atom's contract is its verification conditions,
+    mirroring mumei's own checks (``mumei-core`` ``stmt.rs``): the
+    invariant at the initial bindings (base), its preservation under one
+    havoced iteration (step), the ``decreases`` measure's non-negativity
+    and strict decrease (termination), and the ensures discharge on the
+    exit state (post). ``render_theorem`` emits these as the theorem goal
+    ``requires → base ∧ step ∧ decreases ∧ post`` — each conjunct is a
+    quantifier-free obligation the tactic cascade or an AI-generated
+    proof discharges (spec §4.8).
+
+    Carried variables (the loop body's assignment targets) are
+    universally quantified inside the conjuncts, never emitted as theorem
+    parameters. ``let`` bindings before the loop provide their entry
+    values; non-carried ``let`` names substitute into every piece. Any
+    deviation — a second ``while``, a non-``let``/``perform``/rebind
+    prefix statement, a loop body that is not a plain ``x = e`` sequence,
+    a partial piece — stays partial.
+    """
+    inner = _enclosed_block_inner(source)
+    if inner is None:
+        return None
+    segments = _split_statement_segments(inner)
+    if segments is None or len(segments) < 2:
+        return None
+    positions = [
+        i for i, seg in enumerate(segments) if re.match(r"\s*while\b", seg)
+    ]
+    if not positions or positions != [len(segments) - 2]:
+        return None
+    parts = _while_head_parts(segments[-2])
+    if parts is None:
+        return None
+    cond_src, invariant_src, decreases_src, body_src = parts
+    tail_src = segments[-1].strip()
+    if not tail_src:
+        return None
+
+    body_segments = _split_statement_segments(body_src)
+    if body_segments is None or not any(s.strip() for s in body_segments):
+        return None
+    assigns: List[Tuple[str, str]] = []
+    for seg in body_segments:
+        text = seg.strip()
+        if not text:
+            continue
+        match = _REBIND_STATEMENT_RE.fullmatch(text)
+        if match is None:
+            # Only plain ``x = e`` assignments are loop-body safe — a
+            # ``let``/``perform``/nested statement is not this shape.
+            return None
+        assigns.append((match.group(1), match.group(2).strip()))
+    if not assigns:
+        return None
+    carried: List[str] = []
+    for name, _rhs in assigns:
+        if name not in carried:
+            carried.append(name)
+
+    # Resolve pre-loop ``let``/rebind bindings like the statement-seq path.
+    bindings: List[Tuple[str, str]] = []
+    for segment in segments[:-2]:
+        text = segment.strip()
+        if _PERFORM_STATEMENT_RE.fullmatch(text):
+            continue
+        match = _LET_STATEMENT_RE.fullmatch(text)
+        if match is not None:
+            bindings.append((match.group(1), match.group(2).strip()))
+            continue
+        rebind = _REBIND_STATEMENT_RE.fullmatch(text)
+        bound_names = {name for name, _value in bindings}
+        if rebind is None or rebind.group(1) not in bound_names:
+            return None
+        bindings.append((rebind.group(1), rebind.group(2).strip()))
+    resolved: List[Tuple[str, str]] = []
+    for name, expr in bindings:
+        bound = expr
+        for prev_name, prev_expr in resolved:
+            bound = _substitute_identifier(bound, prev_name, prev_expr)
+            if bound is None:
+                return None
+        resolved = [(n, e) for n, e in resolved if n != name]
+        resolved.append((name, bound))
+    resolved_map = dict(resolved)
+    non_carried = {
+        name: expr for name, expr in resolved if name not in carried
+    }
+
+    # Substitute non-carried ``let`` names into every loop piece.
+    cond_pre = _substitute_all(cond_src, non_carried)
+    inv_pre = _substitute_all(invariant_src, non_carried)
+    dec_pre = (
+        _substitute_all(decreases_src, non_carried)
+        if decreases_src is not None
+        else None
+    )
+    tail_pre = _substitute_all(tail_src, non_carried)
+    rhs_pre: List[Tuple[str, str]] = []
+    ok = cond_pre is not None and inv_pre is not None and tail_pre is not None
+    if decreases_src is not None:
+        ok = ok and dec_pre is not None
+    if not ok:
+        return None
+    for name, rhs in assigns:
+        substituted = _substitute_all(rhs, non_carried)
+        if substituted is None:
+            return None
+        rhs_pre.append((name, substituted))
+
+    # Post-body image of each carried var under sequential assignment.
+    env: Dict[str, str] = {}
+    for name, rhs in rhs_pre:
+        image = _substitute_all(rhs, env)
+        if image is None:
+            return None
+        env[name] = image
+    inv_after_src = _substitute_simultaneous(inv_pre, env)
+    dec_after_src = (
+        _substitute_simultaneous(dec_pre, env) if dec_pre is not None else None
+    )
+    if inv_after_src is None or (dec_pre is not None and dec_after_src is None):
+        return None
+    # Entry bindings: a carried var initialised by a ``let`` gets that
+    # (already-resolved) value; one bound outside the loop starts at its
+    # own incoming value.
+    init_map = {name: resolved_map.get(name, name) for name in carried}
+    base_src = _substitute_simultaneous(inv_pre, init_map)
+    if base_src is None:
+        return None
+
+    cond_tr = translate_body(cond_pre)
+    inv_tr = translate_body(inv_pre)
+    inv_after_tr = translate_body(inv_after_src)
+    base_tr = translate_body(base_src)
+    tail_tr = translate_body(tail_pre)
+    dec_tr = translate_body(dec_pre) if dec_pre is not None else None
+    dec_after_tr = (
+        translate_body(dec_after_src) if dec_after_src is not None else None
+    )
+    pieces = [
+        tr
+        for tr in (
+            cond_tr, inv_tr, inv_after_tr, base_tr, tail_tr, dec_tr,
+            dec_after_tr,
+        )
+        if tr is not None
+    ]
+    if any(tr.is_partial for tr in pieces):
+        return None
+
+    result = tail_tr
+    result.loop_vc = LoopVCPieces(
+        carried_vars=carried,
+        invariant=inv_tr.lean_expr,
+        invariant_base=base_tr.lean_expr,
+        invariant_after=inv_after_tr.lean_expr,
+        cond=cond_tr.lean_expr,
+        decreases=dec_tr.lean_expr if dec_tr is not None else None,
+        decreases_after=(
+            dec_after_tr.lean_expr if dec_after_tr is not None else None
+        ),
+        tail=tail_tr.lean_expr,
+    )
+    carried_set = set(carried)
+    for tr in pieces:
+        for name in tr.identifiers:
+            if name not in carried_set and name not in result.identifiers:
+                result.identifiers.append(name)
+        result.array_identifiers += [
+            name
+            for name in tr.array_identifiers
+            if name not in result.array_identifiers
+        ]
+        if tr.translator_ir is not None and result.translator_ir is not None:
+            for rule in tr.translator_ir.lowering_rules:
+                if rule not in result.translator_ir.lowering_rules:
+                    result.translator_ir.lowering_rules.append(rule)
+    result.identifiers = [
+        name for name in result.identifiers if name not in carried_set
+    ]
+    if result.translator_ir is not None:
+        # Carried vars are ``∀``-bound inside the goal conjuncts — not
+        # theorem parameters — so they must not appear as free binders.
+        result.translator_ir.binders = [
+            binder
+            for binder in result.translator_ir.binders
+            if binder.mumei_name not in carried_set
+        ]
+        result.translator_ir.lowering_rules.append(
+            "while_loop_invariant_lowering"
+        )
+    return result
+
+
 def normalize_body_source(source: str) -> str:
     """Strip every enclosing single-expression block from a body source.
 
@@ -3706,6 +4132,7 @@ def translate_body(body_expr: str) -> TranslationResult:
                 "task_value_lowering",
                 "task_group_all_lowering",
                 "task_group_any_lowering",
+                "while_loop_invariant_lowering",
             )
             for rule in inner_rules
         ):
@@ -3734,9 +4161,15 @@ def translate_body(body_expr: str) -> TranslationResult:
     task_lowered = _task_group_body(stripped)
     if task_lowered is not None:
         # Spec §4.7: ``task { e }`` evaluates to its body; ``task_group:all``
-        # yields the last task's value (``task_group:any`` stays partial
-        # pending the list-membership theorem shape).
+        # yields the last task's value; ``task_group:any`` yields the
+        # candidate-value list (list-membership theorem shape).
         return task_lowered
+    loop_lowered = _while_loop_body(stripped)
+    if loop_lowered is not None:
+        # Spec §4.8: a ``while`` body lowers to its verification conditions
+        # (invariant base / step / decreases / post) rendered as the
+        # theorem goal rather than a ``result = <def>`` body def.
+        return loop_lowered
     tokens, _ = _lower_struct_projection_tokens(_tokenize(stripped))
     if _statement_keywords(tokens):
         # A statement block has no value to lower; `_unsupported_reasons`

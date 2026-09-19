@@ -492,7 +492,13 @@ the base substitution **and stays a theorem parameter** — the conjuncts still
 ∀-bind the loop's own name, but the base conjunct reads on the parameter. Only
 `let`-initialised carried vars are removed from the signature; dropping an
 externally bound carried name would leave the base conjunct referencing an
-unbound identifier (ill-typed Lean).
+unbound identifier (ill-typed Lean). The theorem signature itself is built
+from the certificate's `translator_ir` binders minus `role: result` — see
+below for declared-type authority. Known limitation (safe direction): the
+post conjunct always ∀-binds `result` at `Int`, so a while loop whose
+declared return type is `[t]` emits `len(result)`/`result[i]` forms that
+fail to elaborate — such atoms stay `unknown` rather than verify a mistyped
+contract.
 
 **`len(arr)` on arrays.** When an identifier appears both in `arr[i]` /
 `sum(arr, …)` position (i.e. it will be bound as `List Int`) and as the
@@ -506,6 +512,15 @@ atom (`atom_array_names(requires, ensures, body)`): a name indexed in any
 clause is `List Int` in the theorem signature, so `len` on it lowers to
 `.length` in *every* clause — `result <= len(arr)` in `ensures` would
 otherwise emit ill-typed `mumei_len arr` against the `List Int` binder.
+Declared types are authoritative over the usage scan: when the
+certificate's `translator_ir` binders mark a parameter `[t]`/`array<t>`/
+`List Int`, ingest unions that name into `atom_array_names` and the theorem
+signature, so a list parameter that is never indexed (e.g. only referenced
+via `len(x)`) still binds `List Int` and `len(x)` still lowers to
+`.length`. For loop-VC theorems the signature likewise comes from the
+certificate's `translator_ir` binders (with `role: result` excluded —
+`result` is quantified inside the post conjunct), falling back to the
+usage-scan partition when the certificate carries no binder table.
 
 ## 5. Semantic Gap Bridge Rules
 

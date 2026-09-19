@@ -1515,6 +1515,88 @@ def test_while_loop_invariant_vc_provable_via_external_proof(
         _cleanup_generated_file(GENERATED_LOOP_INVARIANT)
 
 
+GENERATED_REGTECH_LOOP = (
+    REPO_ROOT
+    / "generated"
+    / "Generated"
+    / "Benchmarks"
+    / "Domain_compliance"
+    / "Regtech_exhaustiveness.lean"
+)
+
+# ``all_transactions_within_limit``'s requires renders the spec-level
+# ``forall`` as ``true`` (the emitted certificate drops it), so its loop
+# VC needs no elementwise hypothesis and ``omega`` discharges every
+# conjunct once the quantified carry is introduced.
+REGTECH_LOOP_PROOF_SCRIPT = """intro h
+obtain ⟨hn, -, -, -⟩ := h
+refine ⟨?_, ?_, ?_, ?_⟩
+· refine ⟨by omega, by omega, by omega⟩
+· intro count i hi
+  obtain ⟨h1, h2, h3, h4⟩ := hi
+  refine ⟨by omega, by omega, by omega⟩
+· intro count i hi
+  obtain ⟨h1, h2, -, h4⟩ := hi
+  omega
+· intro count i hi result hr
+  obtain ⟨-, -, h3, -⟩ := hi
+  omega"""
+
+
+@pytest.mark.lake_available
+def test_loop_vc_declared_array_types_provable_via_external_proof(
+    lake_available, tmp_path: Path
+):
+    """Real-cert shape: a ``[i64]`` parameter that is never indexed still
+    binds ``List Int`` (declared ``translator_ir`` types are authoritative)
+    and its loop VC is closable by a supplied external proof."""
+    proofs = tmp_path / "proofs.json"
+    proofs.write_text(
+        json.dumps(
+            {
+                "proofs": [
+                    {
+                        "atom": "all_transactions_within_limit",
+                        "attempts": 1,
+                        "tactic_script": REGTECH_LOOP_PROOF_SCRIPT,
+                    }
+                ]
+            }
+        )
+    )
+    out_cert = tmp_path / "regtech_loop.lean-cert.json"
+    out_dir = tmp_path / "generated"
+    _cleanup_generated_file(GENERATED_REGTECH_LOOP)
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "domain_compliance_regtech_loop.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+            "--no-tactic-search",
+            "--external-proofs",
+            str(proofs),
+        )
+        _assert_bridge_ok(proc)
+        generated_src = GENERATED_REGTECH_LOOP.read_text()
+        assert "(amounts : List Int)" in generated_src
+        assert "mumei_len" not in generated_src
+        payload = json.loads(out_cert.read_text())
+        atom = next(
+            a
+            for a in payload["atoms"]
+            if a["name"] == "all_transactions_within_limit"
+        )
+        assert atom["z3_check_result"] == "lean_verified"
+        meta = atom["lean_metadata"]
+        assert meta["ai_proof_used"] is True
+        assert meta["known_witness_used"] is False
+    finally:
+        _cleanup_generated_file(GENERATED_REGTECH_LOOP)
+
+
 GENERATED_QUINTIC = REPO_ROOT / "generated" / "Generated" / "Std" / "Quintic.lean"
 QUINTIC_GOOD_SCRIPT = (
     "intro hx\nsubst h_body\nunfold quinticPosResult\n"

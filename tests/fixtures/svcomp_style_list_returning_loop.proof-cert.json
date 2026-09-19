@@ -1,0 +1,100 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-19T12:00:00Z",
+  "mumei_version": "0.6.19",
+  "z3_version": "4.8.12",
+  "file": "benchmarks/svcomp_style/list_returning_loop.mm",
+  "atoms": [
+    {
+      "name": "copy_prefix",
+      "z3_check_result": "unknown",
+      "content_hash": "b8c2d4f6a8c0e2f4a6c8e0b2d4f6a8c0e2f4a6c8e0b2d4f6a8c0e2f4a6c8e0b3",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "benchmarks/svcomp_style/list_returning_loop.mm"
+        },
+        "traceability_hash": "c3d5e7f9a1b3c5d7e9f1a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d6",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 1,
+        "checked_refinements": 0,
+        "ensures_implication_checks": 1,
+        "diagnostics": []
+      },
+      "proof_hash": "e4f6a8c0e2f4a6c8e0b2d4f6a8c0e2f4a6c8e0b2d4f6a8c0e2f4a6c8e0b2d4f7",
+      "dependencies": [],
+      "effects": [],
+      "requires": "n >= 0 && len(arr) >= n",
+      "ensures": "len(result) >= 0",
+      "body_expr": "{ let out = arr; let i = 0; while i < n invariant: i >= 0 && i <= n decreases: n - i { i = i + 1 }; out }",
+      "body_summary": "{ let out = arr; let i = 0; while i < n invariant: … decreases: … { … }; out }",
+      "z3_result_class": "unknown",
+      "logic_fragment_tag": "linear_arithmetic",
+      "logic_fragment_tags": [],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "n": "n",
+        "arr": "arr",
+        "result": "result"
+      },
+      "bridge_lemma_hash": "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9",
+      "translator_ir": {
+        "sort": "contract_obligation",
+        "binders": [
+          {
+            "mumei_name": "n",
+            "lean_name": "n",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "arr",
+            "lean_name": "arr",
+            "mumei_type": "array<i64>",
+            "lean_type": "List Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "[i64]",
+            "lean_type": "List Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(n >= 0 && len(arr) >= n) -> (len(result) >= 0)",
+        "provenance_span": {
+          "file": "benchmarks/svcomp_style/list_returning_loop.mm",
+          "line": 8,
+          "col": 1,
+          "len": 9
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [],
+        "proof_trace_hints": [],
+        "requires_bridge_lemmas": []
+      },
+      "symbol_provenance": [],
+      "solver_process_metadata": {
+        "task_id": null,
+        "cache_key": "f5a7c9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b3c5d7e9f1a3b5c8",
+        "generation_id": "",
+        "solver_config_fingerprint": "4eb8092c0cb08dd4c8d6494173a480c7fae3ce88feef61311d32f80092aad8dc",
+        "timeout_ms": 10000,
+        "cancel_reason": null,
+        "process_start_time": "",
+        "process_end_time": "2026-09-19T12:00:00Z"
+      }
+    }
+  ],
+  "certificate_hash": "a6b8d0e2f4a6c8e0b2d4f6a8c0e2f4a6c8e0b2d4f6a8c0e2f4a6c8e0b2d4f6a9",
+  "all_verified": true
+}

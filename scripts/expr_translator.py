@@ -670,6 +670,33 @@ def _lean_type_from_mumei_type(mumei_type: str) -> Optional[str]:
     return _FORMAL_SPEC_TYPE_MAPPINGS.get(mumei_type)
 
 
+_LEAN_ATOMIC_TYPE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_'.]*")
+
+
+def declared_lean_type(mumei_type: str) -> Optional[str]:
+    """Lean type for a certificate-declared mumei type string.
+
+    ``[t]`` and ``array<t>`` are the certificate's two array spellings —
+    both denote ``List <t>`` — and scalars resolve through
+    ``_FORMAL_SPEC_TYPE_MAPPINGS``. Returns ``None`` when the declared
+    type has no rendering the emitter can produce; callers then keep
+    their default typing (a mistyped binder only fails elaboration, it
+    cannot fabricate a proof).
+    """
+    text = (mumei_type or "").strip()
+    for open_delim, close_delim in (("[", "]"), ("array<", ">")):
+        if text.startswith(open_delim) and text.endswith(close_delim):
+            inner = declared_lean_type(
+                text[len(open_delim) : len(text) - len(close_delim)]
+            )
+            if inner is None:
+                return None
+            if _LEAN_ATOMIC_TYPE_RE.fullmatch(inner) is None:
+                inner = f"({inner})"
+            return f"List {inner}"
+    return _FORMAL_SPEC_TYPE_MAPPINGS.get(text)
+
+
 def validate_translator_ir_compliance(translator_ir: TranslatorIR) -> List[str]:
     """Warn if TranslatorIR metadata drifts from the formal Lean spec.
 

@@ -1856,6 +1856,35 @@ def test_translate_body_while_loop_externally_bound_carried_stays_param():
 
 
 @pytest.mark.parametrize(
+    ("mumei_type", "expected"),
+    [
+        ("i64", "Int"),
+        ("u64", "Nat"),
+        ("f64", "Float"),
+        ("bool", "Bool"),
+        ("string", "String"),
+        ("str", "String"),
+        ("field", "Int"),
+        ("predicate<i64>", "Int → Prop"),
+        # The certificate's two array spellings both denote ``List <t>``.
+        ("[i64]", "List Int"),
+        ("array<i64>", "List Int"),
+        ("[bool]", "List Bool"),
+        ("array<array<i64>>", "List (List Int)"),
+        ("[[i64]]", "List (List Int)"),
+        # Unmapped / malformed declared types yield ``None`` — callers
+        # keep their default typing rather than interpolating junk.
+        ("", None),
+        ("struct Foo", None),
+        ("[unknown_t]", None),
+        ("[i64", None),
+    ],
+)
+def test_declared_lean_type_maps_certificate_types(mumei_type, expected):
+    assert expr_translator.declared_lean_type(mumei_type) == expected
+
+
+@pytest.mark.parametrize(
     "source",
     [
         # A `while` must be the second-to-last segment — a loop mid

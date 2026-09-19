@@ -56,6 +56,7 @@ try:
         builtin_name_binder_conflicts,
         builtin_name_binders_lowered,
         contains_identifier,
+        declared_lean_type,
         infer_body_result_type,
         mark_builtin_name_binder_conflict,
         normalize_access_control_translator_ir,
@@ -89,6 +90,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py
         builtin_name_binder_conflicts,
         builtin_name_binders_lowered,
         contains_identifier,
+        declared_lean_type,
         infer_body_result_type,
         mark_builtin_name_binder_conflict,
         normalize_access_control_translator_ir,
@@ -1167,6 +1169,38 @@ def _declared_array_names(translator_ir: dict) -> set[str]:
     return names
 
 
+def _declared_result_lean_type(translator_ir: dict) -> Optional[str]:
+    """Lean type the certificate's ``translator_ir`` declares for the
+    atom's return value (the ``role: "result"`` binder).
+
+    Declared types are authoritative — the same convention as
+    ``_declared_array_names``: a ``[t]``/``array<t>`` return means the
+    loop-VC post conjunct quantifies ``result`` at ``List …`` rather than
+    the scalar ``Int`` default, so ``len(result)`` / ``result[i]`` forms
+    in ``ensures`` elaborate. Returns ``None`` when no usable result
+    binder is present; the caller then keeps the ``Int`` default.
+    """
+    binders = (
+        translator_ir.get("binders", [])
+        if isinstance(translator_ir, dict)
+        else []
+    )
+    if not isinstance(binders, list):
+        return None
+    for binder in binders:
+        if not isinstance(binder, dict):
+            continue
+        if str(binder.get("role") or "") != "result":
+            continue
+        lean_type = str(binder.get("lean_type") or "")
+        if _is_safe_lean_type(lean_type):
+            return lean_type
+        mapped = declared_lean_type(str(binder.get("mumei_type") or ""))
+        if mapped is not None and _is_safe_lean_type(mapped):
+            return mapped
+    return None
+
+
 def _decl_parts_from_translator_ir(
     translator_ir: dict,
     binder_mapping: Optional[dict[str, str]] = None,
@@ -1660,10 +1694,23 @@ def render_theorem(atom: IngestedAtom) -> str:
                 f"(∀ {binder_list} : Int, ({inv} ∧ {cond}) → "
                 f"(0 ≤ {dec} ∧ {dec_after} < {dec}))"
             )
+        # The post conjunct binds ``result`` at the atom's *declared*
+        # return type (``role: "result"`` binder in ``translator_ir``):
+        # a ``[t]``/``array<t>`` return needs ``List …`` here so
+        # ``len(result)`` / ``result[i]`` ensures forms elaborate. The
+        # usage-scan partitions (``result`` indexed / passed to string
+        # predicates) cover certificates without a declared result type;
+        # otherwise the scalar ``Int`` default stays (spec §4.8).
+        result_lean_type = (
+            _declared_result_lean_type(atom.translator_ir)
+            or ("List Int" if "result" in array_idents else None)
+            or ("String" if "result" in string_idents else None)
+            or "Int"
+        )
         conjuncts.append(
             f"(∀ {binder_list} : Int, ({inv} ∧ ¬ ({cond})) → "
-            f"∀ ({result_binder} : Int), {result_binder} = ({tail}) → "
-            f"({ensures_lean}))"
+            f"∀ ({result_binder} : {result_lean_type}), "
+            f"{result_binder} = ({tail}) → ({ensures_lean}))"
         )
         goal_lean = " ∧\n      ".join(conjuncts)
 

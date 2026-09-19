@@ -1597,6 +1597,90 @@ def test_loop_vc_declared_array_types_provable_via_external_proof(
         _cleanup_generated_file(GENERATED_REGTECH_LOOP)
 
 
+GENERATED_LIST_RETURNING_LOOP = (
+    REPO_ROOT
+    / "generated"
+    / "Generated"
+    / "Benchmarks"
+    / "Svcomp_style"
+    / "List_returning_loop.lean"
+)
+
+# Spec §4.8: ``copy_prefix`` returns ``[i64]``, so its post conjunct binds
+# ``result : List Int`` (declared ``translator_ir`` result type) and
+# ``result.length`` ensures forms elaborate; the VC closes once ``result``
+# is substituted for the tail expression.
+LIST_RETURNING_LOOP_PROOF_SCRIPT = """intro h
+obtain ⟨hn, harr⟩ := h
+refine ⟨?_, ?_, ?_, ?_⟩
+· refine ⟨by omega, by omega⟩
+· intro i hi
+  obtain ⟨h1, h2, h3⟩ := hi
+  refine ⟨by omega, by omega⟩
+· intro i hi
+  obtain ⟨h1, h2, h3⟩ := hi
+  omega
+· intro i hi result hr
+  subst hr
+  omega"""
+
+
+@pytest.mark.lake_available
+def test_loop_vc_list_result_provable_via_external_proof(
+    lake_available, tmp_path: Path
+):
+    """A ``-> [i64]`` while-loop VC quantifies ``result : List Int`` in
+    its post conjunct, so ``len(result)`` ensures elaborate and the
+    supplied external proof lifts the atom to ``lean_verified``."""
+    proofs = tmp_path / "proofs.json"
+    proofs.write_text(
+        json.dumps(
+            {
+                "proofs": [
+                    {
+                        "atom": "copy_prefix",
+                        "attempts": 1,
+                        "tactic_script": LIST_RETURNING_LOOP_PROOF_SCRIPT,
+                    }
+                ]
+            }
+        )
+    )
+    out_cert = tmp_path / "list_returning_loop.lean-cert.json"
+    out_dir = REPO_ROOT / "generated"
+    _cleanup_generated_file(GENERATED_LIST_RETURNING_LOOP)
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "svcomp_style_list_returning_loop.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+            "--no-tactic-search",
+            "--external-proofs",
+            str(proofs),
+        )
+        _assert_bridge_ok(proc)
+        generated_src = GENERATED_LIST_RETURNING_LOOP.read_text()
+        assert "∀ (result : List Int)" in generated_src
+        assert "(result : Int)" not in generated_src
+        payload = json.loads(out_cert.read_text())
+        atom = next(a for a in payload["atoms"] if a["name"] == "copy_prefix")
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["status"] == "verified"
+        meta = atom["lean_metadata"]
+        assert meta["status"] == "lean_verified"
+        assert meta["ai_proof_used"] is True
+        assert meta["known_witness_used"] is False
+        assert meta["bridge_lemma_hash"] == (
+            "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
+        )
+        assert payload["all_verified"] is True
+    finally:
+        _cleanup_generated_file(GENERATED_LIST_RETURNING_LOOP)
+
+
 GENERATED_LOOP_FORALL = (
     REPO_ROOT
     / "generated"

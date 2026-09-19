@@ -492,7 +492,13 @@ the base substitution **and stays a theorem parameter** — the conjuncts still
 ∀-bind the loop's own name, but the base conjunct reads on the parameter. Only
 `let`-initialised carried vars are removed from the signature; dropping an
 externally bound carried name would leave the base conjunct referencing an
-unbound identifier (ill-typed Lean).
+unbound identifier (ill-typed Lean). The theorem signature itself is built
+from the certificate's `translator_ir` binders minus `role: result` — see
+below for declared-type authority. Known limitation (safe direction): the
+post conjunct always ∀-binds `result` at `Int`, so a while loop whose
+declared return type is `[t]` emits `len(result)`/`result[i]` forms that
+fail to elaborate — such atoms stay `unknown` rather than verify a mistyped
+contract.
 
 **`len(arr)` on arrays.** When an identifier appears both in `arr[i]` /
 `sum(arr, …)` position (i.e. it will be bound as `List Int`) and as the

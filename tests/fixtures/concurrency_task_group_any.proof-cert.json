@@ -1,0 +1,101 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-19T02:30:00Z",
+  "mumei_version": "0.6.19",
+  "z3_version": "4.8.12",
+  "file": "concurrency/task_group_any_winner.mm",
+  "atoms": [
+    {
+      "name": "race_two_replicas",
+      "z3_check_result": "unknown",
+      "content_hash": "f7a2c4e6b8d0a1c3e5f7a9b1c3d5e7f9a1b3c5d7e9f1a3b5c7d9e1f3a5b7c9d1",
+      "status": "unknown",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "concurrency/task_group_any_winner.mm"
+        },
+        "traceability_hash": "a1c3e5f7a9b1d3e5f7a9c1e3d5f7b9a1c3e5f7a9b1d3e5f7a9c1e3d5f7b9a1c3",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 1,
+        "checked_refinements": 0,
+        "ensures_implication_checks": 1,
+        "diagnostics": []
+      },
+      "proof_hash": "e0c1b2a3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1",
+      "dependencies": [],
+      "effects": [],
+      "requires": "a >= 0 && b >= 0",
+      "ensures": "result >= 0",
+      "body_expr": "{\n    task_group:any {\n        task { a };\n        task { b }\n    }\n}",
+      "body_summary": "{ task_group:any { task { a }; task { b } } }",
+      "z3_result_class": "unknown",
+      "logic_fragment_tag": "linear_arithmetic",
+      "logic_fragment_tags": [],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "a": "a",
+        "b": "b",
+        "result": "result"
+      },
+      "bridge_lemma_hash": "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9",
+      "translator_ir": {
+        "sort": "refinement_predicate",
+        "binders": [
+          {
+            "mumei_name": "a",
+            "lean_name": "a",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "b",
+            "lean_name": "b",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(a >= 0 && b >= 0) -> (result >= 0)",
+        "provenance_span": {
+          "file": "concurrency/task_group_any_winner.mm",
+          "line": 5,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [],
+        "proof_trace_hints": [],
+        "requires_bridge_lemmas": [],
+        "obligation_class": "concurrency_obligation"
+      },
+      "symbol_provenance": [],
+      "solver_process_metadata": {
+        "task_id": null,
+        "cache_key": "b0d2f4a6c8e0a2b4c6d8e0f2a4b6c8d0e2a4b6c8d0e2f4a6c8e0a2b4c6d8e0f2",
+        "generation_id": "",
+        "solver_config_fingerprint": "4eb8092c0cb08dd4c8d6494173a480c7fae3ce88feef61311d32f80092aad8dc",
+        "timeout_ms": 10000,
+        "cancel_reason": null,
+        "process_start_time": "",
+        "process_end_time": "2026-09-19T02:30:00Z"
+      }
+    }
+  ],
+  "certificate_hash": "c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4",
+  "all_verified": true
+}

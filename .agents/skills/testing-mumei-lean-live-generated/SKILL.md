@@ -219,9 +219,9 @@ PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest \
 
 The Lake-marked sort ascending test should run and pass when `lake` is available; if it skips unexpectedly, check that `lake` is on `PATH` and that the fixture drivers compile with the pinned Lean toolchain.
 
-## Live Generated Theorem Paths (19 total)
+## Live Generated Theorem Paths (20 total)
 
-The bridge ships nineteen live generated theorem paths. Each lowers a Z3 `unknown`
+The bridge ships twenty live generated theorem paths. Each lowers a Z3 `unknown`
 (or `spurious_candidate`) atom to a generated Lean theorem that builds with
 `known_witness_used = false`:
 
@@ -244,20 +244,23 @@ The bridge ships nineteen live generated theorem paths. Each lowers a Z3 `unknow
 17. `clamp_to_range` — `{ if c { a } else { if … } }` bodies recurse through `translate_body` via `nested_if_lowering` (spec §4.5); `mumei_arith_deep`'s `split <;> omega` discharges the theorem, no bridge lemma, `bridge_lemma_hash` unchanged.
 18. `take_point` — `p.x` field reads in `requires` / `body` lower to the scalar binder `p_x` via `struct_projection_lowering` (spec §4.6); `mumei_arith_deep` discharges the theorem, no bridge lemma, `bridge_lemma_hash` unchanged.
 19. `join_all_last_result` — `task {…}` / `task_group:all {…}` bodies lower to the last task's value via `task_value_lowering` / `task_group_all_lowering` (spec §4.7); tags the new `concurrency_obligation` class and bumps `bridge_lemma_hash` to `5716cfdd…` (first catalog change).
+20. `race_two_replicas` — `task_group:any { task {…}; … }` bodies lower to the candidate-value list `[e₁, …, eₙ]` via `task_group_any_lowering` (spec §4.7); the def is `List Int`, the theorem hypothesises `result ∈ <def>`, and `fin_cases` splits membership per candidate. Reuses the `concurrency_obligation` catalog — `bridge_lemma_hash` unchanged.
 
-Focused pytest coverage for path 19, Lake required:
+Focused pytest coverage for paths 19–20, Lake required:
 
 ```bash
 cd /home/ubuntu/repos/mumei-lean
 PATH="$HOME/.elan/bin:$PATH" python -m pytest tests/test_lean_bridge_e2e.py -q \
-  -k "task_group_all"
+  -k "task_group"
 ```
 
-Negative controls for path 19 (unit level, no Lake needed):
+Negative controls for paths 19–20 (unit level, no Lake needed):
 `tests/test_expr_translator.py::test_translate_body_keeps_task_group_edge_cases_partial`
-covers `task_group:any` (list-membership shape pending), non-`task` group
-items, an empty group, an unknown join mode, a task body that does not
-lower, and a rebind on a non-`let` name — all stay partial.
+covers non-`task` group items, an empty group, an unknown join mode, a
+task body that does not lower, a rebind on a non-`let` name, and residual
+concurrency/ownership surfaces (`send`/`recv`/`acquire`/`<-` arrows, ...) —
+all stay partial. `test_translate_body_lowers_task_and_task_group_all`
+also pins the `any` Int-typed-element guard.
 
 Focused pytest coverage for path 18, Lake required:
 

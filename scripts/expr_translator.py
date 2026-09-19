@@ -3230,25 +3230,63 @@ def _task_group_body(source: str) -> Optional[TranslationResult]:
     if not tasks:
         return None
     lowered_tasks = [translate_body("{ " + task + " }") for task in tasks]
-    if group_match.group(1) == "any":
-        # The group's value is whichever task finishes first: modelled as
-        # list membership, which needs a different generated theorem shape.
-        partial = _make_translation_result(
-            source,
-            lean_expr="",
-            identifiers=[],
-            is_trivial=False,
-            is_partial=True,
-            array_identifiers=[],
-            string_identifiers=[],
-        )
-        return _annotate_concurrency_result(partial, "task_group_any_lowering")
     partial_tasks = [t for t in lowered_tasks if t.is_partial]
     if partial_tasks:
         # Conservative: a sibling that failed to lower could hide inputs
         # the group's value still depends on — stay partial instead of
         # claiming the last task's value.
         return partial_tasks[0]
+    if group_match.group(1) == "any":
+        # The group's value is whichever task finishes first — modelled as
+        # list membership: the emitted def yields ``List Int`` and the
+        # theorem hypothesises ``result ∈ <def>``. Every element is a
+        # candidate value, so every task body must be Int-typed (a Prop /
+        # String element would make the membership hypothesis ill-typed).
+        if any(
+            infer_body_result_type("{ " + task + " }", lowered) != "Int"
+            for task, lowered in zip(tasks, lowered_tasks)
+        ):
+            non_int = _make_translation_result(
+                source,
+                lean_expr="",
+                identifiers=[],
+                is_trivial=False,
+                is_partial=True,
+                array_identifiers=[],
+                string_identifiers=[],
+            )
+            # Tag the concurrency class for triage without recording the
+            # lowering rule — a partial must not claim it lowered.
+            if non_int.translator_ir is not None:
+                non_int.translator_ir.obligation_class = OBLIGATION_CLASS_CONCURRENCY
+            return non_int
+        # Reuse the last task's IR like the ``all`` path below — building a
+        # fresh result from the outer source would re-flag the consumed
+        # ``task``/``task_group`` tokens as unsupported.
+        result = lowered_tasks[-1]
+        result.lean_expr = (
+            "["
+            + ", ".join(task_result.lean_expr for task_result in lowered_tasks)
+            + "]"
+        )
+        result.result_type = "List Int"
+        for task_result in lowered_tasks[:-1]:
+            for name in task_result.identifiers:
+                if name not in result.identifiers:
+                    result.identifiers.append(name)
+            result.array_identifiers += [
+                name
+                for name in task_result.array_identifiers
+                if name not in result.array_identifiers
+            ]
+            if task_result.translator_ir is not None:
+                for rule in task_result.translator_ir.lowering_rules:
+                    if (
+                        result.translator_ir is not None
+                        and rule not in result.translator_ir.lowering_rules
+                    ):
+                        result.translator_ir.lowering_rules.append(rule)
+        return _annotate_concurrency_result(result, "task_group_any_lowering")
     result = lowered_tasks[-1]
     identifiers = list(result.identifiers)
     for task_result in lowered_tasks[:-1]:

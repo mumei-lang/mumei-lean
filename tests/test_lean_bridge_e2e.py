@@ -1289,6 +1289,9 @@ def test_struct_projection_body_semantics_upgrade_unknown_to_lean_verified(
 GENERATED_TASK_GROUP = (
     REPO_ROOT / "generated" / "Generated" / "Concurrency" / "Task_group_all.lean"
 )
+GENERATED_TASK_GROUP_ANY = (
+    REPO_ROOT / "generated" / "Generated" / "Concurrency" / "Task_group_any_winner.lean"
+)
 
 
 @pytest.mark.lake_available
@@ -1334,6 +1337,53 @@ def test_task_group_all_body_semantics_upgrade_unknown_to_lean_verified(
         assert payload["all_verified"] is True
     finally:
         _cleanup_generated_file(GENERATED_TASK_GROUP)
+
+
+@pytest.mark.lake_available
+def test_task_group_any_body_semantics_upgrade_unknown_to_lean_verified(
+    lake_available, tmp_path: Path
+):
+    """Spec §4.7: `task_group:any` — `result` is whichever task wins.
+
+    The def yields the ``List Int`` of candidate values and the theorem
+    hypothesises ``result ∈ <def>``; ``fin_cases`` splits the membership
+    into one goal per task value, each closed by the arithmetic cascade
+    under ``requires``.
+    """
+    out_cert = tmp_path / "task_group_any.lean-cert.json"
+    out_dir = tmp_path / "generated"
+    _cleanup_generated_file(GENERATED_TASK_GROUP_ANY)
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "concurrency_task_group_any.proof-cert.json"),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+        _assert_bridge_ok(proc)
+        assert "0 partial translation" in proc.stdout
+        generated_src = GENERATED_TASK_GROUP_ANY.read_text()
+        assert "def raceTwoReplicasResult (a b : Int) : List Int :=" in generated_src
+        assert "(h_body : result ∈ raceTwoReplicasResult a b)" in generated_src
+        assert "fin_cases h_body" in generated_src
+        payload = json.loads(out_cert.read_text())
+        atom = next(a for a in payload["atoms"] if a["name"] == "race_two_replicas")
+        assert atom["z3_check_result"] == "lean_verified"
+        assert atom["status"] == "verified"
+        meta = atom["lean_metadata"]
+        assert meta["known_witness_used"] is False
+        assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
+        assert meta["bridge_lemma_hash"] == (
+            "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
+        )
+        rules = meta["translator_ir"]["lowering_rules"]
+        assert "task_group_any_lowering" in rules
+        assert meta["translator_ir"]["obligation_class"] == "concurrency_obligation"
+        assert payload["all_verified"] is True
+    finally:
+        _cleanup_generated_file(GENERATED_TASK_GROUP_ANY)
 
 
 GENERATED_QUINTIC = REPO_ROOT / "generated" / "Generated" / "Std" / "Quintic.lean"

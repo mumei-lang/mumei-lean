@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 import bridge
+import ingest_cert
 from bridge import _scan_unknown_certs, main
 from ingest_cert import collect_unknown_atoms
 
@@ -1465,6 +1466,24 @@ def test_main_dependency_failure_never_promotes_generated_atoms(
     assert {a["name"]: a["z3_check_result"] for a in payload["atoms"]} == {
         "inc": "unknown"
     }
+
+
+def test_collect_atoms_shares_array_names_across_clauses():
+    """``len(arr)`` must lower to ``.length`` in every clause once any
+    clause types ``arr`` as a list — otherwise a ``List Int`` binder meets
+    ``mumei_len arr`` and the generated theorem fails to elaborate."""
+    atom = _atom("loop_len", z3="unknown")
+    atom["requires"] = "n >= 0 && forall(i, 0, n, arr[i] >= 0)"
+    atom["ensures"] = "result <= len(arr)"
+    atom["body_expr"] = (
+        "{ let i = 0; while i < len(arr) invariant: i <= len(arr) "
+        "{ i = i + 1 }; i }"
+    )
+    [ingested] = collect_unknown_atoms(_cert("std/loop.mm", [atom]))
+    text = ingest_cert.render_theorem(ingested)
+    assert "mumei_len arr" not in text
+    assert "((arr.length : Int))" in text
+    assert "(arr : List Int)" in text
 
 
 def test_attribute_failures_keeps_per_atom_attribution_for_generated_files():

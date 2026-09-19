@@ -52,6 +52,7 @@ try:
         OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
         TRANSLATOR_VERSION,
         TranslationResult,
+        atom_array_names,
         builtin_name_binder_conflicts,
         builtin_name_binders_lowered,
         contains_identifier,
@@ -84,6 +85,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py
         OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
         TRANSLATOR_VERSION,
         TranslationResult,
+        atom_array_names,
         builtin_name_binder_conflicts,
         builtin_name_binders_lowered,
         contains_identifier,
@@ -107,9 +109,11 @@ except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py
     from known_witnesses import KNOWN_LEAN_WITNESSES  # type: ignore
 
 
-def _translate_expr(source: str) -> TranslationResult:
+def _translate_expr(
+    source: str, array_names: Optional[frozenset] = None
+) -> TranslationResult:
     """Translate a mumei expression into a Lean proposition fragment."""
-    return translate_contract(source)
+    return translate_contract(source, array_names)
 
 
 # ---------------------------------------------------------------------------
@@ -492,10 +496,24 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
                     if unknown_obligation_domain == "smart_contract"
                     else "rtgs"
                 )
-            requires_translation = _translate_expr(requires)
-            ensures_translation = _translate_expr(ensures)
+            # Array-ness is atom-level: a name indexed in one clause is
+            # typed ``List Int`` everywhere, so ``len(x)`` in any clause
+            # must emit ``((x.length : Int))``.
+            shared_array_names = atom_array_names(
+                requires, ensures, str(body_expr)
+            )
+            requires_translation = _translate_expr(
+                requires, shared_array_names
+            )
+            ensures_translation = _translate_expr(
+                ensures, shared_array_names
+            )
             body_translation = (
-                translate_body(str(body_expr)) if str(body_expr).strip() else None
+                translate_body(
+                    str(body_expr), array_names=shared_array_names
+                )
+                if str(body_expr).strip()
+                else None
             )
             binder_conflicts = builtin_name_binder_conflicts(
                 requires, ensures, str(body_expr)

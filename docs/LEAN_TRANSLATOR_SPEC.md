@@ -501,7 +501,11 @@ takes `Int` and would emit ill-typed Lean. A `len(x)` whose argument is never
 indexed keeps the scalar `mumei_len` lowering; `x` then stays an `Int` binder.
 Loop pieces share one array-name scan over the whole `{ …; while …; tail }`
 source, so `len(arr)` in the condition sees `arr[j]` indexing that only
-occurs inside the invariant.
+occurs inside the invariant. At ingest level the scan widens to the whole
+atom (`atom_array_names(requires, ensures, body)`): a name indexed in any
+clause is `List Int` in the theorem signature, so `len` on it lowers to
+`.length` in *every* clause — `result <= len(arr)` in `ensures` would
+otherwise emit ill-typed `mumei_len arr` against the `List Int` binder.
 
 ## 5. Semantic Gap Bridge Rules
 

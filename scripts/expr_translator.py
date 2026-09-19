@@ -2987,6 +2987,20 @@ def translate_contract(
 _IDENT_PATTERN = r"[A-Za-z_][A-Za-z0-9_]*"
 
 
+def atom_array_names(*sources: str) -> FrozenSet[str]:
+    """Array-typed identifier names across a whole atom surface.
+
+    ``len(x)`` must see every clause — an identifier that is only indexed
+    in ``requires`` still makes the parameter ``List Int``, so a ``len`` on
+    it in ``ensures`` or a body piece must emit ``((x.length : Int))`` too.
+    """
+    names: Set[str] = set()
+    for source in sources:
+        if source:
+            names |= _list_typed_ident_names(_tokenize(str(source)))
+    return frozenset(names)
+
+
 def _list_typed_ident_names(tokens: List[tuple]) -> Set[str]:
     """Identifiers that will be typed ``List Int`` in the rendered theorem.
 
@@ -3302,7 +3316,9 @@ def _annotate_concurrency_result(
     return result
 
 
-def _task_group_body(source: str) -> Optional[TranslationResult]:
+def _task_group_body(
+    source: str, array_names: Optional[FrozenSet[str]] = None
+) -> Optional[TranslationResult]:
     """Lower ``task { e }`` and ``task_group:all { task {…}; … }`` bodies.
 
     A bare ``task`` evaluates to its body. A ``task_group:all`` runs every
@@ -3310,8 +3326,8 @@ def _task_group_body(source: str) -> Optional[TranslationResult]:
     tasks' effects are ordering obligations, not part of the group value,
     mirroring how ``perform`` statements are dropped. Every task body must
     itself translate cleanly (a partial sibling could hide a param the
-    value expression needs). ``task_group:any`` needs the list-membership
-    theorem shape, so it stays partial until that emission lands.
+    value expression needs). ``task_group:any`` lowers to the candidate
+    ``List Int`` and a ``result ∈ <def>`` theorem shape.
 
     Returns ``None`` when the source is not a task surface at all;
     malformed task syntax lowers to a partial result.
@@ -3322,7 +3338,7 @@ def _task_group_body(source: str) -> Optional[TranslationResult]:
         inner = _enclosed_block_inner(src[task_match.end():])
         if inner is None or not inner.strip():
             return None
-        lowered = translate_body("{ " + inner + " }")
+        lowered = translate_body("{ " + inner + " }", array_names=array_names)
         if lowered.is_partial:
             return lowered
         return _annotate_concurrency_result(lowered, "task_value_lowering")
@@ -3348,7 +3364,10 @@ def _task_group_body(source: str) -> Optional[TranslationResult]:
         tasks.append(task_inner)
     if not tasks:
         return None
-    lowered_tasks = [translate_body("{ " + task + " }") for task in tasks]
+    lowered_tasks = [
+        translate_body("{ " + task + " }", array_names=array_names)
+        for task in tasks
+    ]
     partial_tasks = [t for t in lowered_tasks if t.is_partial]
     if partial_tasks:
         # Conservative: a sibling that failed to lower could hide inputs
@@ -3548,7 +3567,9 @@ def _substitute_simultaneous(
     return " ".join(pieces)
 
 
-def _while_loop_body(source: str) -> Optional[TranslationResult]:
+def _while_loop_body(
+    source: str, array_names: Optional[FrozenSet[str]] = None
+) -> Optional[TranslationResult]:
     """Lower ``{ …; while c invariant: I decreases: D { assigns }; tail }``.
 
     A ``while`` body has no single value expression — the loop's
@@ -3682,8 +3703,12 @@ def _while_loop_body(source: str) -> Optional[TranslationResult]:
         return None
 
     # ``len(arr)`` in any piece must see the array usage across the whole
-    # loop surface, not just the piece's own tokens.
-    loop_array_names = frozenset(_list_typed_ident_names(_tokenize(source)))
+    # loop surface and the atom's other clauses, not just the piece's own
+    # tokens.
+    loop_array_names = frozenset(
+        set(_list_typed_ident_names(_tokenize(source)))
+        | set(array_names or ())
+    )
     cond_tr = translate_body(cond_pre, array_names=loop_array_names)
     inv_tr = translate_body(inv_pre, array_names=loop_array_names)
     inv_after_tr = translate_body(inv_after_src, array_names=loop_array_names)
@@ -3861,13 +3886,15 @@ def _matching_brace_index(source: str, open_index: int) -> Optional[int]:
     return None
 
 
-def _known_body_pattern(source: str) -> Optional[TranslationResult]:
+def _known_body_pattern(
+    source: str, array_names: Optional[FrozenSet[str]] = None
+) -> Optional[TranslationResult]:
     braced_if = _parse_braced_if(source)
     if braced_if:
         cond_src, then_src, else_src = braced_if
-        cond = translate_contract(cond_src.strip())
-        then_branch = translate_body(then_src.strip())
-        else_branch = translate_body(else_src.strip())
+        cond = translate_contract(cond_src.strip(), array_names)
+        then_branch = translate_body(then_src.strip(), array_names)
+        else_branch = translate_body(else_src.strip(), array_names)
         identifiers = _merge_identifiers(
             [cond.identifiers, then_branch.identifiers, else_branch.identifiers]
         )
@@ -4153,7 +4180,7 @@ def translate_body(
     unbraced = _unwrap_block_body(stripped)
     if unbraced is not None:
         # An empty block has no value; translate_body("") marks it partial.
-        inner = translate_body(unbraced)
+        inner = translate_body(unbraced, array_names=array_names)
         inner_rules = (
             inner.translator_ir.lowering_rules if inner.translator_ir else []
         )
@@ -4184,20 +4211,20 @@ def translate_body(
         # the outer tokens would re-flag the `;` / `perform` surface as
         # unsupported.
         tail, applied_rules = statement_seq
-        inner = translate_body(tail)
+        inner = translate_body(tail, array_names=array_names)
         if inner.translator_ir is not None:
             rules = inner.translator_ir.lowering_rules
             for rule in applied_rules:
                 if rule not in rules:
                     rules.append(rule)
         return inner
-    task_lowered = _task_group_body(stripped)
+    task_lowered = _task_group_body(stripped, array_names=array_names)
     if task_lowered is not None:
         # Spec §4.7: ``task { e }`` evaluates to its body; ``task_group:all``
         # yields the last task's value; ``task_group:any`` yields the
         # candidate-value list (list-membership theorem shape).
         return task_lowered
-    loop_lowered = _while_loop_body(stripped)
+    loop_lowered = _while_loop_body(stripped, array_names=array_names)
     if loop_lowered is not None:
         # Spec §4.8: a ``while`` body lowers to its verification conditions
         # (invariant base / step / decreases / post) rendered as the
@@ -4217,7 +4244,7 @@ def translate_body(
             string_identifiers=[],
             tokens=tokens,
         )
-    known = _known_body_pattern(stripped)
+    known = _known_body_pattern(stripped, array_names=array_names)
     if known is not None:
         return _attach_translator_ir(stripped, known)
     result = translate_contract(stripped, array_names)

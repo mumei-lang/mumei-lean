@@ -488,13 +488,20 @@ loop without `invariant:`, a body containing anything but scalar rebinds
 (nested loops, array-element writes, `perform`), a missing tail, or any
 partial piece leaves the body partial (no rule recorded). A loop-carried name
 initialised only by an outer parameter (no `let`) keeps its incoming value as
-the base substitution.
+the base substitution **and stays a theorem parameter** — the conjuncts still
+∀-bind the loop's own name, but the base conjunct reads on the parameter. Only
+`let`-initialised carried vars are removed from the signature; dropping an
+externally bound carried name would leave the base conjunct referencing an
+unbound identifier (ill-typed Lean).
 
 **`len(arr)` on arrays.** When an identifier appears both in `arr[i]` /
 `sum(arr, …)` position (i.e. it will be bound as `List Int`) and as the
 argument of `len`, the call lowers to `((arr.length : Int))` — `mumei_len`
 takes `Int` and would emit ill-typed Lean. A `len(x)` whose argument is never
 indexed keeps the scalar `mumei_len` lowering; `x` then stays an `Int` binder.
+Loop pieces share one array-name scan over the whole `{ …; while …; tail }`
+source, so `len(arr)` in the condition sees `arr[j]` indexing that only
+occurs inside the invariant.
 
 ## 5. Semantic Gap Bridge Rules
 

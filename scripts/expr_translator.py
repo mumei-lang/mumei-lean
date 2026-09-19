@@ -2648,13 +2648,20 @@ def _emit_tokens(
     return " ".join(pieces), is_partial
 
 
-def translate_contract(source: str) -> TranslationResult:
+def translate_contract(
+    source: str, array_names: Optional[FrozenSet[str]] = None
+) -> TranslationResult:
     """Translate a single mumei contract string to a Lean ``Prop``.
 
     The translator is deliberately *token-level*: it does not build a
     typed AST. This is enough for the initial scope (arithmetic
     comparisons + boolean connectives + bounded ``forall`` quantifiers
     and array-access ``arr[i]`` Function applications).
+
+    ``array_names`` overrides the piece-local ``_list_typed_ident_names``
+    scan — e.g. ``_while_loop_body`` threads the loop-level set so a
+    ``len(arr)`` in the condition sees the ``arr[i]`` usage in the
+    invariant.
     """
     stripped = (source or "").strip()
     if stripped == "" or stripped == "true":
@@ -2682,7 +2689,10 @@ def translate_contract(source: str) -> TranslationResult:
         _tokenize(stripped)
     )
     lean_expr, is_partial = _emit_tokens(
-        tokens, frozenset(_list_typed_ident_names(tokens))
+        tokens,
+        array_names
+        if array_names is not None
+        else frozenset(_list_typed_ident_names(tokens)),
     )
     # Collect identifiers that appear in ``arr[i]`` position. These need
     # ``List Int`` typing in the rendered theorem signature so that
@@ -3671,14 +3681,25 @@ def _while_loop_body(source: str) -> Optional[TranslationResult]:
     if base_src is None:
         return None
 
-    cond_tr = translate_body(cond_pre)
-    inv_tr = translate_body(inv_pre)
-    inv_after_tr = translate_body(inv_after_src)
-    base_tr = translate_body(base_src)
-    tail_tr = translate_body(tail_pre)
-    dec_tr = translate_body(dec_pre) if dec_pre is not None else None
+    # ``len(arr)`` in any piece must see the array usage across the whole
+    # loop surface, not just the piece's own tokens.
+    loop_array_names = frozenset(_list_typed_ident_names(_tokenize(source)))
+    cond_tr = translate_body(cond_pre, array_names=loop_array_names)
+    inv_tr = translate_body(inv_pre, array_names=loop_array_names)
+    inv_after_tr = translate_body(inv_after_src, array_names=loop_array_names)
+    base_tr = translate_body(base_src, array_names=loop_array_names)
+    tail_tr = translate_body(tail_pre, array_names=loop_array_names)
+    dec_tr = (
+        translate_body(dec_pre, array_names=loop_array_names)
+        if dec_pre is not None
+        else None
+    )
     dec_after_tr = (
-        translate_body(dec_after_src) if dec_after_src is not None else None
+        (
+            translate_body(dec_after_src, array_names=loop_array_names)
+            if dec_after_src is not None
+            else None
+        )
     )
     pieces = [
         tr
@@ -3704,10 +3725,15 @@ def _while_loop_body(source: str) -> Optional[TranslationResult]:
         ),
         tail=tail_tr.lean_expr,
     )
+    # Only ``let``-initialised carried vars are loop-local: they are
+    # ∀-bound inside the goal conjuncts and must not stay theorem
+    # parameters. A carried var bound outside the loop (a param) keeps
+    # its parameter — the base conjunct then reads on that entry value.
     carried_set = set(carried)
+    loop_local = {name for name in carried if name in resolved_map}
     for tr in pieces:
         for name in tr.identifiers:
-            if name not in carried_set and name not in result.identifiers:
+            if name not in loop_local and name not in result.identifiers:
                 result.identifiers.append(name)
         result.array_identifiers += [
             name
@@ -3719,15 +3745,16 @@ def _while_loop_body(source: str) -> Optional[TranslationResult]:
                 if rule not in result.translator_ir.lowering_rules:
                     result.translator_ir.lowering_rules.append(rule)
     result.identifiers = [
-        name for name in result.identifiers if name not in carried_set
+        name for name in result.identifiers if name not in loop_local
     ]
     if result.translator_ir is not None:
-        # Carried vars are ``∀``-bound inside the goal conjuncts — not
-        # theorem parameters — so they must not appear as free binders.
+        # Loop-local carried vars are ``∀``-bound inside the goal
+        # conjuncts — not theorem parameters — so they must not appear
+        # as free binders.
         result.translator_ir.binders = [
             binder
             for binder in result.translator_ir.binders
-            if binder.mumei_name not in carried_set
+            if binder.mumei_name not in loop_local
         ]
         result.translator_ir.lowering_rules.append(
             "while_loop_invariant_lowering"
@@ -4085,7 +4112,9 @@ def _tokens_to_source(tokens: List[tuple]) -> str:
     return " ".join(text for _kind, text in tokens)
 
 
-def translate_body(body_expr: str) -> TranslationResult:
+def translate_body(
+    body_expr: str, array_names: Optional[FrozenSet[str]] = None
+) -> TranslationResult:
     """Translate a mumei atom body expression to a Lean term.
 
     The supported body surface intentionally mirrors the simple term
@@ -4093,6 +4122,10 @@ def translate_body(body_expr: str) -> TranslationResult:
     calls, and compact ``match x { ... }`` arms. Empty or unsupported
     bodies are marked partial so callers can fall back to the legacy
     theorem shape.
+
+    ``array_names`` is forwarded to the leaf ``translate_contract`` call
+    so construct-level scans (e.g. ``_while_loop_body``) can type a
+    ``len(arr)`` whose array-ness only shows in a sibling piece.
     """
     stripped = (body_expr or "").strip()
     if not stripped:
@@ -4187,7 +4220,7 @@ def translate_body(body_expr: str) -> TranslationResult:
     known = _known_body_pattern(stripped)
     if known is not None:
         return _attach_translator_ir(stripped, known)
-    result = translate_contract(stripped)
+    result = translate_contract(stripped, array_names)
     if "=>" in stripped and "=>" not in result.lean_expr:
         result.is_partial = True
     result = _attach_translator_ir(stripped, result)

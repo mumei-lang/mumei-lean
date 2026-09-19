@@ -1824,6 +1824,37 @@ def test_translate_body_while_loop_without_decreases():
     assert vc.cond == "i < n"
 
 
+def test_translate_body_while_loop_len_on_array_across_pieces():
+    # ``len(arr)`` in the condition/invariant only knows ``arr`` is
+    # List-typed via ``arr[j]`` in a sibling piece — the loop-level
+    # array-name scan must reach each piece's emission.
+    result = expr_translator.translate_body(
+        "{ let i = 0; while i < len(arr) "
+        "invariant: forall(j, 0, i, arr[j] >= 0) && i <= len(arr) "
+        "{ i = i + 1 }; i }"
+    )
+    assert result.is_partial is False
+    vc = result.loop_vc
+    assert vc is not None
+    assert vc.cond == "i < ((arr.length : Int))"
+    assert "(mumei_len arr)" not in vc.invariant
+    assert "arr" in result.array_identifiers
+
+
+def test_translate_body_while_loop_externally_bound_carried_stays_param():
+    # A carried var without a pre-loop ``let`` is an incoming parameter:
+    # the base conjunct reads on that entry value, so it must remain in
+    # identifiers (the conjuncts still ∀-bind the loop's own name).
+    result = expr_translator.translate_body(
+        "{ while i < n invariant: i <= n { i = i + 1 }; i }"
+    )
+    assert result.is_partial is False
+    assert result.identifiers == ["i", "n"]
+    vc = result.loop_vc
+    assert vc is not None
+    assert vc.invariant_base == "i ≤ n"
+
+
 @pytest.mark.parametrize(
     "source",
     [

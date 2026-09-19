@@ -1,6 +1,6 @@
 {
-  "version": "1.0",
-  "timestamp": "2026-09-19T05:00:00Z",
+  "version": "1.1",
+  "timestamp": "2026-09-19T13:00:00Z",
   "mumei_version": "0.6.19",
   "z3_version": "4.8.12",
   "file": "benchmarks/domain_compliance/regtech_exhaustiveness.mm",
@@ -32,6 +32,15 @@
       "effects": [],
       "requires": "n >= 0 && len(amounts) >= n && limit > 0 && true",
       "ensures": "result >= 0",
+      "forall_constraints": [
+        {
+          "q_type": "forall",
+          "var": "i",
+          "start": "0",
+          "end": "n",
+          "condition": "amounts[i] >= 0 && amounts[i] <= limit"
+        }
+      ],
       "body_expr": "{ let count = 0; let i = 0; while i < n invariant: i >= 0 && i <= n && count >= 0 decreases: n - i { count = count + 1; i = i + 1; }; count }",
       "body_summary": "{ let count = 0; let i = 0; while i < n invariant: i >= 0 && i <= n && count >= 0 decreases: n - i { count = count + 1; i = i + 1; }; count }",
       "z3_result_class": "unknown",
@@ -113,6 +122,6 @@
       "solver_process_metadata": null
     }
   ],
-  "certificate_hash": "186b6024c5d369afde3fc959bdf4f76625754a0bff655a11578dbcba9015b1c6",
+  "certificate_hash": "76aaf657c4187e291f62c1aeb48241ffe4e08aaaee91c98c3b71439a765e3090",
   "all_verified": false
 }

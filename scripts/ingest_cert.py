@@ -1136,6 +1136,12 @@ def _declared_array_names(translator_ir: dict) -> set[str]:
     for binder in binders:
         if not isinstance(binder, dict):
             continue
+        # Quantifier-bound / witness binders are ∀-introduced inside the
+        # goal, not theorem parameters — their names must not widen the
+        # shared array-name set.
+        role = str(binder.get("role") or "param")
+        if role in {"quantifier", "refinement_witness"}:
+            continue
         name = str(binder.get("mumei_name") or "")
         mumei_type = str(binder.get("mumei_type") or "")
         lean_type = str(binder.get("lean_type") or "")

@@ -1529,6 +1529,31 @@ def test_render_theorem_loop_vc_uses_declared_array_types():
     assert "∀ (result : Int)" in text
 
 
+def test_declared_array_names_skips_quantifier_binders():
+    """A `role: quantifier` binder is ∀-introduced inside the goal, not a
+    parameter — its declared array type must not widen the shared
+    array-name scan or `len(q)` would lower to `.length` on a bound
+    `Int` name."""
+    atom = _atom("qskip", z3="unknown")
+    atom["requires"] = "n >= 0 && len(q) >= n"
+    atom["ensures"] = "result >= 0"
+    atom["body_expr"] = "0"
+    atom["translator_ir"] = {
+        "binders": [
+            {"mumei_name": "q", "lean_name": "q", "mumei_type": "[i64]",
+             "lean_type": "List Int", "role": "quantifier"},
+            {"mumei_name": "n", "lean_name": "n", "mumei_type": "i64",
+             "lean_type": "Int", "role": "param"},
+            {"mumei_name": "result", "lean_name": "result",
+             "mumei_type": "i64", "lean_type": "Int", "role": "result"},
+        ]
+    }
+    [ingested] = collect_unknown_atoms(_cert("std/qskip.mm", [atom]))
+    text = ingest_cert.render_theorem(ingested)
+    assert "((q.length : Int))" not in text
+    assert "(q : List Int)" not in text.split(":=")[0]
+
+
 def test_attribute_failures_keeps_per_atom_attribution_for_generated_files():
     """Same log shape, but the diagnostic belongs to a generated file: only
     that atom fails and the rest of the payload stays attributable."""

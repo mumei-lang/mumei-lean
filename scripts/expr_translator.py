@@ -851,6 +851,13 @@ def mark_builtin_name_binder_conflict(
 # and is never lowered to a Lean term.
 _STATEMENT_KEYWORDS: Set[str] = {
     "while", "loop", "for", "return", "break", "continue", "mut", "fn",
+    # Structured-concurrency surfaces are statements too: ``task {…}`` and
+    # ``task_group:all|any {…}`` lower only through ``_task_group_body``, so
+    # a residual ``task``/``task_group`` token (a task nested in a ``let``
+    # RHS, trailing text after a task block, ``task_group:some``) means the
+    # shape was not the supported one and must stay partial rather than
+    # leak raw mumei braces into the emitted Lean.
+    "task", "task_group",
 }
 
 STATEMENT_BLOCK_REASON = "statement_block_requires_manual_lemma"
@@ -1234,7 +1241,11 @@ def classify_obligation(tokens: List[tuple], lowering_rules: List[str]) -> str:
         return OBLIGATION_CLASS_SMART_CONTRACT
     if has_rtgs:
         return OBLIGATION_CLASS_RTGS
-    if "task_group_all_lowering" in lowering_rules or "task_value_lowering" in lowering_rules:
+    if (
+        "task_group_all_lowering" in lowering_rules
+        or "task_group_any_lowering" in lowering_rules
+        or "task_value_lowering" in lowering_rules
+    ):
         return OBLIGATION_CLASS_CONCURRENCY
     if has_quantifier:
         return OBLIGATION_CLASS_QUANTIFIER
@@ -3217,8 +3228,12 @@ def _task_group_body(source: str) -> Optional[TranslationResult]:
             string_identifiers=[],
         )
         return _annotate_concurrency_result(partial, "task_group_any_lowering")
-    if any(t.is_partial for t in lowered_tasks):
-        return lowered_tasks[-1]
+    partial_tasks = [t for t in lowered_tasks if t.is_partial]
+    if partial_tasks:
+        # Conservative: a sibling that failed to lower could hide inputs
+        # the group's value still depends on — stay partial instead of
+        # claiming the last task's value.
+        return partial_tasks[0]
     result = lowered_tasks[-1]
     identifiers = list(result.identifiers)
     for task_result in lowered_tasks[:-1]:

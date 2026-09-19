@@ -1678,6 +1678,17 @@ def test_translate_body_lowers_task_and_task_group_all():
         # A task body that itself does not lower stays partial.
         "{ task { while n > 0 { n } } }",
         "{ task_group:all { task { a }; task { while n > 0 { n } } } }",
+        # Conservative: a partial middle sibling also keeps the group
+        # partial even when the last task lowers.
+        "{ task_group:all { task { while n > 0 { n } }; task { b } } }",
+        # `task {…}` is a whole-body surface — trailing text, an empty
+        # block, or a task nested in a `let` RHS must not leak raw mumei
+        # braces into the emitted Lean.
+        "{ task { a } + x }",
+        "{ task { } }",
+        "{ let x = task { 5 }; x }",
+        "{ task { a } ; x }",
+        "{ task_group:all { task { a } } ; x }",
         # Rebind is only allowed on let-bound names.
         "{ task { acc = acc + 1; acc } }",
         "{ let x = 1; y = x + 1; x }",

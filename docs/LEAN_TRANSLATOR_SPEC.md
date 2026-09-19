@@ -400,6 +400,13 @@ is list membership over the task results and needs a different generated
 theorem shape, so it currently stays partial while still tagging the
 `concurrency_obligation` class for triage.
 
+`task` and `task_group` are also statement keywords: a `task` surface
+that does not occupy the whole body (trailing text such as
+`task { a } + x`, an empty `task { }`, or a task nested in a `let` RHS
+like `let x = task { 5 }; x`) cannot leak raw mumei braces into the
+emitted Lean — the residual token flags `statement_block_requires_manual_lemma`
+and the body stays partial.
+
 The lowering introduces the `concurrency_obligation` obligation class
 (§10) whose bridge lemmas (`MumeiLean.Concurrency.task_group_all_result_last`,
 `task_group_any_result_mem`, `task_value_result`) pin the task-value

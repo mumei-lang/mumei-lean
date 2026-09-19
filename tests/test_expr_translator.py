@@ -1646,6 +1646,35 @@ def test_translate_body_lowers_task_and_task_group_all():
         in group.translator_ir.requires_bridge_lemmas
     )
 
+    # `task_group:any` yields the candidate-value list: the emitted def is
+    # `List Int` and the theorem hypothesises `result ∈ <def>`.
+    any_group = expr_translator.translate_body(
+        "{ task_group:any { task { a }; task { b } } }"
+    )
+    assert any_group.is_partial is False
+    assert any_group.lean_expr == "[a, b]"
+    assert any_group.result_type == "List Int"
+    assert set(any_group.identifiers) == {"a", "b"}
+    assert "task_group_any_lowering" in any_group.translator_ir.lowering_rules
+    assert any_group.translator_ir.obligation_class == "concurrency_obligation"
+    assert (
+        "MumeiLean.Concurrency.task_group_any_result_mem"
+        in any_group.translator_ir.requires_bridge_lemmas
+    )
+    assert any_group.manual_lemma_reason is None
+
+    # Every `any` element is a candidate value, so each must be Int-typed —
+    # a Prop / String element stays partial without claiming the rule.
+    for bad in (
+        "{ task_group:any { task { \"s\" }; task { b } } }",
+        "{ task_group:any { task { forall x: Int. x > 0 }; task { b } } }",
+    ):
+        bad_result = expr_translator.translate_body(bad)
+        assert bad_result.is_partial is True, bad
+        assert "task_group_any_lowering" not in (
+            bad_result.translator_ir.lowering_rules or []
+        ), bad
+
     # Sibling task bodies may carry their own let/rebind sequences.
     rebind = expr_translator.translate_body(
         "{ task_group:all { task { let acc = n; acc = acc + 2; acc } } }"
@@ -1675,9 +1704,6 @@ def test_translate_body_lowers_task_and_task_group_all():
 @pytest.mark.parametrize(
     "source",
     [
-        # `task_group:any` yields whichever task finishes first — list
-        # membership, which needs a different generated theorem shape.
-        "{ task_group:any { task { a }; task { b } } }",
         # Group segments must be `task { … }` items.
         "{ task_group:all { a; b } }",
         "{ task_group:all { task { a }; b } }",

@@ -1356,7 +1356,22 @@ def render_theorem(atom: IngestedAtom) -> str:
         known_delegate = _render_known_witness_delegate(atom)
         if known_delegate is not None:
             return known_delegate
-    result_type_override = _body_result_type(atom.body_expr, body_tr) if use_body_semantics else None
+    # ``task_group:any`` lowers to a ``List Int`` of candidate values; the
+    # observed ``result`` is still an ``Int`` picked from that list, so the
+    # list type feeds the emitted ``def`` while ``result`` stays scalar and
+    # ``h_body`` is a membership hypothesis.
+    is_any_group = (
+        use_body_semantics
+        and body_tr is not None
+        and body_tr.translator_ir is not None
+        and "task_group_any_lowering"
+        in (body_tr.translator_ir.lowering_rules or [])
+    )
+    result_type_override = (
+        _body_result_type(atom.body_expr, body_tr)
+        if use_body_semantics and not is_any_group
+        else None
+    )
 
     scalar_params: List[str] = [
         i for i in idents
@@ -1421,7 +1436,9 @@ def render_theorem(atom: IngestedAtom) -> str:
     def_decl = ""
     h_body_param = ""
     if use_body_semantics:
-        body_type = result_type_override or "Int"
+        body_type = (
+            "List Int" if is_any_group else (result_type_override or "Int")
+        )
         mapped_def_params = _map_identifier_list(def_params, binder_mapping)
         mapped_predicate_arities = {
             binder_mapping.get(name, name): arity
@@ -1446,8 +1463,9 @@ def render_theorem(atom: IngestedAtom) -> str:
         result_args = (
             f" {' '.join(mapped_def_params)}" if mapped_def_params else ""
         )
+        membership = "∈" if is_any_group else "="
         h_body_param = (
-            f" (h_body : {result_binder} = {result_name}{result_args})"
+            f" (h_body : {result_binder} {membership} {result_name}{result_args})"
         )
 
     # Default tactic body: try ``mumei_arith`` (mathlib4-backed
@@ -1467,7 +1485,13 @@ def render_theorem(atom: IngestedAtom) -> str:
         body = finite_field_body
     elif use_body_semantics:
         tactic = atom.auto_tactic or "mumei_arith_deep"
-        body = f"  rw [h_body]\n  unfold {result_name}\n  {tactic}"
+        if is_any_group:
+            # ``h_body : result ∈ [e₁, …, eₙ]`` — split into one goal per
+            # candidate (``fin_cases`` substitutes ``result := eᵢ``), each
+            # closed by the arithmetic cascade under ``requires``.
+            body = f"  fin_cases h_body <;>\n    {tactic}"
+        else:
+            body = f"  rw [h_body]\n  unfold {result_name}\n  {tactic}"
     else:
         body = f"  {atom.auto_tactic or 'mumei_arith'}"
     notes: List[str] = []

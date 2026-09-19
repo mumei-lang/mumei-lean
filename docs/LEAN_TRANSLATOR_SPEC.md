@@ -395,10 +395,20 @@ inside them (e.g. `task { let acc = n; acc = acc + 2; acc }` lowers via
 the let-sequence machinery — which also accepts `<name> = <expr>` rebind
 segments on `let`-bound names, recorded as `rebind_statement_lowering`).
 
-`task_group:any { … }` yields whichever task finishes first — its value
-is list membership over the task results and needs a different generated
-theorem shape, so it currently stays partial while still tagging the
-`concurrency_obligation` class for triage.
+`task_group:any { task { e₁ }; …; task { eₙ } }` yields whichever task
+finishes first — modelled as list membership over the candidate values.
+The block lowers to the list literal `[e₁, …, eₙ]` with
+`result_type = "List Int"`, so `render_theorem` emits
+`def <atom>Result … : List Int` and hypothesises
+`h_body : result ∈ <atom>Result …` (the observed `result` binder stays
+`Int` — the list type feeds only the `def`). The generated proof runs
+`fin_cases h_body <;> <tactic>`, which splits the membership into one
+goal per candidate value (`result := eᵢ` substituted) and closes each
+with the arithmetic cascade under `requires`. Every task body must
+lower cleanly *and* be `Int`-typed — a Prop- or String-valued element
+would make the membership hypothesis ill-typed, so such groups stay
+partial (still tagged `concurrency_obligation` for triage, without the
+lowering rule).
 
 `task` and `task_group` are also statement keywords: a `task` surface
 that does not occupy the whole body (trailing text such as

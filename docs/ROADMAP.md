@@ -240,9 +240,15 @@ change to the contract constants must be synchronised across projects in the sam
   every fixture/test/doc pin here). Also added along the way: `x = e` rebind
   segments on `let`-bound names in statement sequences
   (`rebind_statement_lowering`), which the `per_task_local_writes` shape needs.
-  `task_group:any {…}` still stays partial — its value is list membership over
-  the task results and needs a different generated theorem shape (remaining
-  P31 work, hash already carries the `task_group_any_result_mem` lemma).
+  `task_group:any {…}` now lowers too: the block yields the candidate-value
+  list `[e₁, …, eₙ]` (`result_type = "List Int"`), the emitted theorem
+  hypothesises `result ∈ <def>`, and `fin_cases` splits the membership into
+  one goal per task value (spec §4.7, live path 20:
+  `concurrency/task_group_any_winner.mm` fixture `race_two_replicas`). Every
+  `any` element must be Int-typed — non-Int elements stay partial without the
+  lowering rule. `bridge_lemma_hash` unchanged (the `task_group_any_result_mem`
+  lemma already shipped with the class). P31's remaining gap is the
+  statement-sequence-middle `task_group` shape (`read_cancellable_write`).
   Reference
   regression gates:
 

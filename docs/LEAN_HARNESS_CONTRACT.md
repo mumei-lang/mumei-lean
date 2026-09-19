@@ -78,7 +78,7 @@ hand-written `MumeiLean.StdMathAbs` witness.
 
 ### Live generated theorem paths
 
-The bridge ships nineteen live generated theorem paths. Each lowers a Z3 `unknown`
+The bridge ships twenty live generated theorem paths. Each lowers a Z3 `unknown`
 (or spurious-candidate) atom to a generated Lean theorem that Lake builds with
 `known_witness_used = false`:
 
@@ -212,6 +212,15 @@ The bridge ships nineteen live generated theorem paths. Each lowers a Z3 `unknow
   three `MumeiLean.Concurrency` bridge lemmas, so `bridge_lemma_hash`
   bumped to `5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9`
   in lockstep across every pinned location.
+- `concurrency/task_group_any_winner.mm::race_two_replicas`: the
+  `task_group:any { task {…}; … }` path emits
+  `Generated.Concurrency.Task_group_any_winner.race_two_replicas_correct`;
+  the body lowers to the candidate-value list `[e₁, …, eₙ]` via
+  `task_group_any_lowering` (spec §4.7), the def is `List Int`, the
+  theorem hypothesises `result ∈ <def>`, and `fin_cases` splits the
+  membership into one goal per task value. `known_witness_used = false`.
+  This is the twentieth live generated theorem path; it reuses the
+  `concurrency_obligation` catalog, so `bridge_lemma_hash` is unchanged.
 
 ## Scope
 

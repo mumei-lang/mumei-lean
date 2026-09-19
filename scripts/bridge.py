@@ -567,12 +567,18 @@ def _run_lake_build(repo_dir: Path, log_path: Path) -> Tuple[int, Optional[float
         log_path.write_text("error: `lake` not found on PATH\n")
         return 127, None
     started = time.monotonic()
-    proc = subprocess.run(  # noqa: S603 - explicit lake invocation
-        cmd,
-        cwd=repo_dir,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        proc = subprocess.run(  # noqa: S603 - explicit lake invocation
+            cmd,
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        # An unlaunchable command (missing cwd, permissions) is reported
+        # like a missing toolchain rather than as a raw traceback.
+        log_path.write_text(f"error: `lake build` could not start: {exc}\n")
+        return 127, None
     elapsed = time.monotonic() - started
     log_path.write_text(proc.stdout + proc.stderr)
     return proc.returncode, round(elapsed, 3)
@@ -621,6 +627,7 @@ def _run_tactic_search_stage(
             stage=stage,
             lake_cmd=lake_cmd,
             timeout_s=timeout_s,
+            repo_dir=repo_dir,
             probe_dir=repo_dir / ".tactic_search",
             history=history,
         )

@@ -22,7 +22,7 @@ a successful proof.
 
 ## Unknown obligation bridge contract
 
-The promoted path is: select Z3 `unknown` atoms, translate them with typed metadata, build generated Lean, export a certificate with `translator_version` and `bridge_lemma_hash`, and let mumei accept only matching `lean_verified` results. Eight live theorem paths are covered: `abs_saturating`, `bounded_mul_with_overflow_check`, `constant_time_eq_flag`, `ff_zero_eq_zero`, `verified_insertion_sort_ascending`, `poly_bound_monotone`, `exists_pivot_partition`, and `sum_nonneg_inductive`. See [`docs/LEAN_HARNESS_CONTRACT.md`](docs/LEAN_HARNESS_CONTRACT.md) for per-path details.
+The promoted path is: select Z3 `unknown` atoms, translate them with typed metadata, build generated Lean, export a certificate with `translator_version` and `bridge_lemma_hash`, and let mumei accept only matching `lean_verified` results. Eighteen live theorem paths are covered: `abs_saturating`, `bounded_mul_with_overflow_check`, `constant_time_eq_flag`, `ff_zero_eq_zero`, `verified_insertion_sort_ascending`, `poly_bound_monotone`, `exists_pivot_partition`, `sum_nonneg_inductive`, `rtgs_transfer_conservation`, `ff_mul_commutative`, `ff_mul_associative`, `ff_mul_add_distributive`, `predicate_guard_collapse`, `ff_pow_square_expands`, `cei_compliant_withdraw` / `guarded_state_update`, `move_once` / `read_before_move`, `clamp_to_range`, and `take_point`. See [`docs/LEAN_HARNESS_CONTRACT.md`](docs/LEAN_HARNESS_CONTRACT.md) for per-path details.
 
 ## Bridge acceptance invariant
 

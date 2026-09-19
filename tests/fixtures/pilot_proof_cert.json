@@ -14,7 +14,9 @@
       "dependencies": [],
       "effects": [],
       "requires": "n >= 0 && forall(i, 0, n, arr[i] >= 0)",
-      "ensures": "forall(i, 0, n, arr[i] >= 0)"
+      "ensures": "forall(i, 0, n, arr[i] >= 0)",
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "bridge_lemma_hash": "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
     },
     {
       "name": "pilot_array_offset",
@@ -25,7 +27,9 @@
       "dependencies": [],
       "effects": [],
       "requires": "n >= 0 && forall(i, 0, n, arr[i] >= 1)",
-      "ensures": "forall(i, 0, n, arr[i] >= 0)"
+      "ensures": "forall(i, 0, n, arr[i] >= 0)",
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "bridge_lemma_hash": "ee8cd3ba96c3318b3f07445f4755619744d4e1f9a662af94f3cbce6d41ed4347"
     }
   ],
   "package_name": "std",

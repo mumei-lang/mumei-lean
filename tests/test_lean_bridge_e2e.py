@@ -10,6 +10,11 @@ from pathlib import Path
 
 import pytest
 
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from expr_translator import BRIDGE_LEMMA_HASH
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -765,7 +770,7 @@ def test_bridge_no_build_dry_run(tmp_path: Path):
     assert metadata["translator_version"] == "mumei-lean-translator-ir-v2"
     assert (
         metadata["bridge_lemma_hash"]
-        == "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
+        == BRIDGE_LEMMA_HASH
     )
     assert payload["all_verified"] is False
 
@@ -1069,7 +1074,7 @@ def test_builtin_name_binder_and_block_body_upgrade_unknown_to_lean_verified(
             assert meta["known_witness_used"] is False
             assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
             assert meta["bridge_lemma_hash"] == (
-                "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
+                BRIDGE_LEMMA_HASH
             )
         push = next(a for a in payload["atoms"] if a["name"] == "stack_push")
         rules = push["lean_metadata"]["translator_ir"]["lowering_rules"]
@@ -1121,7 +1126,7 @@ def test_perform_sequence_body_semantics_upgrade_unknown_to_lean_verified(
             assert meta["known_witness_used"] is False
             assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
             assert meta["bridge_lemma_hash"] == (
-                "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
+                BRIDGE_LEMMA_HASH
             )
             rules = meta["translator_ir"]["lowering_rules"]
             assert "perform_statement_lowering" in rules
@@ -1174,7 +1179,7 @@ def test_let_sequence_body_semantics_upgrade_unknown_to_lean_verified(
             assert meta["known_witness_used"] is False
             assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
             assert meta["bridge_lemma_hash"] == (
-                "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
+                BRIDGE_LEMMA_HASH
             )
             rules = meta["translator_ir"]["lowering_rules"]
             assert "let_statement_lowering" in rules
@@ -1224,7 +1229,7 @@ def test_nested_if_body_semantics_upgrade_unknown_to_lean_verified(
         assert meta["known_witness_used"] is False
         assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
         assert meta["bridge_lemma_hash"] == (
-            "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
+            BRIDGE_LEMMA_HASH
         )
         rules = meta["translator_ir"]["lowering_rules"]
         assert "nested_if_lowering" in rules
@@ -1277,7 +1282,7 @@ def test_struct_projection_body_semantics_upgrade_unknown_to_lean_verified(
         assert meta["known_witness_used"] is False
         assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
         assert meta["bridge_lemma_hash"] == (
-            "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
+            BRIDGE_LEMMA_HASH
         )
         rules = meta["translator_ir"]["lowering_rules"]
         assert "struct_projection_lowering" in rules
@@ -1329,7 +1334,7 @@ def test_task_group_all_body_semantics_upgrade_unknown_to_lean_verified(
         assert meta["known_witness_used"] is False
         assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
         assert meta["bridge_lemma_hash"] == (
-            "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
+            BRIDGE_LEMMA_HASH
         )
         rules = meta["translator_ir"]["lowering_rules"]
         assert "task_group_all_lowering" in rules
@@ -1376,7 +1381,7 @@ def test_task_group_any_body_semantics_upgrade_unknown_to_lean_verified(
         assert meta["known_witness_used"] is False
         assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
         assert meta["bridge_lemma_hash"] == (
-            "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
+            BRIDGE_LEMMA_HASH
         )
         rules = meta["translator_ir"]["lowering_rules"]
         assert "task_group_any_lowering" in rules
@@ -1508,7 +1513,7 @@ def test_while_loop_invariant_vc_provable_via_external_proof(
         assert meta["external_proof"]["source"] == "ai_generated_proof"
         assert meta["known_witness_used"] is False
         assert meta["bridge_lemma_hash"] == (
-            "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
+            BRIDGE_LEMMA_HASH
         )
         assert payload["all_verified"] is True
     finally:
@@ -1674,7 +1679,7 @@ def test_loop_vc_list_result_provable_via_external_proof(
         assert meta["ai_proof_used"] is True
         assert meta["known_witness_used"] is False
         assert meta["bridge_lemma_hash"] == (
-            "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
+            BRIDGE_LEMMA_HASH
         )
         assert payload["all_verified"] is True
     finally:
@@ -1884,7 +1889,7 @@ def test_external_proof_matrix_never_promotes_unproved_atoms(
         meta = atom["lean_metadata"]
         assert meta["translator_version"] == "mumei-lean-translator-ir-v2"
         assert meta["bridge_lemma_hash"] == (
-            "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
+            BRIDGE_LEMMA_HASH
         )
         if expect_rejected is not None:
             assert f"rejected: {expect_rejected}" in proc.stderr

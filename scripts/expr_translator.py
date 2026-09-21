@@ -27,9 +27,11 @@ theorem then carries a ``-- TODO: unproven`` marker which
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
+from pathlib import Path
+from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Sequence, Set, Tuple
 
 # Tokens we recognise. Order matters: longer prefixes must come first
 # so e.g. ``>=`` is not split into ``>`` + ``=``.
@@ -240,10 +242,8 @@ _SCALAR_CALL_FUNCTIONS = (
 )
 
 TRANSLATOR_VERSION = "mumei-lean-translator-ir-v2"
-# SHA-256 of the canonical obligation-class bridge lemma catalog below; see
-# ``compute_bridge_lemma_hash``. Adding or renaming a backing lemma changes
-# this value, which mumei treats as ``stale_translator`` for certificates
-# produced by an older catalog.
+# SHA-256 of the canonical obligation-class bridge lemma catalog; synced from
+# bridge_lemma_catalog.json by scripts/sync_contract_constants.py.
 BRIDGE_LEMMA_HASH = "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
 
 # Obligation class taxonomy for escalated atoms.
@@ -265,138 +265,41 @@ SMART_CONTRACT_GUARD_TRACE_LOWERING = "smart_contract_guard_trace_lowering"
 SMART_CONTRACT_ACCESS_CONTROL_LOWERING = "smart_contract_access_control_lowering"
 SMART_CONTRACT_CEI_LOWERING = "smart_contract_cei_lowering"
 
+BRIDGE_LEMMA_CATALOG_PATH = Path(__file__).resolve().parents[1] / "bridge_lemma_catalog.json"
+
+
+def load_bridge_lemma_catalog(
+    path: Path = BRIDGE_LEMMA_CATALOG_PATH,
+) -> Dict[str, Any]:
+    with path.open(encoding="utf-8") as handle:
+        catalog = json.load(handle)
+    if not isinstance(catalog, dict):
+        raise ValueError("bridge lemma catalog must be an object")
+    if not isinstance(catalog.get("translator_version"), str):
+        raise ValueError("bridge lemma catalog translator_version must be a string")
+    obligation_classes = catalog.get("obligation_classes")
+    if not isinstance(obligation_classes, dict) or any(
+        not isinstance(cls, str)
+        or not isinstance(lemmas, list)
+        or any(not isinstance(lemma, str) for lemma in lemmas)
+        for cls, lemmas in obligation_classes.items()
+    ):
+        raise ValueError(
+            "bridge lemma catalog obligation_classes must be a string-to-string-list mapping"
+        )
+    return catalog
+
+
 _OBLIGATION_CLASS_BRIDGE_LEMMAS: Dict[str, List[str]] = {
-    OBLIGATION_CLASS_QUANTIFIER: [
-        "MumeiLean.Quantifiers.skolemize_exists",
-        "MumeiLean.Quantifiers.herbrand_forall",
-        "MumeiLean.Quantifiers.bounded_forall_of_unrestricted",
-        "MumeiLean.Quantifiers.bounded_exists_of_witness",
-        "MumeiLean.Quantifiers.forall_and_intro",
-        "MumeiLean.Quantifiers.nested_forall_intro",
-        "MumeiLean.Quantifiers.nested_exists_intro",
-        "MumeiLean.Quantifiers.forall_exists_swap_of_finite",
-        "MumeiLean.Quantifiers.bounded_forall_split_at",
-        "MumeiLean.Quantifiers.bounded_forall_shift",
-        "MumeiLean.Quantifiers.bounded_exists_of_nonempty_forall",
-        "MumeiLean.Quantifiers.bounded_forall_imp",
-        "MumeiLean.Quantifiers.bounded_forall_of_field_range",
-        "MumeiLean.Quantifiers.nested_bounded_forall_intro",
-        "MumeiLean.AdvancedPatterns.bounded_forall_weaken",
-        "MumeiLean.AdvancedPatterns.bounded_exists_map",
-        "MumeiLean.AdvancedPatterns.nested_forall_swap",
-        "MumeiLean.AdvancedPatterns.int_nonnegative_induction_pattern",
-    ],
-    OBLIGATION_CLASS_FINITE_FIELD: [
-        "MumeiLean.Algebra.ff_add_in_field",
-        "MumeiLean.Algebra.ff_mul_in_field",
-        "MumeiLean.Algebra.ff_sub_in_field",
-        "MumeiLean.Algebra.ff_neg_in_field",
-        "MumeiLean.Algebra.ff_zero_in_field",
-        "MumeiLean.Algebra.ff_one_in_field",
-        "MumeiLean.Algebra.ff_eq_refl",
-        "MumeiLean.Algebra.ff_eq_symm",
-        "MumeiLean.Algebra.ff_eq_trans",
-        "MumeiLean.Algebra.ff_add_comm",
-        "MumeiLean.Algebra.ff_mul_comm",
-        "MumeiLean.Algebra.ff_add_zero",
-        "MumeiLean.Algebra.ff_mul_one",
-        "MumeiLean.Algebra.ff_sub_self_eq_zero_mod",
-        "MumeiLean.Algebra.ff_add_comm_eq",
-        "MumeiLean.Algebra.ff_mul_comm_eq",
-        "MumeiLean.Algebra.ff_add_assoc_mod",
-        "MumeiLean.Algebra.ff_mul_assoc_mod",
-        "MumeiLean.Algebra.ff_pow_zero",
-        "MumeiLean.Algebra.ff_inv_zero",
-        "MumeiLean.AdvancedPatterns.finite_field_binary_closed",
-        "MumeiLean.AdvancedPatterns.finite_field_commutativity_pattern",
-        "MumeiLean.AdvancedPatterns.finite_field_obligation_closure",
-    ],
-    OBLIGATION_CLASS_GROUP_THEORY: [
-        "MumeiLean.Algebra.group_mul_assoc",
-        "MumeiLean.Algebra.group_left_inv",
-        "MumeiLean.Algebra.group_right_inv",
-        "MumeiLean.Algebra.group_mul_one",
-        "MumeiLean.Algebra.group_one_mul",
-        "MumeiLean.Algebra.group_inv_inv",
-        "MumeiLean.Algebra.group_mul_inv_rev",
-        "MumeiLean.Algebra.mumei_group_comm_int",
-        "MumeiLean.Algebra.group_mul_left_cancel",
-        "MumeiLean.Algebra.group_pow_zero",
-        "MumeiLean.Algebra.group_pow_add",
-        "MumeiLean.Algebra.group_conj_inv",
-        "MumeiLean.Algebra.mumei_group_pow_zero_int",
-        "MumeiLean.AdvancedPatterns.group_conjugation_pattern",
-        "MumeiLean.AdvancedPatterns.group_hom_preserves_mul",
-        "MumeiLean.AdvancedPatterns.group_theory_obligation_assoc_law",
-    ],
-    OBLIGATION_CLASS_CRYPTO: [
-        "MumeiLean.Crypto.hash_deterministic",
-        "MumeiLean.Crypto.hash_modulus_bounds",
-        "MumeiLean.Crypto.encryption_roundtrip",
-        "MumeiLean.Crypto.rsa_signature_correct",
-        "MumeiLean.Crypto.signature_verify_sound",
-        "MumeiLean.Crypto.kdf_deterministic",
-        "MumeiLean.Crypto.hmac_deterministic",
-        "MumeiLean.Crypto.commitment_binding_pattern",
-        "MumeiLean.Crypto.zk_verify_soundness",
-        "MumeiLean.Crypto.commitment_deterministic",
-        "MumeiLean.Crypto.commitment_same_inputs",
-        "MumeiLean.Crypto.zk_verify_stable_under_equal_inputs",
-        "MumeiLean.Crypto.hmac_modulus_bounds",
-        "MumeiLean.Crypto.commitment_modulus_bounds",
-        "MumeiLean.AdvancedPatterns.hash_stability_under_equal_inputs",
-        "MumeiLean.AdvancedPatterns.signature_pattern",
-        "MumeiLean.AdvancedPatterns.encryption_pattern",
-        "MumeiLean.AdvancedPatterns.crypto_obligation_roundtrip",
-    ],
-    OBLIGATION_CLASS_ARITHMETIC: [
-        "MumeiLean.Algebra.sc_subtraction_nonnegative",
-        "MumeiLean.Algebra.arith_add_upper_bound",
-        "MumeiLean.Algebra.arith_add_monotone",
-        "MumeiLean.Algebra.arith_mul_nonneg_of_nonneg",
-        "MumeiLean.Algebra.arith_square_nonneg",
-        "MumeiLean.Algebra.arith_bounded_of_interval",
-        "MumeiLean.AdvancedPatterns.arithmetic_obligation_bounded_combination",
-        "MumeiLean.AdvancedPatterns.arithmetic_obligation_monotone_step",
-    ],
-    OBLIGATION_CLASS_SMART_CONTRACT: [
-        "MumeiLean.AdvancedPatterns.sc_withdraw_allowed_intro",
-        "MumeiLean.AdvancedPatterns.sc_no_negative_after_withdraw",
-        "MumeiLean.AdvancedPatterns.smart_contract_obligation_guard_preserved",
-        "MumeiLean.AdvancedPatterns.smart_contract_obligation_balance_preserved",
-    ],
-    OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE: [
-        "MumeiLean.SmartContract.no_external_call_without_lock",
-    ],
-    OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL: [
-        "MumeiLean.SmartContract.no_state_write_without_auth",
-    ],
-    OBLIGATION_CLASS_SMART_CONTRACT_CEI: [
-        "MumeiLean.SmartContract.effect_after_interaction_is_none",
-    ],
-    OBLIGATION_CLASS_RTGS: [
-        "MumeiLean.AdvancedPatterns.rtgs_balance_conserved_refl",
-        "MumeiLean.AdvancedPatterns.rtgs_trace_safe_intro",
-        "MumeiLean.AdvancedPatterns.rtgs_obligation_conservation",
-        "MumeiLean.AdvancedPatterns.rtgs_obligation_trace_safe",
-        "MumeiLean.Algebra.rtgs_transfer_conserves_sum",
-        "MumeiLean.Algebra.rtgs_transfer_conserves_sum_of_amounts",
-        "MumeiLean.Algebra.rtgs_debit_leaves_nonnegative",
-    ],
-    OBLIGATION_CLASS_CONCURRENCY: [
-        "MumeiLean.Concurrency.task_group_all_result_last",
-        "MumeiLean.Concurrency.task_group_any_result_mem",
-        "MumeiLean.Concurrency.task_value_result",
-    ],
-    OBLIGATION_CLASS_UNKNOWN: [
-        "MumeiLean.AdvancedPatterns.unknown_obligation_intro",
-        "MumeiLean.AdvancedPatterns.unknown_obligation_discharged_by_manual_lemma",
-    ],
+    cls: list(lemmas)
+    for cls, lemmas in load_bridge_lemma_catalog()["obligation_classes"].items()
 }
 
 
-def compute_bridge_lemma_hash() -> str:
-    """Derive ``BRIDGE_LEMMA_HASH`` from the bridge lemma catalog.
+def bridge_lemma_hash_for(
+    obligation_classes: Mapping[str, Sequence[str]],
+) -> str:
+    """Compute the canonical hash for an obligation-class bridge lemma catalog.
 
     The canonical pre-image is one ``<obligation_class>:<lemma>`` line per
     catalog entry, sorted by class then lemma, so the hash is stable across
@@ -404,10 +307,15 @@ def compute_bridge_lemma_hash() -> str:
     """
     canonical = "\n".join(
         f"{obligation_class}:{lemma}"
-        for obligation_class in sorted(_OBLIGATION_CLASS_BRIDGE_LEMMAS)
-        for lemma in sorted(_OBLIGATION_CLASS_BRIDGE_LEMMAS[obligation_class])
+        for obligation_class in sorted(obligation_classes)
+        for lemma in sorted(obligation_classes[obligation_class])
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def compute_bridge_lemma_hash() -> str:
+    """Derive ``BRIDGE_LEMMA_HASH`` from the bridge lemma catalog."""
+    return bridge_lemma_hash_for(_OBLIGATION_CLASS_BRIDGE_LEMMAS)
 
 
 @dataclass

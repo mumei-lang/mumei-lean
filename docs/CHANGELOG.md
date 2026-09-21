@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-21: Machine-readable bridge lemma catalog and contract sync
+
+- Added `bridge_lemma_catalog.json` as the single source of truth for the
+  translator version and obligation-class bridge lemmas. The stdlib-only
+  `scripts/sync_contract_constants.py` generator/checker updates all pinned
+  mumei-lean, mumei, and mumei-agent targets without changing the current
+  contract constants.
+
 ## 2026-09-19: Loop-VC post conjunct binds `result` at the declared return type
 
 - Spec §4.8 follow-up: the while-loop VC's post conjunct previously ∀-bound `result : Int` unconditionally, so a `-> [i64]` atom emitted `len(result)`/`result[i]` ensures against a scalar binder — the generated theorem failed to elaborate and the atom stayed `unknown`. `render_theorem` now resolves `result` from the certificate's `translator_ir` `role: "result"` binder (`_declared_result_lean_type`): the declared `lean_type` is used when safe, otherwise the `mumei_type` maps through the new `expr_translator.declared_lean_type` (`[t]`/`array<t>` → `List t`, nested arrays parenthesised, scalars via `_FORMAL_SPEC_TYPE_MAPPINGS`). Without a resolvable declared type the declared-array partition still yields `List Int` (e.g. a `[foo]` return whose element type does not map), with `Int` as the final default — an unresolvable declared type keeps `Int` rather than emitting an unsafe guess.

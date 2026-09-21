@@ -1075,10 +1075,11 @@ Certificate atom field handling is fixed:
 | `manual_lemma_reason` | Stable reason a generated theorem needs human lemma work; dry runs should emit `manual_lemma_required`, not `lean_verified`. |
 | `stale_translator` | mumei-side rejection when `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract. |
 
-Current contract constants are `translator_version = mumei-lean-translator-ir-v2` and `bridge_lemma_hash = 5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9`. These are also pinned in [`LEAN_HARNESS_CONTRACT.md`](LEAN_HARNESS_CONTRACT.md). `tests/test_contract_vocabulary.py` anchors both the constant-defining scripts (`scripts/export_cert.py`, `scripts/expr_translator.py`) and every pinned doc (this file, `LEAN_HARNESS_CONTRACT.md`, `BRIDGE_HARNESS_SPEC.md`, `INTEGRATION.md`) to the same expected literals, so any bump must update all of them in a single diff.
+Current contract constants are `translator_version = mumei-lean-translator-ir-v2` and `bridge_lemma_hash = 5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9`. These are also pinned in [`LEAN_HARNESS_CONTRACT.md`](LEAN_HARNESS_CONTRACT.md). The single source of truth is [`bridge_lemma_catalog.json`](../bridge_lemma_catalog.json); `scripts/sync_contract_constants.py --write` regenerates every pinned target across mumei-lean, mumei, and mumei-agent, while `--check` is the CI gate.
 
 `bridge_lemma_hash` is derived from the obligation-class bridge lemma catalog
-(§10) by `expr_translator.compute_bridge_lemma_hash()`: the canonical pre-image
+in `bridge_lemma_catalog.json` by `expr_translator.compute_bridge_lemma_hash()`;
+the §10 table documents that catalog. The canonical pre-image
 is one `<obligation_class>:<lemma>` line per catalog entry, sorted by class and
 then by lemma, hashed with SHA-256. Adding, renaming, or removing a backing
 lemma therefore changes the constant, and certificates produced by the previous
@@ -1091,7 +1092,11 @@ lockstep.
 
 Every escalated atom is classified by `classify_obligation()` into exactly one
 obligation class, and `obligation_bridge_lemmas()` maps the class to the Lean
-entry points that may discharge it. The nine base classes below are the
+entry points that may discharge it. The authoritative catalog is
+`bridge_lemma_catalog.json`; the table below is documentation of that file.
+Run `scripts/sync_contract_constants.py --write` after catalog edits to
+regenerate every pinned target across mumei-lean, mumei, and mumei-agent, and
+use `--check` as the CI gate. The nine base classes below are the
 documented taxonomy; the three `smart_contract_*` trace classes
 (`smart_contract_guard_trace_obligation`,
 `smart_contract_access_control_obligation`, `smart_contract_cei_obligation`)

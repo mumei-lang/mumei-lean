@@ -12,7 +12,11 @@ from __future__ import annotations
 
 import ast
 import re
+import subprocess
 from pathlib import Path
+
+import expr_translator
+import sync_contract_constants
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DOCS_UNDER_CONTRACT = [
@@ -36,15 +40,12 @@ EXPORT_CERT_PATH = REPO_ROOT / "scripts" / "export_cert.py"
 EXPR_TRANSLATOR_PATH = REPO_ROOT / "scripts" / "expr_translator.py"
 HARNESS_CONTRACT_DOC = REPO_ROOT / "docs" / "LEAN_HARNESS_CONTRACT.md"
 
-# Pinned contract constants (L2 safety net).  These literals are the single
-# expected value for the bridge contract.  Any PR that bumps the translator
-# version or bridge lemma hash (e.g. when a new backing lemma is added) MUST
-# update these literals together with every constant-defining script and every
-# pinned doc in the same diff — that is precisely what these tests enforce.
-EXPECTED_TRANSLATOR_VERSION = "mumei-lean-translator-ir-v2"
-EXPECTED_BRIDGE_LEMMA_HASH = (
-    "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
-)
+# The catalog is the single source of truth; the sync script regenerates every
+# pinned target with ``python scripts/sync_contract_constants.py --write``.
+EXPECTED_TRANSLATOR_VERSION = expr_translator.load_bridge_lemma_catalog()[
+    "translator_version"
+]
+EXPECTED_BRIDGE_LEMMA_HASH = expr_translator.compute_bridge_lemma_hash()
 
 # Every Python script that defines the contract constants as module globals.
 CONSTANT_DEFINING_SCRIPTS = [EXPORT_CERT_PATH, EXPR_TRANSLATOR_PATH]
@@ -328,16 +329,9 @@ def test_code_constants_match_doc_pinned_values() -> None:
 
 
 def test_pinned_contract_constants_match_expected_literals() -> None:
-    """L2 safety net: every constant-defining script and every pinned doc must
-    equal the exact expected literals.
+    """Every constant-defining script and pinned doc must match the catalog.
 
-    ``test_code_constants_match_doc_pinned_values`` only checks that code and
-    doc agree with *each other*; a coordinated typo would slip through.  This
-    test additionally anchors both sides to a single expected literal and fans
-    the check out across all constant-defining scripts (``export_cert.py``,
-    ``expr_translator.py``) and all pinned docs.  A PR that intentionally bumps
-    the translator version or bridge lemma hash must update these expected
-    literals here in the same diff, which is the intended coupling with PR3.
+    ``scripts/sync_contract_constants.py --write`` regenerates all targets.
     """
     failures: list[str] = []
 
@@ -383,6 +377,47 @@ def test_pinned_contract_constants_match_expected_literals() -> None:
                 )
 
     assert failures == [], "\n".join(failures)
+
+
+def test_sync_contract_constants_check_is_clean() -> None:
+    result = subprocess.run(
+        [
+            "python",
+            "scripts/sync_contract_constants.py",
+            "--check",
+            "--mumei-repo",
+            "/nonexistent",
+            "--mumei-agent-repo",
+            "/nonexistent",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_sync_write_replaces_only_the_captured_value(tmp_path: Path) -> None:
+    path = tmp_path / "expr_translator.py"
+    path.write_text(
+        'TRANSLATOR_VERSION = "mumei-lean-translator-ir-v2"\n'
+        'BRIDGE_LEMMA_HASH = "wrong"\n'
+        'suffix = "unchanged"\n',
+        encoding="utf-8",
+    )
+    violations = sync_contract_constants._replace_target(
+        path,
+        "bridge_lemma_hash",
+        sync_contract_constants.HASH_RE,
+        EXPECTED_BRIDGE_LEMMA_HASH,
+        write=True,
+    )
+    assert violations == []
+    assert path.read_text(encoding="utf-8") == (
+        'TRANSLATOR_VERSION = "mumei-lean-translator-ir-v2"\n'
+        f'BRIDGE_LEMMA_HASH = "{EXPECTED_BRIDGE_LEMMA_HASH}"\n'
+        'suffix = "unchanged"\n'
+    )
 
 
 def test_constant_defining_scripts_agree_with_each_other() -> None:

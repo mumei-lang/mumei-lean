@@ -15,6 +15,10 @@ on:
       - 'scripts/bridge.py'
       - 'scripts/ingest_cert.py'
       - 'scripts/bridge_harness.py'
+      - 'scripts/sync_contract_constants.py'
+      - 'bridge_lemma_catalog.json'
+      - 'MumeiLean/CertWriter.lean'
+      - 'tests/fixtures/*.json'
       - '.github/workflows/contract-vocabulary.yml'
   push:
     branches: [develop]
@@ -31,6 +35,10 @@ on:
       - 'scripts/bridge.py'
       - 'scripts/ingest_cert.py'
       - 'scripts/bridge_harness.py'
+      - 'scripts/sync_contract_constants.py'
+      - 'bridge_lemma_catalog.json'
+      - 'MumeiLean/CertWriter.lean'
+      - 'tests/fixtures/*.json'
       - '.github/workflows/contract-vocabulary.yml'
   workflow_dispatch:
 

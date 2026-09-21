@@ -71,7 +71,18 @@ def _targets(repo_root: Path, translator_version: str, bridge_hash: str):
             "docs/BRIDGE_HARNESS_SPEC.md",
             "docs/INTEGRATION.md",
         )
-    ]
+    ] + _fixture_targets(repo_root / "tests/fixtures", translator_version, bridge_hash)
+
+
+def _fixture_targets(fixtures_dir: Path, translator_version: str, bridge_hash: str):
+    targets = []
+    for fixture in sorted(fixtures_dir.glob("*.json")):
+        text = fixture.read_text(encoding="utf-8")
+        if JSON_TRANSLATOR_RE.search(text):
+            targets.append((fixture, "translator_version", JSON_TRANSLATOR_RE, translator_version))
+        if JSON_HASH_RE.search(text):
+            targets.append((fixture, "bridge_lemma_hash", JSON_HASH_RE, bridge_hash))
+    return targets
 
 
 def _sibling_targets(repo: Path, translator_version: str, bridge_hash: str, agent: bool):

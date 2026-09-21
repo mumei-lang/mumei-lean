@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import expr_translator
@@ -382,7 +383,7 @@ def test_pinned_contract_constants_match_expected_literals() -> None:
 def test_sync_contract_constants_check_is_clean() -> None:
     result = subprocess.run(
         [
-            "python",
+            sys.executable,
             "scripts/sync_contract_constants.py",
             "--check",
             "--mumei-repo",

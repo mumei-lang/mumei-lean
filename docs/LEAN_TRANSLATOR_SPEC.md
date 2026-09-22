@@ -269,8 +269,9 @@ theorem, so the lowering adds no bridge lemma and leaves the obligation
 class and `bridge_lemma_hash` unchanged. The rule is
 `perform_statement_lowering` (§8).
 
-A block that does not match that shape stays partial: a non-`perform`,
-non-`let` statement among the leading segments
+A block that does not match that shape stays partial: a leading segment
+that is none of `perform`, `let`, an `x = e` rebind on a `let`-bound
+name, or a `task_group:all|any` segment (§4.7)
 (`{ perform A.x; while i < n { i }; y }`), a `perform` statement in tail
 position (`{ balance - amount; perform A.x }`), an empty tail, or braces
 that do not enclose the whole source. `let` segments in the prefix compose
@@ -305,8 +306,10 @@ Substitution stays conservative — the block remains partial when:
   binder), e.g. `{ let n = len(buf); forall(n, 0, m, arr[n] >= 0) }`;
 - a bound name appears in call position in the tail
   (`{ let f = len; f(buf) }`);
-- the block ends in a `let`/`perform` statement or any segment is neither
-  `let` nor `perform`;
+- the block ends in a `let`/`perform` statement or any segment is none of
+  `perform`, `let`, an `x = e` rebind on a `let`-bound name
+  (`rebind_statement_lowering`, §4.7), or a `task_group:all|any` segment
+  (§4.7);
 - `==` is used instead of `=` (`{ let owned == buf; owned }`).
 
 `normalize_body_source` applies the same lowering, so result-type

@@ -1785,6 +1785,37 @@ def test_translate_body_lowers_seq_middle_task_group():
         seq_group.translator_ir.lowering_rules
     )
 
+    # `all` writes compose in declaration order — the later child's write
+    # wins (a verified atom never races two children on one name).
+    all_order = expr_translator.translate_body(
+        "{ let x = 0;"
+        " task_group:all { task { x = 1; x }; task { x = 2; x } };"
+        " x }"
+    )
+    assert all_order.is_partial is False
+    assert all_order.lean_expr == "2"
+
+    # A `let` inside a child is task-local: it resolves into the write
+    # expression and never escapes as an enclosing binding.
+    local_let = expr_translator.translate_body(
+        "{ let x = 0;"
+        " task_group:all { task { let t = x + 1; x = t; x } };"
+        " x }"
+    )
+    assert local_let.is_partial is False
+    assert local_let.lean_expr == "( ( 0 + 1 ) )"
+
+    # An `any` group where only some children write still fans out — the
+    # non-writing winner leaves the pre-group binding untouched.
+    mixed = expr_translator.translate_body(
+        "{ let x = 1;"
+        " task_group:any { task { x = 2; x }; task { 99 } };"
+        " x }"
+    )
+    assert mixed.is_partial is False
+    assert mixed.lean_expr == "[2, 1]"
+    assert mixed.result_type == "List Int"
+
 
 @pytest.mark.parametrize(
     "source",

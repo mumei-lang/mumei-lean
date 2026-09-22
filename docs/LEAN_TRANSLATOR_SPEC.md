@@ -269,8 +269,9 @@ theorem, so the lowering adds no bridge lemma and leaves the obligation
 class and `bridge_lemma_hash` unchanged. The rule is
 `perform_statement_lowering` (§8).
 
-A block that does not match that shape stays partial: a non-`perform`,
-non-`let` statement among the leading segments
+A block that does not match that shape stays partial: a leading segment
+that is none of `perform`, `let`, an `x = e` rebind on a `let`-bound
+name, or a `task_group:all|any` segment (§4.7)
 (`{ perform A.x; while i < n { i }; y }`), a `perform` statement in tail
 position (`{ balance - amount; perform A.x }`), an empty tail, or braces
 that do not enclose the whole source. `let` segments in the prefix compose
@@ -305,8 +306,10 @@ Substitution stays conservative — the block remains partial when:
   binder), e.g. `{ let n = len(buf); forall(n, 0, m, arr[n] >= 0) }`;
 - a bound name appears in call position in the tail
   (`{ let f = len; f(buf) }`);
-- the block ends in a `let`/`perform` statement or any segment is neither
-  `let` nor `perform`;
+- the block ends in a `let`/`perform` statement or any segment is none of
+  `perform`, `let`, an `x = e` rebind on a `let`-bound name
+  (`rebind_statement_lowering`, §4.7), or a `task_group:all|any` segment
+  (§4.7);
 - `==` is used instead of `=` (`{ let owned == buf; owned }`).
 
 `normalize_body_source` applies the same lowering, so result-type
@@ -415,7 +418,49 @@ that does not occupy the whole body (trailing text such as
 `task { a } + x`, an empty `task { }`, or a task nested in a `let` RHS
 like `let x = task { 5 }; x`) cannot leak raw mumei braces into the
 emitted Lean — the residual token flags `statement_block_requires_manual_lemma`
-and the body stays partial.
+and the body stays partial. A bare `task { … }` in *statement* position
+(`{ task { a }; x }`) stays partial for the same reason — only the
+`task_group` segment shape is lowered.
+
+A `task_group:all|any { task {…}; … }` segment in the *middle* of a
+statement sequence (§4.3/§4.4) discards the group's value; only the
+children's writes to names `let`-bound in the enclosing sequence are
+observable, so the sequence machinery tracks them as extra rebinding
+statements, recorded as `task_group_all_seq_lowering` /
+`task_group_any_seq_lowering`:
+
+```text
+body: {
+    let total = n;
+    task_group:any {
+        task { total = total + 1; total };
+        task { n }
+    };
+    total
+};
+```
+
+- `task_group:all` applies every child's writes in declaration order
+  (codegen joins children in that order, and a verified atom never has
+  two children racing on one name).
+- `task_group:any` keeps only the winner's writes, so the continuation
+  branches into one binding environment per child. When the scenarios
+  disagree on the tail, the block lowers to the same candidate-value
+  `List Int` shape as a value-position `any` group — the emitted
+  `def` lists the per-scenario tails and `h_body` hypothesises
+  `result ∈ <def>` (hence the value-position `task_group_any_lowering`
+  rule appears *alongside* the seq rule). When they agree the scenarios
+  collapse and the block lowers to the plain tail. Candidate tails are
+  subject to the same `Int`-typedness requirement as value-position
+  elements; a scenario fan-out beyond `_MAX_SEQ_SCENARIOS` (16) stays
+  partial.
+
+Inside a child body, `let` bindings are task-local (they resolve into
+the write expressions rather than escaping), `perform` statements drop
+like the top-level path, `name = expr` writes must target a name
+`let`-bound in the enclosing sequence, and the child's own tail is
+discarded but must translate — a partial tail or a nested task/group
+(which could hide writes this shape cannot see) keeps the block partial.
 
 The same treatment covers every other reserved concurrency/ownership
 token with no lowering — `async`, `await`, `cancel`, `send`, `recv`,
@@ -1049,6 +1094,8 @@ emitted in `TranslatorIR.lowering_rules`.
 | `task_value_lowering` | A bare `task { e }` body lowers to `e`; tags the `concurrency_obligation` class. | §4.7 |
 | `task_group_all_lowering` | A `task_group:all { task {…}; … }` body lowers to its last task's value; tags the `concurrency_obligation` class. | §4.7 |
 | `task_group_any_lowering` | A `task_group:any { task {…}; … }` body lowers to the candidate-value `List Int`; the theorem hypothesises `result ∈ <def>` and `fin_cases` splits membership; tags the `concurrency_obligation` class. | §4.7 |
+| `task_group_all_seq_lowering` | A `task_group:all` segment in the middle of a statement sequence applies its children's enclosing-scope writes in declaration order; the group's value is discarded. | §4.7 |
+| `task_group_any_seq_lowering` | A `task_group:any` segment in the middle of a statement sequence keeps only the winner child's enclosing-scope writes; disagreeing winner scenarios produce the `∈` candidate shape (which adds `task_group_any_lowering`). | §4.7 |
 | `while_loop_invariant_lowering` | A `{ let-init*; while c invariant: I [decreases: D] { assigns }; tail }` body lowers to the loop's verification conditions; the theorem goal is `requires → I[init] ∧ (∀ carried, I ∧ c → I[σ']) ∧ (∀ carried, I ∧ c → 0 ≤ D ∧ D[σ'] < D) ∧ (∀ carried, I ∧ ¬c → result = tail → ensures)` with no `def`/`h_body` emitted. | §4.8 |
 
 A translator implementation is compliant iff:

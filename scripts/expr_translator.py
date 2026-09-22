@@ -524,6 +524,8 @@ _FORMAL_SPEC_LOWERING_RULES: Set[str] = {
     "task_value_lowering",
     "task_group_all_lowering",
     "task_group_any_lowering",
+    "task_group_all_seq_lowering",
+    "task_group_any_seq_lowering",
     "while_loop_invariant_lowering",
 }
 
@@ -3157,6 +3159,28 @@ def _substitute_identifier(
     return " ".join(pieces)
 
 
+def _resolve_binding_list(
+    bindings: List[Tuple[str, str]],
+) -> Optional[List[Tuple[str, str]]]:
+    """Resolve sequential ``let``/rebind bindings into their final images.
+
+    A later binding sees earlier names already resolved (``x = 1;
+    y = x + 1`` yields ``y ↦ 1 + 1``), and a rebind replaces the earlier
+    image so shadowing is preserved. Returns ``None`` when a substitution
+    is unsound — a bound name rebound or called inside a later value.
+    """
+    resolved: List[Tuple[str, str]] = []
+    for name, expr in bindings:
+        bound = expr
+        for prev_name, prev_expr in resolved:
+            bound = _substitute_identifier(bound, prev_name, prev_expr)
+            if bound is None:
+                return None
+        resolved = [(n, e) for n, e in resolved if n != name]
+        resolved.append((name, bound))
+    return resolved
+
+
 def _statement_sequence_tail(source: str) -> Optional[Tuple[str, List[str]]]:
     """Return ``(value_tail, applied_rules)`` of a statement-prefix block.
 
@@ -3165,11 +3189,24 @@ def _statement_sequence_tail(source: str) -> Optional[Tuple[str, List[str]]]:
     transitions whose ordering obligations live in ``effect_pre`` /
     ``effect_post``, and pure ``let`` bindings are substituted into the tail
     (a later binding resolves earlier names first, so shadowing is
-    preserved). Returns ``None`` — leaving the block partial — when the
-    source is not exactly that shape: braces not enclosing the whole source,
-    a statement that is neither ``perform`` nor a pure ``let``, an empty
-    tail, a ``perform``/``let`` in tail position, or a bound name rebound
-    inside the tail.
+    preserved). ``task_group:all``/``task_group:any`` segments are lowered
+    through ``_task_group_statement_effects`` — ``all`` applies every
+    child's enclosing-scope writes in declaration order, while ``any``
+    keeps only the winner's writes, so the continuation branches into one
+    binding environment per child and the tail becomes the candidate-value
+    ``task_group:any`` shape when the scenarios disagree. Both are
+    recorded as ``task_group_all_seq_lowering`` /
+    ``task_group_any_seq_lowering`` — the value-position rules
+    (``task_group_all_lowering`` / ``task_group_any_lowering``) stay
+    reserved for a body that *is* the group, which is what the
+    ``result ∈ <def>`` theorem shape keys on.
+
+    Returns ``None`` — leaving the block partial — when the source is not
+    exactly that shape: braces not enclosing the whole source, a statement
+    that is neither ``perform`` nor a pure ``let``/rebind/``task_group``,
+    an empty tail, a ``perform``/``let`` in tail position, a bound name
+    rebound inside the tail, or a scenario fan-out that exceeds
+    ``_MAX_SEQ_SCENARIOS``.
     """
     inner = _enclosed_block_inner(source)
     if inner is None:
@@ -3178,7 +3215,10 @@ def _statement_sequence_tail(source: str) -> Optional[Tuple[str, List[str]]]:
     if segments is None or len(segments) < 2:
         return None
 
-    bindings: List[Tuple[str, str]] = []
+    # One entry per ``task_group:any`` winner scenario; deterministic
+    # statements append to every environment. Scenario environments share
+    # the same bound-name set — writes only ever rebind existing names.
+    envs: List[List[Tuple[str, str]]] = [[]]
     rules: List[str] = []
     for segment in segments[:-1]:
         text = segment.strip()
@@ -3188,15 +3228,38 @@ def _statement_sequence_tail(source: str) -> Optional[Tuple[str, List[str]]]:
             continue
         match = _LET_STATEMENT_RE.fullmatch(text)
         if match is not None:
-            bindings.append((match.group(1), match.group(2).strip()))
+            for env in envs:
+                env.append((match.group(1), match.group(2).strip()))
             if "let_statement_lowering" not in rules:
                 rules.append("let_statement_lowering")
             continue
+        bound_names = {name for name, _value in envs[0]}
+        group = _task_group_statement_effects(text, bound_names)
+        if group is not None:
+            join_mode, child_writes = group
+            rule = (
+                "task_group_all_seq_lowering"
+                if join_mode == "all"
+                else "task_group_any_seq_lowering"
+            )
+            if rule not in rules:
+                rules.append(rule)
+            if join_mode == "all":
+                for env in envs:
+                    for writes in child_writes:
+                        env.extend(writes)
+            elif any(child_writes):
+                envs = [
+                    env + writes for env in envs for writes in child_writes
+                ]
+                if len(envs) > _MAX_SEQ_SCENARIOS:
+                    return None
+            continue
         rebind = _REBIND_STATEMENT_RE.fullmatch(text)
-        bound_names = {name for name, _value in bindings}
         if rebind is None or rebind.group(1) not in bound_names:
             return None
-        bindings.append((rebind.group(1), rebind.group(2).strip()))
+        for env in envs:
+            env.append((rebind.group(1), rebind.group(2).strip()))
         if "rebind_statement_lowering" not in rules:
             rules.append("rebind_statement_lowering")
 
@@ -3209,19 +3272,37 @@ def _statement_sequence_tail(source: str) -> Optional[Tuple[str, List[str]]]:
         # ending in a binding has no value.
         return None
 
-    resolved: List[Tuple[str, str]] = []
-    for name, expr in bindings:
-        bound = expr
-        for prev_name, prev_expr in resolved:
-            bound = _substitute_identifier(bound, prev_name, prev_expr)
-            if bound is None:
-                return None
-        resolved = [(n, e) for n, e in resolved if n != name]
-        resolved.append((name, bound))
-    for name, expr in resolved:
-        tail = _substitute_identifier(tail, name, expr)
-        if tail is None:
+    tails: List[str] = []
+    for env in envs:
+        resolved = _resolve_binding_list(env)
+        if resolved is None:
             return None
+        resolved_tail = tail
+        for name, expr in resolved:
+            resolved_tail = _substitute_identifier(resolved_tail, name, expr)
+            if resolved_tail is None:
+                return None
+        if resolved_tail not in tails:
+            tails.append(resolved_tail)
+    if len(tails) > 1:
+        # The body's value is whichever tail the winning task's scenario
+        # leaves behind — the synthetic ``task_group:any`` surface reuses
+        # the value-position lowering (``[c₁, …]`` / ``result ∈ <def>``).
+        # Every candidate is a membership element, so each must be
+        # ``Int``-typed — matching the value-position ``any`` check.
+        for candidate in tails:
+            if (
+                infer_body_result_type(
+                    candidate, translate_body(candidate)
+                )
+                != "Int"
+            ):
+                return None
+        tail = "task_group:any { " + "; ".join(
+            f"task {{ {candidate} }}" for candidate in tails
+        ) + " }"
+    else:
+        tail = tails[0]
     return tail, rules
 
 
@@ -3230,9 +3311,131 @@ CONCURRENCY_LOWERING_RULES = {
     "task_value_lowering",
     "task_group_all_lowering",
     "task_group_any_lowering",
+    "task_group_all_seq_lowering",
+    "task_group_any_seq_lowering",
 }
 _TASK_GROUP_HEAD_RE = re.compile(r"task_group\s*:\s*(all|any)\s*", re.DOTALL)
 _TASK_HEAD_RE = re.compile(r"task\b\s*", re.DOTALL)
+
+# Cap on ``task_group:any`` winner scenarios carried through a statement
+# sequence — the fan-out is multiplicative across nested ``any`` groups.
+_MAX_SEQ_SCENARIOS = 16
+
+
+def _task_child_writes(
+    inner: str, bound_names: Set[str]
+) -> Optional[List[Tuple[str, str]]]:
+    """Ordered enclosing-scope writes of a statement-position task body.
+
+    ``let`` bindings inside a child are task-local: they resolve into the
+    write expressions instead of escaping. ``perform`` statements drop,
+    mirroring the top-level sequence path. The child's own tail has no
+    value in statement position but must still translate — a partial tail
+    could hide surface the writes depend on. Returns ``None`` when the
+    child is not analyzable, which keeps the group partial.
+    """
+    segments = _split_statement_segments(inner)
+    if segments is None:
+        return None
+    while segments and not segments[-1].strip():
+        segments.pop()
+    if not segments:
+        return []
+    local_bindings: List[Tuple[str, str]] = []
+    writes: List[Tuple[str, str]] = []
+    for index, segment in enumerate(segments):
+        text = segment.strip()
+        if not text:
+            continue
+        if _PERFORM_STATEMENT_RE.fullmatch(text):
+            continue
+        match = _LET_STATEMENT_RE.fullmatch(text)
+        if match is not None:
+            local_bindings.append((match.group(1), match.group(2).strip()))
+            continue
+        rebind = _REBIND_STATEMENT_RE.fullmatch(text)
+        if rebind is not None:
+            name, expr = rebind.group(1), rebind.group(2).strip()
+            if any(local_name == name for local_name, _ in local_bindings):
+                local_bindings.append((name, expr))
+                continue
+            if name not in bound_names:
+                return None
+            resolved_locals = _resolve_binding_list(local_bindings)
+            if resolved_locals is None:
+                return None
+            for local_name, local_expr in resolved_locals:
+                expr = _substitute_identifier(expr, local_name, local_expr)
+                if expr is None:
+                    return None
+            writes.append((name, expr))
+            continue
+        if index != len(segments) - 1:
+            # Mid-sequence bare expressions have no lowering.
+            return None
+        tail_expr = text
+        resolved_locals = _resolve_binding_list(local_bindings)
+        if resolved_locals is None:
+            return None
+        for local_name, local_expr in resolved_locals:
+            tail_expr = _substitute_identifier(tail_expr, local_name, local_expr)
+            if tail_expr is None:
+                return None
+        lowered = translate_body("{ " + tail_expr + " }")
+        if lowered.is_partial:
+            return None
+        rules = (
+            lowered.translator_ir.lowering_rules
+            if lowered.translator_ir is not None
+            else []
+        )
+        if any(rule in CONCURRENCY_LOWERING_RULES for rule in rules):
+            # A nested task/group tail's own enclosing writes escape this
+            # analyzer — stay partial rather than dropping effects.
+            return None
+    return writes
+
+
+def _task_group_statement_effects(
+    text: str, bound_names: Set[str]
+) -> Optional[Tuple[str, List[List[Tuple[str, str]]]]]:
+    """``(join_mode, per_child_writes)`` of a statement-position group.
+
+    A ``task_group:all`` segment runs every child to completion, so every
+    child's writes apply in declaration order (codegen joins in that
+    order, and a verified atom never has two children racing on one
+    name). A ``task_group:any`` segment keeps only the winner's writes —
+    each child is a distinct winner scenario. Returns ``None`` when
+    ``text`` is not a ``task_group:all|any`` surface or a child body is
+    not analyzable; the caller then stays partial.
+    """
+    match = _TASK_GROUP_HEAD_RE.match(text)
+    if match is None:
+        return None
+    inner = _enclosed_block_inner(text[match.end():])
+    if inner is None:
+        return None
+    segments = _split_statement_segments(inner)
+    if segments is None:
+        return None
+    writes_per_child: List[List[Tuple[str, str]]] = []
+    for segment in segments:
+        child = segment.strip()
+        if not child:
+            continue
+        item = _TASK_HEAD_RE.match(child)
+        child_inner = (
+            _enclosed_block_inner(child[item.end():]) if item is not None else None
+        )
+        if child_inner is None or not child_inner.strip():
+            return None
+        writes = _task_child_writes(child_inner, bound_names)
+        if writes is None:
+            return None
+        writes_per_child.append(writes)
+    if not writes_per_child:
+        return None
+    return match.group(1), writes_per_child
 
 
 def _annotate_concurrency_result(
@@ -3581,15 +3784,9 @@ def _while_loop_body(
         if rebind is None or rebind.group(1) not in bound_names:
             return None
         bindings.append((rebind.group(1), rebind.group(2).strip()))
-    resolved: List[Tuple[str, str]] = []
-    for name, expr in bindings:
-        bound = expr
-        for prev_name, prev_expr in resolved:
-            bound = _substitute_identifier(bound, prev_name, prev_expr)
-            if bound is None:
-                return None
-        resolved = [(n, e) for n, e in resolved if n != name]
-        resolved.append((name, bound))
+    resolved = _resolve_binding_list(bindings)
+    if resolved is None:
+        return None
     resolved_map = dict(resolved)
     non_carried = {
         name: expr for name, expr in resolved if name not in carried

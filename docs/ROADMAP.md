@@ -248,8 +248,13 @@ change to the contract constants must be synchronised across projects in the sam
   `concurrency/task_group_any_winner.mm` fixture `race_two_replicas`). Every
   `any` element must be Int-typed — non-Int elements stay partial without the
   lowering rule. `bridge_lemma_hash` unchanged (the `task_group_any_result_mem`
-  lemma already shipped with the class). P31's remaining gap is the
-  statement-sequence-middle `task_group` shape (`read_cancellable_write`).
+  lemma already shipped with the class). The last P31 gap — a `task_group`
+  segment in the middle of a statement sequence (`read_cancellable_write`) —
+  is now closed via `task_group_all_seq_lowering` /
+  `task_group_any_seq_lowering`: `all` applies children's enclosing-scope
+  writes in declaration order, `any` branches the continuation into one
+  winner scenario per child and falls back to the `∈` candidate-list shape
+  when the scenarios disagree (spec §4.7; `bridge_lemma_hash` unchanged).
   B-4 / C-1 group 3 landed next: `{ let-init*; while c invariant: I
   [decreases: D] { assigns }; tail }` bodies now emit the loop's verification
   conditions as the theorem goal — `requires → I[init] ∧ (∀ carried, I∧c →

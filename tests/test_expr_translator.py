@@ -1701,6 +1701,123 @@ def test_translate_body_lowers_task_and_task_group_all():
     assert "buf" in inner.identifiers
 
 
+def test_translate_body_lowers_seq_middle_task_group():
+    # Spec §4.7: a `task_group` segment in statement position discards the
+    # group value; only the children's enclosing-scope writes survive.
+
+    # `all` applies every child's writes in declaration order — the
+    # deterministic `n + 1` replaces the `total := n` image.
+    all_writes = expr_translator.translate_body(
+        "{ let total = n;"
+        " task_group:all { task { total = total + 1; total }; task { n } };"
+        " total }"
+    )
+    assert all_writes.is_partial is False
+    assert all_writes.lean_expr == "( n + 1 )"
+    assert all_writes.result_type != "List Int"
+    assert "task_group_all_seq_lowering" in (
+        all_writes.translator_ir.lowering_rules
+    )
+
+    # `any` keeps only the winner's writes: the continuation branches into
+    # one scenario per child, so the body lowers to the candidate-value
+    # `List Int` shape (`result ∈ <def>` via `task_group_any_lowering`).
+    # This is the `read_cancellable_write` benchmark shape.
+    any_writes = expr_translator.translate_body(
+        "{ let total = n;"
+        " task_group:any { task { total = total + 1; total }; task { n } };"
+        " total }"
+    )
+    assert any_writes.is_partial is False
+    assert any_writes.lean_expr == "[( n + 1 ), n]"
+    assert any_writes.result_type == "List Int"
+    assert any_writes.translator_ir.obligation_class == (
+        "concurrency_obligation"
+    )
+    any_rules = any_writes.translator_ir.lowering_rules
+    assert "task_group_any_seq_lowering" in any_rules
+    assert "task_group_any_lowering" in any_rules
+
+    # A group whose children write nothing observable drops like a
+    # `perform` statement — and must NOT claim the value-position `any`
+    # rule, since the emitted `def` is a plain `Int` (`result = <def>`,
+    # not `result ∈ <def>`).
+    no_writes = expr_translator.translate_body(
+        "{ let x = 1; task_group:any { task { a }; task { b } }; x }"
+    )
+    assert no_writes.is_partial is False
+    assert no_writes.lean_expr == "1"
+    assert no_writes.result_type != "List Int"
+    no_write_rules = no_writes.translator_ir.lowering_rules
+    assert "task_group_any_seq_lowering" in no_write_rules
+    assert "task_group_any_lowering" not in no_write_rules
+
+    # Winner-scenario fan-out composes with the remaining sequence —
+    # `y` is bound *after* the group yet still resolves per scenario.
+    downstream = expr_translator.translate_body(
+        "{ let x = 1;"
+        " task_group:any { task { x = 2; x }; task { x = 3; x } };"
+        " let y = x * 10; y }"
+    )
+    assert downstream.is_partial is False
+    assert downstream.lean_expr == "[( 2 * 10 ), ( 3 * 10 )]"
+    assert downstream.result_type == "List Int"
+
+    # An overwrite after the group collapses the scenarios — both
+    # candidates agree on `5`, so no `List Int` shape is emitted.
+    collapsed = expr_translator.translate_body(
+        "{ let x = 1;"
+        " task_group:any { task { x = 2; x }; task { x = 3; x } };"
+        " x = 5; x }"
+    )
+    assert collapsed.is_partial is False
+    assert collapsed.lean_expr == "5"
+    assert collapsed.result_type != "List Int"
+
+    # A write-free `all` segment in a sequence lowers to the tail; the
+    # seq-position rule records that a group surface was handled.
+    seq_group = expr_translator.translate_body(
+        "{ task_group:all { task { a } } ; x }"
+    )
+    assert seq_group.is_partial is False
+    assert seq_group.lean_expr == "x"
+    assert "task_group_all_seq_lowering" in (
+        seq_group.translator_ir.lowering_rules
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # A child writing a name that is not `let`-bound stays partial.
+        "{ let x = 1; task_group:all { task { y = 2; y } }; x }",
+        # A child body that does not itself lower keeps the block partial.
+        "{ let x = 1; task_group:all { task { send ch v } }; x }",
+        # A nested task/group in a child tail could hide enclosing writes
+        # this analyzer cannot see — stay partial.
+        "{ let t = n; task_group:all"
+        " { task { task_group:all { task { a } } } }; t }",
+        # Non-`Int` candidate tails cannot form the `∈ […]` hypothesis.
+        "{ let x = 1; task_group:any { task { x = 2; x }; task { 0 } };"
+        " forall(i, 0, x, arr[i] >= 0) }",
+        # The winner-scenario fan-out is capped — a sixth `any` group with
+        # two writing children exceeds `_MAX_SEQ_SCENARIOS`.
+        "{ let x = 0;"
+        " task_group:any { task { x = x + 1; x }; task { x = x + 2; x } };"
+        " task_group:any { task { x = x + 1; x }; task { x = x + 2; x } };"
+        " task_group:any { task { x = x + 1; x }; task { x = x + 2; x } };"
+        " task_group:any { task { x = x + 1; x }; task { x = x + 2; x } };"
+        " task_group:any { task { x = x + 1; x }; task { x = x + 2; x } };"
+        " x }",
+    ],
+)
+def test_translate_body_keeps_seq_middle_task_group_edge_cases_partial(
+    source,
+):
+    result = expr_translator.translate_body(source)
+    assert result.is_partial is True, source
+
+
 @pytest.mark.parametrize(
     "source",
     [
@@ -1724,7 +1841,6 @@ def test_translate_body_lowers_task_and_task_group_all():
         "{ task { } }",
         "{ let x = task { 5 }; x }",
         "{ task { a } ; x }",
-        "{ task_group:all { task { a } } ; x }",
         # Rebind is only allowed on let-bound names.
         "{ task { acc = acc + 1; acc } }",
         "{ let x = 1; y = x + 1; x }",

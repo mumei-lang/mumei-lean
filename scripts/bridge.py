@@ -266,27 +266,9 @@ def _audit_proved_atoms(
                 build_log_path = (
                     audit_log_dir / f"{module.replace('.', '_')}.build.log"
                 )
-                cmd = _lake_build_command(repo_dir, module)
-                module_build_failed = cmd is None
-                if cmd is None:
-                    build_log_path.write_text("error: `lake` not found on PATH\n")
-                else:
-                    try:
-                        proc = subprocess.run(  # noqa: S603 - explicit lake invocation
-                            cmd,
-                            cwd=repo_dir,
-                            capture_output=True,
-                            text=True,
-                        )
-                    except OSError as exc:
-                        build_log_path.write_text(
-                            f"error: module build could not start: {exc}\n"
-                        )
-                        module_build_failed = True
-                    else:
-                        build_log_path.write_text(proc.stdout + proc.stderr)
-                        module_build_failed = proc.returncode != 0
-                if module_build_failed:
+                if not _rebuild_module_for_audit(
+                    repo_dir, module, build_log_path
+                ):
                     for theorem in theorem_names:
                         audit_results[theorem] = dict(error_result)
                     continue
@@ -1057,6 +1039,27 @@ def _lake_build_command(repo_dir: Path, target: str) -> Optional[List[str]]:
     if lake is not None:
         return ["lake", "build", target]
     return None
+
+
+def _rebuild_module_for_audit(
+    repo_dir: Path, module: str, log_path: Path
+) -> bool:
+    cmd = _lake_build_command(repo_dir, module)
+    if cmd is None:
+        log_path.write_text("error: `lake` not found on PATH\n")
+        return False
+    try:
+        proc = subprocess.run(  # noqa: S603 - explicit lake invocation
+            cmd,
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        log_path.write_text(f"error: module build could not start: {exc}\n")
+        return False
+    log_path.write_text(proc.stdout + proc.stderr)
+    return proc.returncode == 0
 
 
 def _verify_known_witnesses(

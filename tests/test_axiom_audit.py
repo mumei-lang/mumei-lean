@@ -233,21 +233,7 @@ def test_bridge_axiom_audit_controls_promotion_and_metadata(
             }
         }
 
-    def fake_module_build(command, **_kwargs):  # noqa: ANN001
-        return subprocess.CompletedProcess(
-            command,
-            0,
-            stdout="",
-            stderr="",
-        )
-
     monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: ["lake"])
-    monkeypatch.setattr(
-        bridge,
-        "_lake_build_command",
-        lambda _repo, module: ["lake", "build", module],
-    )
-    monkeypatch.setattr(bridge.subprocess, "run", fake_module_build)
     monkeypatch.setattr(bridge, "_run_lake_build", fake_build)
     monkeypatch.setattr(bridge, "run_axiom_audit", fake_audit)
 
@@ -331,16 +317,17 @@ def test_failed_known_witness_audit_blocks_export_promotion(
             }
         }
 
-    def fake_module_build(command, **_kwargs):  # noqa: ANN001
-        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+    def fake_module_rebuild(
+        _repo_dir: Path, _module: str, log_path: Path
+    ) -> bool:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("")
+        return True
 
     monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: ["lake"])
     monkeypatch.setattr(
-        bridge,
-        "_lake_build_command",
-        lambda _repo, module: ["lake", "build", module],
+        bridge, "_rebuild_module_for_audit", fake_module_rebuild
     )
-    monkeypatch.setattr(bridge.subprocess, "run", fake_module_build)
     monkeypatch.setattr(bridge, "_run_lake_build", fake_build)
     monkeypatch.setattr(
         bridge,
@@ -423,11 +410,15 @@ def test_bridge_audits_modules_independently(
             for theorem in theorems
         }
 
-    def unexpected_module_build(_repo_dir: Path, module: str) -> list[str]:
+    def unexpected_module_rebuild(
+        _repo_dir: Path, module: str, _log_path: Path
+    ) -> bool:
         raise AssertionError(f"build_rc=0 must not rebuild {module}")
 
     monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: ["lake"])
-    monkeypatch.setattr(bridge, "_lake_build_command", unexpected_module_build)
+    monkeypatch.setattr(
+        bridge, "_rebuild_module_for_audit", unexpected_module_rebuild
+    )
     monkeypatch.setattr(bridge, "_run_lake_build", fake_build)
     monkeypatch.setattr(bridge, "run_axiom_audit", fake_audit)
 
@@ -508,20 +499,16 @@ def test_failed_aggregate_build_rebuilds_modules_before_audit(
     def keep_candidates_for_module_audit(**kwargs) -> list[list[str]]:  # noqa: ANN003
         return [[] for _ in kwargs["atoms_per_payload"]]
 
-    def fake_lake_build_command(_repo_dir: Path, module: str) -> list[str]:
+    def fake_module_rebuild(
+        _repo_dir: Path, module: str, log_path: Path
+    ) -> bool:
         module_build_calls.append(module)
-        return ["lake", "build", module]
-
-    def fake_subprocess_run(command, **_kwargs):  # noqa: ANN001
-        module = command[-1]
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         if module == module_a:
-            return subprocess.CompletedProcess(
-                command,
-                1,
-                stdout="module A build failed",
-                stderr="",
-            )
-        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+            log_path.write_text("module A build failed")
+            return False
+        log_path.write_text("")
+        return True
 
     def fake_audit(
         _repo_dir: Path,
@@ -538,10 +525,11 @@ def test_failed_aggregate_build_rebuilds_modules_before_audit(
         }
 
     monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: ["lake"])
-    monkeypatch.setattr(bridge, "_lake_build_command", fake_lake_build_command)
+    monkeypatch.setattr(
+        bridge, "_rebuild_module_for_audit", fake_module_rebuild
+    )
     monkeypatch.setattr(bridge, "_run_lake_build", fake_build)
     monkeypatch.setattr(bridge, "_attribute_failures", keep_candidates_for_module_audit)
-    monkeypatch.setattr(bridge.subprocess, "run", fake_subprocess_run)
     monkeypatch.setattr(bridge, "run_axiom_audit", fake_audit)
 
     rc = bridge.main(

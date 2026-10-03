@@ -754,16 +754,16 @@ def _patch_lake(monkeypatch, rc: int, log: str) -> None:
 
     monkeypatch.setattr(bridge, "_run_lake_build", fake_run)
 
+    def fake_module_rebuild(
+        _repo_dir: Path, _module: str, log_path: Path
+    ) -> bool:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("")
+        return True
+
     monkeypatch.setattr(
-        bridge,
-        "_lake_build_command",
-        lambda _repo_dir, module: ["lake", "build", module],
+        bridge, "_rebuild_module_for_audit", fake_module_rebuild
     )
-
-    def fake_module_build(command, **_kwargs):  # noqa: ANN001
-        return bridge.subprocess.CompletedProcess(command, 0, stdout="", stderr="")
-
-    monkeypatch.setattr(bridge.subprocess, "run", fake_module_build)
 
     def fake_audit(
         _repo_dir: Path,

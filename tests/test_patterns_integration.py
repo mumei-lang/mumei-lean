@@ -95,7 +95,20 @@ def test_patterns_bridge_exports_lean_verified_certificate(
         log_path.write_text("")
         return 0, 0.25
 
+    def fake_axiom_audit(
+        _repo_dir: Path,
+        _modules: list[str],
+        theorems: list[str],
+        _log_path: Path,
+        _timeout_s: float,
+    ) -> dict[str, dict]:
+        return {
+            theorem: {"status": "passed", "axioms": [], "disallowed": []}
+            for theorem in theorems
+        }
+
     monkeypatch.setattr(bridge, "_run_lake_build", fake_lake_build)
+    monkeypatch.setattr(bridge, "run_axiom_audit", fake_axiom_audit)
     cert_path = tmp_path / "patterns.proof.json"
     cert_path.write_text(json.dumps(_pattern_cert()))
     lean_cert = tmp_path / "patterns.lean-cert.json"

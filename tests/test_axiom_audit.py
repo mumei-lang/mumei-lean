@@ -1,0 +1,392 @@
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+
+import pytest
+
+import axiom_audit
+import bridge
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_render_audit_source_imports_modules_and_prints_each_theorem():
+    assert axiom_audit.render_audit_source(
+        ["Generated.Math", "Generated.List"],
+        ["Generated.Math.inc_correct", "Generated.List.length_correct"],
+    ) == (
+        "import Generated.Math\n"
+        "import Generated.List\n"
+        "\n"
+        "#print axioms Generated.Math.inc_correct\n"
+        "#print axioms Generated.List.length_correct\n"
+    )
+
+
+def test_parse_axiom_output_handles_empty_standard_and_wrapped_lists():
+    output = (
+        "'Generated.Math.closed' does not depend on any axioms\n"
+        "'Generated.Math.classical' depends on axioms: "
+        "[propext, Classical.choice, Quot.sound]\n"
+        "'Generated.Math.user' depends on axioms: [\n"
+        "  User.assumption,\n"
+        "  Lean.ofReduceBool,\n"
+        "  sorryAx]\n"
+    )
+
+    assert axiom_audit.parse_axiom_output(output) == {
+        "Generated.Math.closed": [],
+        "Generated.Math.classical": [
+            "propext",
+            "Classical.choice",
+            "Quot.sound",
+        ],
+        "Generated.Math.user": [
+            "User.assumption",
+            "Lean.ofReduceBool",
+            "sorryAx",
+        ],
+    }
+
+
+def test_parse_axiom_output_ignores_missing_and_unrelated_lines():
+    assert axiom_audit.parse_axiom_output(
+        "warning: unrelated output\n"
+        "'Generated.Math.present' depends on axioms: [propext]\n"
+    ) == {"Generated.Math.present": ["propext"]}
+
+
+def test_run_axiom_audit_rejects_disallowed_axioms_and_fails_missing_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    theorem = "Generated.Math.closed"
+    missing = "Generated.Math.missing"
+    monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: ["lake"])
+
+    def fake_run(command, **kwargs):  # noqa: ANN001
+        assert command[-2:] == ["lean", command[-1]]
+        assert command[-1].endswith(".lean")
+        assert kwargs["cwd"] == tmp_path
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=(
+                f"'{theorem}' depends on axioms: [sorryAx, User.assumption]\n"
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(axiom_audit.subprocess, "run", fake_run)
+    log_path = tmp_path / "logs" / "axiom_audit.log"
+
+    results = axiom_audit.run_axiom_audit(
+        tmp_path,
+        ["Generated.Math"],
+        [theorem, missing],
+        log_path,
+        1.0,
+    )
+
+    assert results == {
+        theorem: {
+            "status": "rejected",
+            "axioms": ["sorryAx", "User.assumption"],
+            "disallowed": ["sorryAx", "User.assumption"],
+        },
+        missing: {
+            "status": "error",
+            "axioms": [],
+            "disallowed": [],
+        },
+    }
+    assert "'Generated.Math.closed'" in log_path.read_text()
+
+
+def test_run_axiom_audit_fails_closed_when_lake_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: None)
+
+    results = axiom_audit.run_axiom_audit(
+        tmp_path,
+        ["Generated.Math"],
+        ["Generated.Math.closed"],
+        tmp_path / "axiom_audit.log",
+        1.0,
+    )
+
+    assert results["Generated.Math.closed"]["status"] == "error"
+
+
+@pytest.mark.parametrize(
+    ("returncode", "timeout"),
+    [(1, False), (0, True)],
+)
+def test_run_axiom_audit_fails_closed_on_process_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    returncode: int,
+    timeout: bool,
+):
+    monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: ["lake"])
+
+    def fake_run(command, **kwargs):  # noqa: ANN001
+        if timeout:
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"], output="partial")
+        return subprocess.CompletedProcess(
+            command,
+            returncode,
+            stdout="'Generated.Math.closed' does not depend on any axioms\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(axiom_audit.subprocess, "run", fake_run)
+    theorem = "Generated.Math.closed"
+
+    results = axiom_audit.run_axiom_audit(
+        tmp_path,
+        ["Generated.Math"],
+        [theorem],
+        tmp_path / "axiom_audit.log",
+        1.0,
+    )
+
+    assert results[theorem] == {
+        "status": "error",
+        "axioms": [],
+        "disallowed": [],
+    }
+
+
+@pytest.mark.parametrize(
+    ("status", "axioms", "disallowed"),
+    [
+        ("passed", ["Classical.choice"], []),
+        ("rejected", ["User.assumption"], ["User.assumption"]),
+        ("error", [], []),
+    ],
+)
+def test_bridge_axiom_audit_controls_promotion_and_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    status: str,
+    axioms: list[str],
+    disallowed: list[str],
+):
+    fixture = REPO_ROOT / "tests" / "fixtures" / "abs_saturating.proof-cert.json"
+    out_dir = tmp_path / "generated"
+    repo_dir = tmp_path / "project"
+    repo_dir.mkdir()
+    out_cert = tmp_path / "out.lean-cert.json"
+    summary_path = tmp_path / "summary.json"
+    theorem = "Generated.Std.Math.Abs.abs_saturating_correct"
+
+    def fake_build(_repo_dir: Path, log_path: Path) -> tuple[int, float]:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("")
+        return 0, 0.01
+
+    def fake_audit(_repo_dir, modules, theorems, _log_path, _timeout_s):  # noqa: ANN001
+        assert modules == ["Generated.Std.Math.Abs"]
+        assert theorems == [theorem]
+        return {
+            theorem: {
+                "status": status,
+                "axioms": axioms,
+                "disallowed": disallowed,
+            }
+        }
+
+    monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: ["lake"])
+    monkeypatch.setattr(bridge, "_run_lake_build", fake_build)
+    monkeypatch.setattr(bridge, "run_axiom_audit", fake_audit)
+
+    rc = bridge.main(
+        [
+            "--cert",
+            str(fixture),
+            "--out-dir",
+            str(out_dir),
+            "--repo-dir",
+            str(repo_dir),
+            "--lean-cert-out",
+            str(out_cert),
+            "--summary-json",
+            str(summary_path),
+            "--no-tactic-search",
+        ]
+    )
+
+    assert rc == 0
+    exported = json.loads(out_cert.read_text())
+    atom = exported["atoms"][0]
+    metadata = atom["lean_result_metadata"]
+    assert metadata["axiom_audit"] == status
+    assert metadata["kernel_axioms"] == axioms
+    if status == "passed":
+        assert atom["z3_check_result"] == "lean_verified"
+    else:
+        assert atom["z3_check_result"] != "lean_verified"
+    audit_json = json.loads((out_dir / "axiom_audit.json").read_text())
+    assert audit_json[theorem] == {
+        "status": status,
+        "axioms": axioms,
+        "disallowed": disallowed,
+    }
+    counts = json.loads(summary_path.read_text())["axiom_audit"]
+    assert counts == {
+        "passed": int(status == "passed"),
+        "rejected": int(status == "rejected"),
+        "error": int(status == "error"),
+    }
+    if status == "rejected":
+        assert "User.assumption" in capsys.readouterr().err
+
+
+def test_bridge_no_build_skips_kernel_audit_and_records_zero_counts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    fixture = REPO_ROOT / "tests" / "fixtures" / "abs_saturating.proof-cert.json"
+    out_dir = tmp_path / "generated"
+    out_cert = tmp_path / "out.lean-cert.json"
+    summary_path = tmp_path / "summary.json"
+
+    def unexpected_audit(*_args, **_kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("no-build must skip the kernel axiom audit")
+
+    monkeypatch.setattr(bridge, "run_axiom_audit", unexpected_audit)
+
+    rc = bridge.main(
+        [
+            "--cert",
+            str(fixture),
+            "--out-dir",
+            str(out_dir),
+            "--lean-cert-out",
+            str(out_cert),
+            "--summary-json",
+            str(summary_path),
+            "--no-build",
+        ]
+    )
+
+    assert rc == 0
+    exported = json.loads(out_cert.read_text())
+    assert exported["atoms"][0]["z3_check_result"] != "lean_verified"
+    assert json.loads((out_dir / "axiom_audit.json").read_text()) == {}
+    assert json.loads(summary_path.read_text())["axiom_audit"] == {
+        "passed": 0,
+        "rejected": 0,
+        "error": 0,
+    }
+
+
+def test_bridge_missing_lake_skips_kernel_audit_and_does_not_promote(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    fixture = REPO_ROOT / "tests" / "fixtures" / "abs_saturating.proof-cert.json"
+    out_dir = tmp_path / "generated"
+    repo_dir = tmp_path / "project"
+    repo_dir.mkdir()
+    out_cert = tmp_path / "out.lean-cert.json"
+    summary_path = tmp_path / "summary.json"
+
+    def fake_build(_repo_dir: Path, log_path: Path) -> tuple[int, None]:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("error: `lake` not found on PATH\n")
+        return 127, None
+
+    def unexpected_audit(*_args, **_kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("missing Lake must skip the kernel axiom audit")
+
+    monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: None)
+    monkeypatch.setattr(bridge, "_run_lake_build", fake_build)
+    monkeypatch.setattr(bridge, "run_axiom_audit", unexpected_audit)
+
+    rc = bridge.main(
+        [
+            "--cert",
+            str(fixture),
+            "--out-dir",
+            str(out_dir),
+            "--repo-dir",
+            str(repo_dir),
+            "--lean-cert-out",
+            str(out_cert),
+            "--summary-json",
+            str(summary_path),
+            "--no-tactic-search",
+        ]
+    )
+
+    assert rc == 127
+    atom = json.loads(out_cert.read_text())["atoms"][0]
+    assert atom["z3_check_result"] != "lean_verified"
+    assert "axiom_audit" not in atom["lean_result_metadata"]
+    assert json.loads((out_dir / "axiom_audit.json").read_text()) == {}
+    assert json.loads(summary_path.read_text())["axiom_audit"] == {
+        "passed": 0,
+        "rejected": 0,
+        "error": 0,
+    }
+
+
+@pytest.mark.lake_available
+def test_kernel_axiom_audit_lean_e2e(lake_available, tmp_path: Path):
+    (tmp_path / "lean-toolchain").write_text(
+        (REPO_ROOT / "lean-toolchain").read_text()
+    )
+    (tmp_path / "lakefile.lean").write_text(
+        "import Lake\n"
+        "open Lake DSL\n"
+        "package axiomAuditFixture where\n"
+        "lean_lib AxiomAuditFixture\n"
+    )
+    (tmp_path / "AxiomAuditFixture.lean").write_text(
+        "namespace AxiomAuditFixture\n"
+        "axiom localAuditAxiom : True\n"
+        "theorem audit_decide : 2 + 2 = 4 := by decide\n"
+        "theorem audit_choice {α : Type} (h : Nonempty α) : ∃ x : α, True :=\n"
+        "  ⟨Classical.choice h, trivial⟩\n"
+        "theorem audit_user_axiom : True := localAuditAxiom\n"
+        "theorem audit_native : 1 = 1 := by native_decide\n"
+        "end AxiomAuditFixture\n"
+    )
+    build = subprocess.run(
+        ["lake", "build", "AxiomAuditFixture"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=120.0,
+        check=False,
+    )
+    assert build.returncode == 0, build.stdout + build.stderr
+    theorems = [
+        "AxiomAuditFixture.audit_decide",
+        "AxiomAuditFixture.audit_choice",
+        "AxiomAuditFixture.audit_user_axiom",
+        "AxiomAuditFixture.audit_native",
+    ]
+
+    results = axiom_audit.run_axiom_audit(
+        tmp_path,
+        ["AxiomAuditFixture"],
+        theorems,
+        tmp_path / "axiom_audit.log",
+        120.0,
+    )
+
+    assert results["AxiomAuditFixture.audit_decide"]["status"] == "passed"
+    assert results["AxiomAuditFixture.audit_choice"]["status"] == "passed"
+    assert "Classical.choice" in results["AxiomAuditFixture.audit_choice"]["axioms"]
+    assert results["AxiomAuditFixture.audit_user_axiom"]["status"] == "rejected"
+    assert (
+        "AxiomAuditFixture.localAuditAxiom"
+        in results["AxiomAuditFixture.audit_user_axiom"]["disallowed"]
+    )
+    native = results["AxiomAuditFixture.audit_native"]
+    assert native["status"] == "rejected"
+    assert "Lean.ofReduceBool" in native["disallowed"]

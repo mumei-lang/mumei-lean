@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -33,6 +34,11 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 try:
+    from .axiom_audit import (
+        AuditResult,
+        DEFAULT_AXIOM_AUDIT_TIMEOUT_S,
+        run_axiom_audit,
+    )
     from .proofcert import Z3CheckResult
     from .ingest_cert import (
         IngestedAtom,
@@ -42,6 +48,7 @@ try:
         collect_unknown_atoms,
         external_proof_rendered,
         module_to_path,
+        render_theorem,
         write_modules,
     )
     from .export_cert import (
@@ -97,6 +104,11 @@ try:
     )
 except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
     sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from axiom_audit import (  # type: ignore
+        AuditResult,
+        DEFAULT_AXIOM_AUDIT_TIMEOUT_S,
+        run_axiom_audit,
+    )
     from proofcert import Z3CheckResult  # type: ignore
     from ingest_cert import (  # type: ignore
         IngestedAtom,
@@ -106,6 +118,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
         collect_unknown_atoms,
         external_proof_rendered,
         module_to_path,
+        render_theorem,
         write_modules,
     )
     from export_cert import (  # type: ignore
@@ -164,6 +177,131 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
     )
 
 AtomKey = Tuple[str, str]
+_THEOREM_DECL_RE = re.compile(r"(?m)^\s*theorem\s+([^\s({:]+)")
+
+
+def _empty_axiom_audit_counts() -> dict[str, int]:
+    return {"passed": 0, "rejected": 0, "error": 0}
+
+
+def _write_axiom_audit_report(
+    out_dir: Path,
+    results: Dict[str, AuditResult],
+) -> None:
+    path = out_dir / "axiom_audit.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(results, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+    )
+
+
+def _axiom_audit_counts(results: Dict[str, AuditResult]) -> dict[str, int]:
+    counts = _empty_axiom_audit_counts()
+    for result in results.values():
+        status = result["status"]
+        if status in counts:
+            counts[status] += 1
+    return counts
+
+
+def _audit_proved_atoms(
+    atoms_per_payload: List[List[IngestedAtom]],
+    proved_per_payload: List[List[str]],
+    failed_per_payload: List[List[str]],
+    repo_dir: Path,
+    out_dir: Path,
+    module_prefix: str,
+) -> Tuple[Dict[str, AuditResult], Dict[AtomKey, AuditResult]]:
+    modules: Set[str] = set()
+    theorem_by_atom: Dict[AtomKey, str] = {}
+    atoms_by_key: Dict[AtomKey, IngestedAtom] = {}
+    for atoms, proved, failed in zip(
+        atoms_per_payload,
+        proved_per_payload,
+        failed_per_payload,
+    ):
+        proved_names = set(proved)
+        failed_names = set(failed)
+        for atom in atoms:
+            if atom.name not in proved_names or atom.name in failed_names:
+                continue
+            module = _module_to_lean_namespace(atom.module_key, module_prefix)
+            declarations = _THEOREM_DECL_RE.findall(render_theorem(atom))
+            expected_name = _lean_theorem_name(atom.name)
+            theorem_name = (
+                expected_name
+                if expected_name in declarations
+                else declarations[0]
+                if len(declarations) == 1
+                else expected_name
+            )
+            key = _atom_key(atom)
+            modules.add(module)
+            theorem_by_atom[key] = f"{module}.{theorem_name}"
+            atoms_by_key[key] = atom
+
+    if not theorem_by_atom:
+        return {}, {}
+
+    theorem_names = sorted(set(theorem_by_atom.values()))
+    audit_results = run_axiom_audit(
+        repo_dir,
+        sorted(modules),
+        theorem_names,
+        out_dir / "axiom_audit.log",
+        DEFAULT_AXIOM_AUDIT_TIMEOUT_S,
+    )
+    error_result: AuditResult = {
+        "status": "error",
+        "axioms": [],
+        "disallowed": [],
+    }
+    for theorem in theorem_names:
+        result = audit_results.get(theorem)
+        if result is None or result.get("status") not in {
+            "passed",
+            "rejected",
+            "error",
+        }:
+            audit_results[theorem] = dict(error_result)
+        else:
+            audit_results[theorem] = {
+                "status": result["status"],
+                "axioms": list(result.get("axioms", [])),
+                "disallowed": list(result.get("disallowed", [])),
+            }
+
+    results_by_atom: Dict[AtomKey, AuditResult] = {}
+    for key, theorem in theorem_by_atom.items():
+        result = audit_results[theorem]
+        results_by_atom[key] = result
+        if result["status"] == "rejected":
+            atom = atoms_by_key[key]
+            print(
+                f"warning: kernel axiom audit rejected atom {atom.name}: "
+                f"disallowed axioms: {', '.join(result['disallowed'])}",
+                file=sys.stderr,
+            )
+
+    for atoms, proved, failed in zip(
+        atoms_per_payload,
+        proved_per_payload,
+        failed_per_payload,
+    ):
+        proved_names = set(proved)
+        failed_names = set(failed)
+        for atom in atoms:
+            result = results_by_atom.get(_atom_key(atom))
+            if (
+                atom.name in proved_names
+                and atom.name not in failed_names
+                and result is not None
+                and result["status"] != "passed"
+            ):
+                failed.append(atom.name)
+                failed_names.add(atom.name)
+
+    return audit_results, results_by_atom
 
 
 def _candidate_metadata(
@@ -405,10 +543,12 @@ def _metadata_for_atoms(
     lean_solver_time_s: Optional[float] = None,
     tactic_search_results: Optional[Dict[AtomKey, TacticSearchResult]] = None,
     build_failures: Optional[List[dict]] = None,
+    axiom_audit_by_atom: Optional[Dict[AtomKey, AuditResult]] = None,
 ) -> Dict[str, dict]:
     metadata_by_atom: Dict[str, dict] = {}
     known_witness_proved = known_witness_proved or set()
     tactic_search_results = tactic_search_results or {}
+    axiom_audit_by_atom = axiom_audit_by_atom or {}
     failed_names = set(failed)
     for atom in atoms:
         atom_failures = (
@@ -435,6 +575,10 @@ def _metadata_for_atoms(
         )
         if _atom_key(atom) in known_witness_proved:
             metadata = _known_witness_metadata(atom, metadata, harness_stage)
+        audit_result = axiom_audit_by_atom.get(_atom_key(atom))
+        if audit_result is not None:
+            metadata["kernel_axioms"] = list(audit_result["axioms"])
+            metadata["axiom_audit"] = audit_result["status"]
         metadata_by_atom[atom.name] = metadata
     return metadata_by_atom
 
@@ -1153,6 +1297,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 f"info: no certificates with unknown atoms found under "
                 f"{args.scan_unknown / 'std' / 'certs'}"
             )
+            _write_axiom_audit_report(args.out_dir, {})
             if args.summary_json is not None:
                 # Still emit a summary so downstream CI artifacts have
                 # a deterministic file to upload even when the scan is
@@ -1165,6 +1310,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                             "modules": [],
                             "ci_mode_fallback": False,
                             "harness_contract": harness_contract,
+                            "axiom_audit": _empty_axiom_audit_counts(),
                             "details": [],
                         },
                         indent=2,
@@ -1305,6 +1451,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "modules": modules_list,
         "ci_mode_fallback": False,
         "harness_contract": harness_contract,
+        "axiom_audit": _empty_axiom_audit_counts(),
         "lean_fallback": {
             "attempted": len(all_candidate_atoms),
             "proved": 0,
@@ -1313,6 +1460,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         },
         "details": [],
     }
+    _write_axiom_audit_report(args.out_dir, {})
     if args.summary_json is not None:
         args.summary_json.parent.mkdir(parents=True, exist_ok=True)
         args.summary_json.write_text(
@@ -1547,6 +1695,21 @@ def main(argv: Optional[List[str]] = None) -> int:
             results=tactic_search_results,
         )
 
+    if lake_missing:
+        axiom_audit_results: Dict[str, AuditResult] = {}
+        axiom_audit_by_atom: Dict[AtomKey, AuditResult] = {}
+    else:
+        axiom_audit_results, axiom_audit_by_atom = _audit_proved_atoms(
+            atoms_per_payload,
+            proved_per_payload,
+            per_payload_failed,
+            args.repo_dir,
+            args.out_dir,
+            args.module_prefix,
+        )
+    _write_axiom_audit_report(args.out_dir, axiom_audit_results)
+    summary_payload["axiom_audit"] = _axiom_audit_counts(axiom_audit_results)
+
     metadata_per_payload = [
         _metadata_for_atoms(
             atoms,
@@ -1559,6 +1722,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             lean_solver_time_s,
             tactic_search_results,
             failure_report["failures"],
+            axiom_audit_by_atom,
         )
         for atoms, proved, failed in zip(
             atoms_per_payload,

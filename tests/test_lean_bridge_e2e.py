@@ -165,6 +165,14 @@ def test_lean_fallback_upgrades_unknown_to_lean_verified(lake_available, tmp_pat
         assert "theorem abs_saturating_correct" in generated_src
         payload = json.loads(out_cert.read_text())
         assert payload["atoms"][0]["z3_check_result"] == "lean_verified"
+        audit_metadata = payload["atoms"][0]["lean_result_metadata"]
+        assert audit_metadata["axiom_audit"] == "passed"
+        assert isinstance(audit_metadata["kernel_axioms"], list)
+        assert set(audit_metadata["kernel_axioms"]) <= {
+            "propext",
+            "Classical.choice",
+            "Quot.sound",
+        }
         assert payload["atoms"][0]["lean_metadata"]["proof_path"].endswith(
             "generated/Generated/Std/Math/Abs.lean"
         )
@@ -187,8 +195,15 @@ def test_lean_fallback_upgrades_unknown_to_lean_verified(lake_available, tmp_pat
             summary_payload["metrics"]["by_atom"]["abs_saturating"]["known_witness_used"]
             is False
         )
+        assert summary_payload["axiom_audit"]["passed"] == 1
+        audit_payload = json.loads((out_dir / "axiom_audit.json").read_text())
+        assert audit_payload["Generated.Std.Math.Abs.abs_saturating_correct"][
+            "status"
+        ] == "passed"
     finally:
         _cleanup_generated_abs()
+        (out_dir / "axiom_audit.json").unlink(missing_ok=True)
+        (out_dir / "axiom_audit.log").unlink(missing_ok=True)
 
 
 @pytest.mark.lake_available

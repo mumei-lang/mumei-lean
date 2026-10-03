@@ -754,6 +754,20 @@ def _patch_lake(monkeypatch, rc: int, log: str) -> None:
 
     monkeypatch.setattr(bridge, "_run_lake_build", fake_run)
 
+    def fake_audit(
+        _repo_dir: Path,
+        _modules: list[str],
+        theorems: list[str],
+        _log_path: Path,
+        _timeout_s: float,
+    ) -> dict[str, dict]:
+        return {
+            theorem: {"status": "passed", "axioms": [], "disallowed": []}
+            for theorem in theorems
+        }
+
+    monkeypatch.setattr(bridge, "run_axiom_audit", fake_audit)
+
 
 def test_run_lake_build_uses_pinned_toolchain_when_elan_available(
     tmp_path: Path, monkeypatch

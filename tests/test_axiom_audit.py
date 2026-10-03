@@ -12,6 +12,38 @@ import bridge
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _bridge_test_atom(name: str) -> dict:
+    return {
+        "name": name,
+        "requires": "x >= 0",
+        "ensures": "result > x",
+        "body_expr": "x + 1",
+        "z3_check_result": "unknown",
+        "status": "unknown",
+        "content_hash": f"h-{name}",
+        "proof_hash": f"p-{name}",
+        "dependencies": [],
+        "effects": [],
+        "translator_version": bridge.TRANSLATOR_VERSION,
+        "bridge_lemma_hash": bridge.BRIDGE_LEMMA_HASH,
+    }
+
+
+def _bridge_test_cert(file: str, names: list[str]) -> dict:
+    return {
+        "version": "1.0",
+        "timestamp": "2026-05-11T00:00:00Z",
+        "mumei_version": "0.6.12",
+        "z3_version": "4.12.2",
+        "file": file,
+        "atoms": [_bridge_test_atom(name) for name in names],
+        "package_name": "axiom-audit-test",
+        "package_version": "0",
+        "certificate_hash": "",
+        "all_verified": False,
+    }
+
+
 def test_render_audit_source_imports_modules_and_prints_each_theorem():
     assert axiom_audit.render_audit_source(
         ["Generated.Math", "Generated.List"],
@@ -244,6 +276,271 @@ def test_bridge_axiom_audit_controls_promotion_and_metadata(
     }
     if status == "rejected":
         assert "User.assumption" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("status", "axioms", "disallowed"),
+    [
+        ("rejected", ["User.assumption"], ["User.assumption"]),
+        ("error", [], []),
+    ],
+)
+def test_failed_known_witness_audit_blocks_export_promotion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+    axioms: list[str],
+    disallowed: list[str],
+):
+    fixture = REPO_ROOT / "tests" / "fixtures" / "abs_saturating.proof-cert.json"
+    out_dir = tmp_path / "generated"
+    repo_dir = tmp_path / "project"
+    repo_dir.mkdir()
+    out_cert = tmp_path / "out.lean-cert.json"
+    summary_path = tmp_path / "summary.json"
+    theorem = "Generated.Std.Math.Abs.abs_saturating_correct"
+
+    def fake_build(_repo_dir: Path, log_path: Path) -> tuple[int, float]:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("error: cannot resolve dependency 'mathlib'\n")
+        return 1, 0.01
+
+    def fake_audit(_repo_dir, modules, theorems, _log_path, _timeout_s):  # noqa: ANN001
+        assert modules == ["Generated.Std.Math.Abs"]
+        assert theorems == [theorem]
+        return {
+            theorem: {
+                "status": status,
+                "axioms": axioms,
+                "disallowed": disallowed,
+            }
+        }
+
+    monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: ["lake"])
+    monkeypatch.setattr(bridge, "_run_lake_build", fake_build)
+    monkeypatch.setattr(
+        bridge,
+        "_verify_known_witnesses",
+        lambda *_args: [("std/math/abs", "abs_saturating")],
+    )
+    monkeypatch.setattr(bridge, "run_axiom_audit", fake_audit)
+
+    rc = bridge.main(
+        [
+            "--cert",
+            str(fixture),
+            "--out-dir",
+            str(out_dir),
+            "--repo-dir",
+            str(repo_dir),
+            "--lean-cert-out",
+            str(out_cert),
+            "--summary-json",
+            str(summary_path),
+            "--no-tactic-search",
+        ]
+    )
+
+    assert rc == 1
+    atom = json.loads(out_cert.read_text())["atoms"][0]
+    assert atom["z3_check_result"] != "lean_verified"
+    assert atom["lean_metadata"]["status"] != "lean_verified"
+    assert json.loads((out_dir / "axiom_audit.json").read_text())[theorem][
+        "status"
+    ] == status
+    summary = json.loads(summary_path.read_text())
+    assert summary["axiom_audit"][status] == 1
+    assert summary["lean_fallback"]["known_witness_used"] == 0
+
+
+def test_bridge_audits_modules_independently(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    scan_root = tmp_path / "input"
+    certs_dir = scan_root / "std" / "certs"
+    certs_dir.mkdir(parents=True)
+    (certs_dir / "module_a.proof-cert.json").write_text(
+        json.dumps(_bridge_test_cert("std/audit_module_a.mm", ["audit_a"]))
+    )
+    (certs_dir / "module_b.proof-cert.json").write_text(
+        json.dumps(_bridge_test_cert("std/audit_module_b.mm", ["audit_b"]))
+    )
+    out_dir = tmp_path / "generated"
+    cert_out_dir = tmp_path / "lean-certs"
+    repo_dir = tmp_path / "project"
+    repo_dir.mkdir()
+    summary_path = tmp_path / "summary.json"
+    module_a = "Generated.Std.Audit_module_a"
+    module_b = "Generated.Std.Audit_module_b"
+    theorem_a = f"{module_a}.audit_a_correct"
+    theorem_b = f"{module_b}.audit_b_correct"
+    calls: list[tuple[list[str], list[str], Path]] = []
+
+    def fake_build(_repo_dir: Path, log_path: Path) -> tuple[int, float]:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("")
+        return 0, 0.01
+
+    def fake_audit(
+        _repo_dir: Path,
+        modules: list[str],
+        theorems: list[str],
+        log_path: Path,
+        _timeout_s: float,
+    ) -> dict[str, dict]:
+        calls.append((modules, theorems, log_path))
+        status = "error" if modules == [module_a] else "passed"
+        return {
+            theorem: {
+                "status": status,
+                "axioms": [],
+                "disallowed": [],
+            }
+            for theorem in theorems
+        }
+
+    monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: ["lake"])
+    monkeypatch.setattr(bridge, "_run_lake_build", fake_build)
+    monkeypatch.setattr(bridge, "run_axiom_audit", fake_audit)
+
+    rc = bridge.main(
+        [
+            "--scan-unknown",
+            str(scan_root),
+            "--out-dir",
+            str(out_dir),
+            "--module-prefix",
+            "Generated",
+            "--repo-dir",
+            str(repo_dir),
+            "--lean-cert-out",
+            str(cert_out_dir),
+            "--summary-json",
+            str(summary_path),
+            "--no-tactic-search",
+        ]
+    )
+
+    assert rc == 0
+    assert calls == [
+        (
+            [module_a],
+            [theorem_a],
+            out_dir / "axiom_audit_logs" / "Generated_Std_Audit_module_a.log",
+        ),
+        (
+            [module_b],
+            [theorem_b],
+            out_dir / "axiom_audit_logs" / "Generated_Std_Audit_module_b.log",
+        ),
+    ]
+    exported_atoms = {
+        atom["name"]: atom
+        for path in cert_out_dir.glob("*.json")
+        for atom in json.loads(path.read_text())["atoms"]
+    }
+    assert exported_atoms["audit_a"]["z3_check_result"] != "lean_verified"
+    assert exported_atoms["audit_b"]["z3_check_result"] == "lean_verified"
+    summary = json.loads(summary_path.read_text())
+    assert summary["axiom_audit"] == {"passed": 1, "rejected": 0, "error": 1}
+    audit_json = json.loads((out_dir / "axiom_audit.json").read_text())
+    assert audit_json[theorem_a]["status"] == "error"
+    assert audit_json[theorem_b]["status"] == "passed"
+
+
+def test_unrenderable_theorem_is_reported_as_error_without_blocking_module(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    scan_root = tmp_path / "input"
+    certs_dir = scan_root / "std" / "certs"
+    certs_dir.mkdir(parents=True)
+    (certs_dir / "unrenderable.proof-cert.json").write_text(
+        json.dumps(
+            _bridge_test_cert("std/unrenderable_a.mm", ["unrenderable_atom"])
+        )
+    )
+    (certs_dir / "renderable.proof-cert.json").write_text(
+        json.dumps(_bridge_test_cert("std/renderable_b.mm", ["renderable_atom"]))
+    )
+    out_dir = tmp_path / "generated"
+    cert_out_dir = tmp_path / "lean-certs"
+    repo_dir = tmp_path / "project"
+    repo_dir.mkdir()
+    summary_path = tmp_path / "summary.json"
+    module_a = "Generated.Std.Unrenderable_a"
+    module_b = "Generated.Std.Renderable_b"
+    theorem_a = f"{module_a}.unrenderable_atom_correct"
+    theorem_b = f"{module_b}.renderable_atom_correct"
+    real_render_theorem = bridge.render_theorem
+    calls: list[tuple[list[str], list[str]]] = []
+
+    def fake_build(_repo_dir: Path, log_path: Path) -> tuple[int, float]:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("")
+        return 0, 0.01
+
+    def raising_render_theorem(atom) -> str:  # noqa: ANN001
+        if atom.name == "unrenderable_atom":
+            raise ValueError("test rendering failure")
+        return real_render_theorem(atom)
+
+    def fake_audit(
+        _repo_dir: Path,
+        modules: list[str],
+        theorems: list[str],
+        _log_path: Path,
+        _timeout_s: float,
+    ) -> dict[str, dict]:
+        calls.append((modules, theorems))
+        return {
+            theorem: {"status": "passed", "axioms": [], "disallowed": []}
+            for theorem in theorems
+        }
+
+    monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: ["lake"])
+    monkeypatch.setattr(bridge, "_run_lake_build", fake_build)
+    monkeypatch.setattr(bridge, "render_theorem", raising_render_theorem)
+    monkeypatch.setattr(bridge, "run_axiom_audit", fake_audit)
+
+    rc = bridge.main(
+        [
+            "--scan-unknown",
+            str(scan_root),
+            "--out-dir",
+            str(out_dir),
+            "--module-prefix",
+            "Generated",
+            "--repo-dir",
+            str(repo_dir),
+            "--lean-cert-out",
+            str(cert_out_dir),
+            "--summary-json",
+            str(summary_path),
+            "--no-tactic-search",
+        ]
+    )
+
+    assert rc == 0
+    assert calls == [([module_b], [theorem_b])]
+    exported = {
+        atom["name"]: atom
+        for path in cert_out_dir.glob("*.json")
+        for atom in json.loads(path.read_text())["atoms"]
+    }
+    assert exported["unrenderable_atom"]["z3_check_result"] != "lean_verified"
+    assert exported["renderable_atom"]["z3_check_result"] == "lean_verified"
+    audit_json = json.loads((out_dir / "axiom_audit.json").read_text())
+    assert audit_json[theorem_a] == {
+        "status": "error",
+        "axioms": [],
+        "disallowed": [],
+    }
+    assert audit_json[theorem_b]["status"] == "passed"
+    assert json.loads(summary_path.read_text())["axiom_audit"] == {
+        "passed": 1,
+        "rejected": 0,
+        "error": 1,
+    }
 
 
 def test_bridge_no_build_skips_kernel_audit_and_records_zero_counts(

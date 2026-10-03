@@ -212,9 +212,15 @@ def _audit_proved_atoms(
     out_dir: Path,
     module_prefix: str,
 ) -> Tuple[Dict[str, AuditResult], Dict[AtomKey, AuditResult]]:
-    modules: Set[str] = set()
     theorem_by_atom: Dict[AtomKey, str] = {}
     atoms_by_key: Dict[AtomKey, IngestedAtom] = {}
+    theorems_by_module: Dict[str, Set[str]] = {}
+    audit_results: Dict[str, AuditResult] = {}
+    error_result: AuditResult = {
+        "status": "error",
+        "axioms": [],
+        "disallowed": [],
+    }
     for atoms, proved, failed in zip(
         atoms_per_payload,
         proved_per_payload,
@@ -226,8 +232,16 @@ def _audit_proved_atoms(
             if atom.name not in proved_names or atom.name in failed_names:
                 continue
             module = _module_to_lean_namespace(atom.module_key, module_prefix)
-            declarations = _THEOREM_DECL_RE.findall(render_theorem(atom))
             expected_name = _lean_theorem_name(atom.name)
+            key = _atom_key(atom)
+            atoms_by_key[key] = atom
+            try:
+                declarations = _THEOREM_DECL_RE.findall(render_theorem(atom))
+            except ValueError:
+                theorem = f"{module}.{expected_name}"
+                theorem_by_atom[key] = theorem
+                audit_results[theorem] = dict(error_result)
+                continue
             theorem_name = (
                 expected_name
                 if expected_name in declarations
@@ -235,41 +249,51 @@ def _audit_proved_atoms(
                 if len(declarations) == 1
                 else expected_name
             )
-            key = _atom_key(atom)
-            modules.add(module)
-            theorem_by_atom[key] = f"{module}.{theorem_name}"
-            atoms_by_key[key] = atom
+            theorem = f"{module}.{theorem_name}"
+            theorem_by_atom[key] = theorem
+            theorems_by_module.setdefault(module, set()).add(theorem)
 
     if not theorem_by_atom:
         return {}, {}
 
-    theorem_names = sorted(set(theorem_by_atom.values()))
-    audit_results = run_axiom_audit(
-        repo_dir,
-        sorted(modules),
-        theorem_names,
-        out_dir / "axiom_audit.log",
-        DEFAULT_AXIOM_AUDIT_TIMEOUT_S,
-    )
-    error_result: AuditResult = {
-        "status": "error",
-        "axioms": [],
-        "disallowed": [],
-    }
-    for theorem in theorem_names:
-        result = audit_results.get(theorem)
-        if result is None or result.get("status") not in {
-            "passed",
-            "rejected",
-            "error",
-        }:
-            audit_results[theorem] = dict(error_result)
-        else:
-            audit_results[theorem] = {
-                "status": result["status"],
-                "axioms": list(result.get("axioms", [])),
-                "disallowed": list(result.get("disallowed", [])),
-            }
+    if theorems_by_module:
+        audit_log_dir = out_dir / "axiom_audit_logs"
+        audit_log_dir.mkdir(parents=True, exist_ok=True)
+        for module in sorted(theorems_by_module):
+            theorem_names = sorted(theorems_by_module[module])
+            module_results = run_axiom_audit(
+                repo_dir,
+                [module],
+                theorem_names,
+                audit_log_dir / f"{module.replace('.', '_')}.log",
+                DEFAULT_AXIOM_AUDIT_TIMEOUT_S,
+            )
+            for theorem in theorem_names:
+                result = (
+                    module_results.get(theorem)
+                    if isinstance(module_results, dict)
+                    else None
+                )
+                status = result.get("status") if isinstance(result, dict) else None
+                axioms = result.get("axioms") if isinstance(result, dict) else None
+                disallowed = (
+                    result.get("disallowed") if isinstance(result, dict) else None
+                )
+                if (
+                    not isinstance(status, str)
+                    or status not in {"passed", "rejected", "error"}
+                    or not isinstance(axioms, list)
+                    or not all(isinstance(axiom, str) for axiom in axioms)
+                    or not isinstance(disallowed, list)
+                    or not all(isinstance(axiom, str) for axiom in disallowed)
+                ):
+                    audit_results[theorem] = dict(error_result)
+                else:
+                    audit_results[theorem] = {
+                        "status": status,
+                        "axioms": list(axioms),
+                        "disallowed": list(disallowed),
+                    }
 
     results_by_atom: Dict[AtomKey, AuditResult] = {}
     for key, theorem in theorem_by_atom.items():
@@ -1706,6 +1730,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             args.repo_dir,
             args.out_dir,
             args.module_prefix,
+        )
+        known_witness_proved.difference_update(
+            key
+            for key in tuple(known_witness_proved)
+            if axiom_audit_by_atom.get(key, {}).get("status") != "passed"
         )
     _write_axiom_audit_report(args.out_dir, axiom_audit_results)
     summary_payload["axiom_audit"] = _axiom_audit_counts(axiom_audit_results)

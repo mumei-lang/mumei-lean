@@ -47,6 +47,11 @@ Audited atoms record `kernel_axioms` and `axiom_audit` in
 `<out-dir>/axiom_audit.json`; when `--summary-json` is used, its `axiom_audit`
 object counts passed, rejected, and error results.
 
+The bridge audits one Lean module per invocation and writes each log to
+`<out-dir>/axiom_audit_logs/<module-with-dots-replaced-by-underscores>.log`.
+A module that fails to build produces audit errors only for its own atoms;
+other modules are audited independently.
+
 If either `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract, the failure condition is `stale_translator`. `sat`, `unsat`, parser failures, audit/spec issues, and ordinary mumei-agent findings are never upgraded by this bridge.
 
 ## End-to-end workflow

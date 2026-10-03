@@ -239,9 +239,9 @@ def _audit_proved_atoms(
             try:
                 declarations = _THEOREM_DECL_RE.findall(render_theorem(atom))
             except ValueError:
-                theorem = f"{module}.{expected_name}"
-                theorem_by_atom[key] = theorem
-                audit_results[theorem] = dict(error_result)
+                audit_key = f"unrendered:{atom.module_key}:{atom.name}"
+                theorem_by_atom[key] = audit_key
+                audit_results[audit_key] = dict(error_result)
                 continue
             theorem_name = (
                 expected_name

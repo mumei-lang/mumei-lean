@@ -591,10 +591,9 @@ def test_unrenderable_theorem_is_reported_as_error_without_blocking_module(
     repo_dir = tmp_path / "project"
     repo_dir.mkdir()
     summary_path = tmp_path / "summary.json"
-    module_a = "Generated.Std.Unrenderable_a"
     module_b = "Generated.Std.Renderable_b"
-    theorem_a = f"{module_a}.unrenderable_atom_correct"
     theorem_b = f"{module_b}.renderable_atom_correct"
+    unrendered_key = "unrendered:std/unrenderable_a:unrenderable_atom"
     real_render_theorem = bridge.render_theorem
     calls: list[tuple[list[str], list[str]]] = []
 
@@ -654,12 +653,108 @@ def test_unrenderable_theorem_is_reported_as_error_without_blocking_module(
     assert exported["unrenderable_atom"]["z3_check_result"] != "lean_verified"
     assert exported["renderable_atom"]["z3_check_result"] == "lean_verified"
     audit_json = json.loads((out_dir / "axiom_audit.json").read_text())
-    assert audit_json[theorem_a] == {
+    assert audit_json[unrendered_key] == {
         "status": "error",
         "axioms": [],
         "disallowed": [],
     }
     assert audit_json[theorem_b]["status"] == "passed"
+    assert json.loads(summary_path.read_text())["axiom_audit"] == {
+        "passed": 1,
+        "rejected": 0,
+        "error": 1,
+    }
+
+
+def test_unrendered_atom_cannot_collide_with_rendered_theorem_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    scan_root = tmp_path / "input"
+    certs_dir = scan_root / "std" / "certs"
+    certs_dir.mkdir(parents=True)
+    (certs_dir / "unrenderable.proof-cert.json").write_text(
+        json.dumps(
+            _bridge_test_cert("std/collision_module.mm", ["foo-bar"])
+        )
+    )
+    (certs_dir / "renderable.proof-cert.json").write_text(
+        json.dumps(
+            _bridge_test_cert("std/collision_module.mm", ["foo_bar"])
+        )
+    )
+    out_dir = tmp_path / "generated"
+    cert_out_dir = tmp_path / "lean-certs"
+    repo_dir = tmp_path / "project"
+    repo_dir.mkdir()
+    summary_path = tmp_path / "summary.json"
+    module = "Generated.Std.Collision_module"
+    theorem = f"{module}.foo_bar_correct"
+    unrendered_key = "unrendered:std/collision_module:foo-bar"
+    real_render_theorem = bridge.render_theorem
+    audit_calls: list[tuple[list[str], list[str]]] = []
+
+    def fake_build(_repo_dir: Path, log_path: Path) -> tuple[int, float]:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("")
+        return 0, 0.01
+
+    def raising_render_theorem(atom) -> str:  # noqa: ANN001
+        if atom.name == "foo-bar":
+            raise ValueError("test rendering failure")
+        return real_render_theorem(atom)
+
+    def fake_audit(
+        _repo_dir: Path,
+        modules: list[str],
+        theorems: list[str],
+        _log_path: Path,
+        _timeout_s: float,
+    ) -> dict[str, dict]:
+        audit_calls.append((modules, theorems))
+        return {
+            theorem: {"status": "passed", "axioms": [], "disallowed": []}
+            for theorem in theorems
+        }
+
+    monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: ["lake"])
+    monkeypatch.setattr(bridge, "_run_lake_build", fake_build)
+    monkeypatch.setattr(bridge, "render_theorem", raising_render_theorem)
+    monkeypatch.setattr(bridge, "run_axiom_audit", fake_audit)
+
+    rc = bridge.main(
+        [
+            "--scan-unknown",
+            str(scan_root),
+            "--out-dir",
+            str(out_dir),
+            "--module-prefix",
+            "Generated",
+            "--repo-dir",
+            str(repo_dir),
+            "--lean-cert-out",
+            str(cert_out_dir),
+            "--summary-json",
+            str(summary_path),
+            "--no-tactic-search",
+        ]
+    )
+
+    assert rc == 0
+    assert audit_calls == [([module], [theorem])]
+    exported = {
+        atom["name"]: atom
+        for path in cert_out_dir.glob("*.json")
+        for atom in json.loads(path.read_text())["atoms"]
+    }
+    assert exported["foo-bar"]["z3_check_result"] != "lean_verified"
+    assert exported["foo_bar"]["z3_check_result"] == "lean_verified"
+    audit_json = json.loads((out_dir / "axiom_audit.json").read_text())
+    assert audit_json[unrendered_key] == {
+        "status": "error",
+        "axioms": [],
+        "disallowed": [],
+    }
+    assert audit_json[theorem]["status"] == "passed"
     assert json.loads(summary_path.read_text())["axiom_audit"] == {
         "passed": 1,
         "rejected": 0,

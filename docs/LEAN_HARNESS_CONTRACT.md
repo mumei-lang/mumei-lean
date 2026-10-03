@@ -45,6 +45,7 @@ Field handling is fixed:
 | `logic_fragment_tags` | Ordered fragment tags used for bridge lemma selection, metrics, and mumei certificate parity. |
 | `translator_ir` | Typed lowering contract emitted into generated Lean and copied into `.lean-cert.json` for mumei-side auditing. |
 | `manual_lemma_reason` | Stable reason a generated theorem needs human lemma work; dry runs should emit `manual_lemma_required`, not `lean_verified`. |
+| `kernel_axioms` / `axiom_audit` | Kernel-reported axioms and the audit status (`passed`, `rejected`, or `error`) for an audited theorem. |
 | `stale_translator` | mumei-side rejection when `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract. |
 
 Current contract constants are `translator_version = mumei-lean-translator-ir-v2` and `bridge_lemma_hash = 5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9`.
@@ -57,6 +58,23 @@ The bridge is a complement for Z3 `unknown` obligations only. A candidate can be
 2. Generated Lean builds successfully without unresolved manual-lemma placeholders.
 3. The exported atom and `lean_result_metadata` both carry the current `translator_version`.
 4. The exported atom and `lean_result_metadata` both carry the current `bridge_lemma_hash`.
+5. The kernel-reported axiom set contains only `propext`, `Classical.choice`,
+   and `Quot.sound`. A disallowed axiom rejects promotion; missing theorem
+   output, a failed audit process, or a timeout records `error` and blocks
+   promotion. Dry runs and builds that cannot run because Lake is missing
+   promote nothing.
+
+Audited atoms carry `kernel_axioms` and `axiom_audit` in
+`lean_result_metadata`. The theorem-to-result map is written to
+`<out-dir>/axiom_audit.json`; `--summary-json` includes passed, rejected, and
+error counts under `axiom_audit`.
+
+The bridge audits one Lean module per invocation. After an aggregate build
+fails, it rebuilds each module before its audit; a module that does not build
+in this run is marked as an error and is never audited from a previous run's
+artifacts. Audit logs are written to
+`<out-dir>/axiom_audit_logs/<module-with-dots-replaced-by-underscores>.log`;
+module rebuild logs use the same path with a `.build.log` suffix.
 
 If either `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract, the failure condition is `stale_translator`. `sat`, `unsat`, parser failures, audit/spec issues, and ordinary mumei-agent findings are never upgraded by this bridge.
 

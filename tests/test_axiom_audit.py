@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import uuid
 from pathlib import Path
 
 import pytest
@@ -232,7 +233,21 @@ def test_bridge_axiom_audit_controls_promotion_and_metadata(
             }
         }
 
+    def fake_module_build(command, **_kwargs):  # noqa: ANN001
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="",
+            stderr="",
+        )
+
     monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: ["lake"])
+    monkeypatch.setattr(
+        bridge,
+        "_lake_build_command",
+        lambda _repo, module: ["lake", "build", module],
+    )
+    monkeypatch.setattr(bridge.subprocess, "run", fake_module_build)
     monkeypatch.setattr(bridge, "_run_lake_build", fake_build)
     monkeypatch.setattr(bridge, "run_axiom_audit", fake_audit)
 
@@ -316,7 +331,16 @@ def test_failed_known_witness_audit_blocks_export_promotion(
             }
         }
 
+    def fake_module_build(command, **_kwargs):  # noqa: ANN001
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
     monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: ["lake"])
+    monkeypatch.setattr(
+        bridge,
+        "_lake_build_command",
+        lambda _repo, module: ["lake", "build", module],
+    )
+    monkeypatch.setattr(bridge.subprocess, "run", fake_module_build)
     monkeypatch.setattr(bridge, "_run_lake_build", fake_build)
     monkeypatch.setattr(
         bridge,
@@ -399,7 +423,11 @@ def test_bridge_audits_modules_independently(
             for theorem in theorems
         }
 
+    def unexpected_module_build(_repo_dir: Path, module: str) -> list[str]:
+        raise AssertionError(f"build_rc=0 must not rebuild {module}")
+
     monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: ["lake"])
+    monkeypatch.setattr(bridge, "_lake_build_command", unexpected_module_build)
     monkeypatch.setattr(bridge, "_run_lake_build", fake_build)
     monkeypatch.setattr(bridge, "run_axiom_audit", fake_audit)
 
@@ -446,6 +474,114 @@ def test_bridge_audits_modules_independently(
     audit_json = json.loads((out_dir / "axiom_audit.json").read_text())
     assert audit_json[theorem_a]["status"] == "error"
     assert audit_json[theorem_b]["status"] == "passed"
+
+
+def test_failed_aggregate_build_rebuilds_modules_before_audit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    scan_root = tmp_path / "input"
+    certs_dir = scan_root / "std" / "certs"
+    certs_dir.mkdir(parents=True)
+    (certs_dir / "module_a.proof-cert.json").write_text(
+        json.dumps(_bridge_test_cert("std/audit_module_a.mm", ["audit_a"]))
+    )
+    (certs_dir / "module_b.proof-cert.json").write_text(
+        json.dumps(_bridge_test_cert("std/audit_module_b.mm", ["audit_b"]))
+    )
+    out_dir = tmp_path / "generated"
+    cert_out_dir = tmp_path / "lean-certs"
+    repo_dir = tmp_path / "project"
+    repo_dir.mkdir()
+    summary_path = tmp_path / "summary.json"
+    module_a = "Generated.Std.Audit_module_a"
+    module_b = "Generated.Std.Audit_module_b"
+    theorem_a = f"{module_a}.audit_a_correct"
+    theorem_b = f"{module_b}.audit_b_correct"
+    module_build_calls: list[str] = []
+    audit_calls: list[tuple[list[str], list[str]]] = []
+
+    def fake_build(_repo_dir: Path, log_path: Path) -> tuple[int, float]:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("an unrelated generated declaration failed\n")
+        return 1, 0.01
+
+    def keep_candidates_for_module_audit(**kwargs) -> list[list[str]]:  # noqa: ANN003
+        return [[] for _ in kwargs["atoms_per_payload"]]
+
+    def fake_lake_build_command(_repo_dir: Path, module: str) -> list[str]:
+        module_build_calls.append(module)
+        return ["lake", "build", module]
+
+    def fake_subprocess_run(command, **_kwargs):  # noqa: ANN001
+        module = command[-1]
+        if module == module_a:
+            return subprocess.CompletedProcess(
+                command,
+                1,
+                stdout="module A build failed",
+                stderr="",
+            )
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    def fake_audit(
+        _repo_dir: Path,
+        modules: list[str],
+        theorems: list[str],
+        _log_path: Path,
+        _timeout_s: float,
+    ) -> dict[str, dict]:
+        audit_calls.append((modules, theorems))
+        assert modules == [module_b]
+        return {
+            theorem: {"status": "passed", "axioms": [], "disallowed": []}
+            for theorem in theorems
+        }
+
+    monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: ["lake"])
+    monkeypatch.setattr(bridge, "_lake_build_command", fake_lake_build_command)
+    monkeypatch.setattr(bridge, "_run_lake_build", fake_build)
+    monkeypatch.setattr(bridge, "_attribute_failures", keep_candidates_for_module_audit)
+    monkeypatch.setattr(bridge.subprocess, "run", fake_subprocess_run)
+    monkeypatch.setattr(bridge, "run_axiom_audit", fake_audit)
+
+    rc = bridge.main(
+        [
+            "--scan-unknown",
+            str(scan_root),
+            "--out-dir",
+            str(out_dir),
+            "--module-prefix",
+            "Generated",
+            "--repo-dir",
+            str(repo_dir),
+            "--lean-cert-out",
+            str(cert_out_dir),
+            "--summary-json",
+            str(summary_path),
+            "--no-tactic-search",
+        ]
+    )
+
+    assert rc == 1
+    assert module_build_calls == [module_a, module_b]
+    assert audit_calls == [([module_b], [theorem_b])]
+    exported_atoms = {
+        atom["name"]: atom
+        for path in cert_out_dir.glob("*.json")
+        for atom in json.loads(path.read_text())["atoms"]
+    }
+    assert exported_atoms["audit_a"]["z3_check_result"] != "lean_verified"
+    assert exported_atoms["audit_b"]["z3_check_result"] == "lean_verified"
+    summary = json.loads(summary_path.read_text())
+    assert summary["axiom_audit"] == {"passed": 1, "rejected": 0, "error": 1}
+    audit_json = json.loads((out_dir / "axiom_audit.json").read_text())
+    assert audit_json[theorem_a]["status"] == "error"
+    assert audit_json[theorem_b]["status"] == "passed"
+    assert (
+        out_dir
+        / "axiom_audit_logs"
+        / "Generated_Std_Audit_module_a.build.log"
+    ).read_text() == "module A build failed"
 
 
 def test_unrenderable_theorem_is_reported_as_error_without_blocking_module(
@@ -687,3 +823,126 @@ def test_kernel_axiom_audit_lean_e2e(lake_available, tmp_path: Path):
     native = results["AxiomAuditFixture.audit_native"]
     assert native["status"] == "rejected"
     assert "Lean.ofReduceBool" in native["disallowed"]
+
+
+@pytest.mark.lake_available
+def test_failed_module_rebuild_blocks_stale_olean_audit(
+    lake_available, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    repo_dir = tmp_path / "lean-project"
+    generated_dir = repo_dir / "generated"
+    generated_root = generated_dir / "Generated"
+    generated_root.mkdir(parents=True)
+    (repo_dir / "lean-toolchain").write_text(
+        (REPO_ROOT / "lean-toolchain").read_text()
+    )
+    (repo_dir / "lakefile.lean").write_text(
+        "import Lake\n"
+        "open Lake DSL\n"
+        "package staleOleanRegression where\n"
+        "lean_lib Generated where\n"
+        "  srcDir := \"generated\"\n"
+        "  globs := #[.andSubmodules `Generated]\n"
+    )
+    (generated_dir / "Generated.lean").write_text(
+        "namespace Generated\nend Generated\n"
+    )
+
+    token = uuid.uuid4().hex[:8]
+    module_key = f"ci_stale_olean_probe_{token}"
+    atom_name = f"stale_olean_atom_{token}"
+    atom = bridge.collect_unknown_atoms(
+        _bridge_test_cert(f"{module_key}.mm", [atom_name])
+    )[0]
+    module = bridge._module_to_lean_namespace(module_key, "Generated")
+    theorem_name = bridge._lean_theorem_name(atom_name)
+    theorem = f"{module}.{theorem_name}"
+    module_path = generated_dir / Path(*module.split(".")).with_suffix(".lean")
+    module_path.parent.mkdir(parents=True, exist_ok=True)
+    module_path.write_text(
+        f"namespace {module}\n"
+        f"theorem {theorem_name} : True := by\n"
+        "  trivial\n"
+        f"end {module}\n"
+    )
+
+    build_command = bridge._lake_build_command(repo_dir, module)
+    assert build_command is not None
+    good_build = subprocess.run(
+        build_command,
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        timeout=60.0,
+        check=False,
+    )
+    assert good_build.returncode == 0, good_build.stdout + good_build.stderr
+    olean_path = (
+        repo_dir
+        / ".lake"
+        / "build"
+        / "lib"
+        / Path(*module.split(".")).with_suffix(".olean")
+    )
+    assert olean_path.exists()
+
+    axiom_name = f"local_stale_axiom_{token}"
+    broken_name = f"broken_decl_{token}"
+    module_path.write_text(
+        f"namespace {module}\n"
+        f"axiom {axiom_name} : True\n"
+        f"theorem {theorem_name} : True := {axiom_name}\n"
+        f"theorem {broken_name} : False := True.intro\n"
+        f"end {module}\n"
+    )
+    failed_build = subprocess.run(
+        build_command,
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        timeout=60.0,
+        check=False,
+    )
+    assert failed_build.returncode != 0, failed_build.stdout + failed_build.stderr
+    assert olean_path.exists()
+
+    audit_source = tmp_path / "StaleOleanAudit.lean"
+    audit_source.write_text(f"import {module}\n#print axioms {theorem}\n")
+    lake_prefix = bridge._lake_command_prefix(repo_dir)
+    assert lake_prefix is not None
+    stale_audit = subprocess.run(
+        [*lake_prefix, "env", "lean", str(audit_source)],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        timeout=60.0,
+        check=False,
+    )
+    assert stale_audit.returncode == 0, stale_audit.stdout + stale_audit.stderr
+    assert f"'{theorem}' does not depend on any axioms" in stale_audit.stdout
+
+    def unexpected_audit(*_args, **_kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("a failed module rebuild must skip axiom auditing")
+
+    monkeypatch.setattr(bridge, "run_axiom_audit", unexpected_audit)
+    proved = [[atom_name]]
+    failed = [[]]
+    results, results_by_atom = bridge._audit_proved_atoms(
+        [[atom]],
+        proved,
+        failed,
+        1,
+        repo_dir,
+        tmp_path / "audit-output",
+        "Generated",
+    )
+
+    assert results[theorem]["status"] == "error"
+    assert results_by_atom[bridge._atom_key(atom)]["status"] == "error"
+    assert failed == [[atom_name]]
+    assert "type mismatch" in (
+        tmp_path
+        / "audit-output"
+        / "axiom_audit_logs"
+        / f"{module.replace('.', '_')}.build.log"
+    ).read_text()

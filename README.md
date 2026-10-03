@@ -26,7 +26,7 @@ The promoted path is: select Z3 `unknown` atoms, translate them with typed metad
 
 ## Bridge acceptance invariant
 
-An atom is `lean_verified` only when it came from Z3 `unknown`, generated Lean builds without unresolved manual lemmas, current translator metadata matches, and the kernel axiom audit passes (allowing only `propext`, `Classical.choice`, and `Quot.sound`). Audit failures block promotion; see [`docs/LEAN_HARNESS_CONTRACT.md`](docs/LEAN_HARNESS_CONTRACT.md) for fail-closed behavior and result locations. Audits run one Lean module at a time, with logs in `<out-dir>/axiom_audit_logs/` (module dots are replaced with underscores), so a module that fails to build errors only its own atoms.
+An atom is `lean_verified` only when it came from Z3 `unknown`, generated Lean builds without unresolved manual lemmas, current translator metadata matches, and the kernel axiom audit passes (allowing only `propext`, `Classical.choice`, and `Quot.sound`). Audit failures block promotion; see [`docs/LEAN_HARNESS_CONTRACT.md`](docs/LEAN_HARNESS_CONTRACT.md) for fail-closed behavior and result locations. Audits run one Lean module at a time. After an aggregate build fails, each module is rebuilt before its audit; a module that does not build in this run is marked as an error and is never audited from a previous run's artifacts. Module build and audit logs are written under `<out-dir>/axiom_audit_logs/`, with dots replaced by underscores in module names.
 
 ## Architecture in one picture
 

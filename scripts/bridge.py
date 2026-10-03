@@ -208,6 +208,7 @@ def _audit_proved_atoms(
     atoms_per_payload: List[List[IngestedAtom]],
     proved_per_payload: List[List[str]],
     failed_per_payload: List[List[str]],
+    build_rc: int,
     repo_dir: Path,
     out_dir: Path,
     module_prefix: str,
@@ -261,6 +262,34 @@ def _audit_proved_atoms(
         audit_log_dir.mkdir(parents=True, exist_ok=True)
         for module in sorted(theorems_by_module):
             theorem_names = sorted(theorems_by_module[module])
+            if build_rc != 0:
+                build_log_path = (
+                    audit_log_dir / f"{module.replace('.', '_')}.build.log"
+                )
+                cmd = _lake_build_command(repo_dir, module)
+                module_build_failed = cmd is None
+                if cmd is None:
+                    build_log_path.write_text("error: `lake` not found on PATH\n")
+                else:
+                    try:
+                        proc = subprocess.run(  # noqa: S603 - explicit lake invocation
+                            cmd,
+                            cwd=repo_dir,
+                            capture_output=True,
+                            text=True,
+                        )
+                    except OSError as exc:
+                        build_log_path.write_text(
+                            f"error: module build could not start: {exc}\n"
+                        )
+                        module_build_failed = True
+                    else:
+                        build_log_path.write_text(proc.stdout + proc.stderr)
+                        module_build_failed = proc.returncode != 0
+                if module_build_failed:
+                    for theorem in theorem_names:
+                        audit_results[theorem] = dict(error_result)
+                    continue
             module_results = run_axiom_audit(
                 repo_dir,
                 [module],
@@ -1727,6 +1756,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             atoms_per_payload,
             proved_per_payload,
             per_payload_failed,
+            rc,
             args.repo_dir,
             args.out_dir,
             args.module_prefix,

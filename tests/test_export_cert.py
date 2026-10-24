@@ -183,53 +183,48 @@ def test_all_verified_flips_when_every_atom_is_proved():
     assert upgraded["all_verified"] is True
 
 
-def test_all_verified_counts_trusted_and_unsat_atoms():
+def _upgrade_with_lean_atom(atoms: list) -> dict:
     upgraded = upgrade_certificate(
-        cert=_certificate([_trusted_atom("trusted"), _atom("unsat", z3="unsat")]),
-        proved_atoms=[],
+        cert=_certificate([_atom("candidate"), *atoms]),
+        proved_atoms=["candidate"],
         failed_atoms=[],
         lean_version="x",
+    )
+    candidate = next(atom for atom in upgraded["atoms"] if atom["name"] == "candidate")
+    assert candidate["z3_check_result"] == LEAN_VERIFIED
+    return upgraded
+
+
+def test_all_verified_counts_trusted_and_unsat_atoms():
+    upgraded = _upgrade_with_lean_atom(
+        [_trusted_atom("trusted"), _atom("unsat", z3="unsat")]
     )
     assert upgraded["all_verified"] is True
 
 
 def test_all_verified_rejects_unknown_atoms_alongside_trusted_atoms():
-    upgraded = upgrade_certificate(
-        cert=_certificate([_trusted_atom("trusted"), _atom("unknown")]),
-        proved_atoms=[],
-        failed_atoms=[],
-        lean_version="x",
-    )
+    upgraded = _upgrade_with_lean_atom([_trusted_atom("trusted"), _atom("unknown")])
     assert upgraded["all_verified"] is False
 
 
-def test_all_verified_accepts_only_trusted_atoms():
+def test_all_verified_preserves_input_when_no_atom_is_upgraded():
+    cert = _certificate([_trusted_atom("trusted")])
     upgraded = upgrade_certificate(
-        cert=_certificate([_trusted_atom("trusted")]),
+        cert=cert,
         proved_atoms=[],
         failed_atoms=[],
         lean_version="x",
     )
-    assert upgraded["all_verified"] is True
+    assert upgraded["all_verified"] is cert["all_verified"] is False
 
 
 def test_all_verified_keeps_legacy_unsat_verified_atoms():
-    upgraded = upgrade_certificate(
-        cert=_certificate([_atom("legacy", z3="unsat")]),
-        proved_atoms=[],
-        failed_atoms=[],
-        lean_version="x",
-    )
+    upgraded = _upgrade_with_lean_atom([_atom("legacy", z3="unsat")])
     assert upgraded["all_verified"] is True
 
 
 def test_all_verified_rejects_verified_status_with_skipped_z3_result():
-    upgraded = upgrade_certificate(
-        cert=_certificate([_atom("skipped", z3="skipped")]),
-        proved_atoms=[],
-        failed_atoms=[],
-        lean_version="x",
-    )
+    upgraded = _upgrade_with_lean_atom([_atom("skipped", z3="skipped")])
     assert upgraded["all_verified"] is False
 
 

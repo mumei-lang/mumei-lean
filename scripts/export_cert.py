@@ -634,14 +634,16 @@ def _upgrade_single_certificate(
         # and the upstream resolver only checks per-atom content
         # hashes, so we drop it explicitly to avoid stale metadata.
         cert.pop("certificate_hash", None)
-    atoms = cert.get("atoms", [])
-    if atoms:
-        cert["all_verified"] = all(
-            a.get("status") == "trusted"
-            or a.get("z3_check_result") in {"unsat", LEAN_VERIFIED}
-            for a in atoms
-            if isinstance(a, dict)
-        )
+        # ``all_verified`` flips to true iff every atom is ``trusted``,
+        # ``unsat`` or ``lean_verified`` (and at least one atom exists).
+        atoms = cert.get("atoms", [])
+        if atoms:
+            cert["all_verified"] = all(
+                a.get("status") == "trusted"
+                or a.get("z3_check_result") in {"unsat", LEAN_VERIFIED}
+                for a in atoms
+                if isinstance(a, dict)
+            )
     return upgraded_any
 
 

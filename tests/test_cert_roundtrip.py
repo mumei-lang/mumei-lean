@@ -165,11 +165,17 @@ def test_lean_parser_and_writer_round_trip(tmp_path: Path):
 def test_lean_writer_rejects_trusted_atom_with_unsatisfiable_spec(tmp_path: Path):
     """An explicitly unsatisfiable spec keeps the certificate unverified."""
     cert = json.loads(PILOT_FIXTURE.read_text())
+    spec_validation = {
+        "status": "unsatisfiable",
+        "is_satisfiable": False,
+        "trace_id": "trusted_unsatisfiable_spec",
+        "spec_metadata": {"source_file": "roundtrip.mm"},
+    }
     cert["atoms"].append({
         "name": "trusted_unsatisfiable_spec",
         "z3_check_result": "skipped",
         "status": "trusted",
-        "spec_validation_result": {"is_satisfiable": False},
+        "spec_validation_result": spec_validation,
     })
     cert_path = tmp_path / "trusted_unsatisfiable_spec.proof-cert.json"
     cert_path.write_text(json.dumps(cert))
@@ -186,7 +192,14 @@ def test_lean_writer_rejects_trusted_atom_with_unsatisfiable_spec(tmp_path: Path
     )
     summary = json.loads(proc.stdout.strip().splitlines()[-1])
     written = json.loads(summary["written_json"])
-    assert written["all_verified"] is False
+    written_again = json.loads(summary["written_json_again"])
+    for output in (written, written_again):
+        assert output["all_verified"] is False
+        trusted = next(
+            atom for atom in output["atoms"]
+            if atom["name"] == "trusted_unsatisfiable_spec"
+        )
+        assert trusted["spec_validation_result"] == spec_validation
 
 
 @pytest.mark.skipif(not _have_lake(),

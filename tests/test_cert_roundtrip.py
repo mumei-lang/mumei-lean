@@ -114,8 +114,16 @@ def _have_lake() -> bool:
                     reason="MUMEI_LEAN_SKIP_LIVE=1 set")
 def test_lean_parser_and_writer_round_trip(tmp_path: Path):
     """Drive the parser/writer end-to-end with the pilot fixture."""
+    cert = json.loads(PILOT_FIXTURE.read_text())
+    cert["atoms"].append({
+        "name": "trusted_roundtrip",
+        "z3_check_result": "skipped",
+        "status": "trusted",
+    })
+    cert_path = tmp_path / "trusted_roundtrip.proof-cert.json"
+    cert_path.write_text(json.dumps(cert))
     proc = subprocess.run(
-        ["lake", "env", "lean", "--run", str(DRIVER_LEAN), str(PILOT_FIXTURE)],
+        ["lake", "env", "lean", "--run", str(DRIVER_LEAN), str(cert_path)],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
@@ -136,8 +144,12 @@ def test_lean_parser_and_writer_round_trip(tmp_path: Path):
     assert written["lean_version"] == "lean4-test"
     assert written["all_verified"] is True
     for atom in written["atoms"]:
-        assert atom["z3_check_result"] == "lean_verified"
-        assert atom["status"] == "verified"
+        if atom["name"] == "trusted_roundtrip":
+            assert atom["z3_check_result"] == "skipped"
+            assert atom["status"] == "trusted"
+        else:
+            assert atom["z3_check_result"] == "lean_verified"
+            assert atom["status"] == "verified"
 
 
 @pytest.mark.skipif(not _have_lake(),

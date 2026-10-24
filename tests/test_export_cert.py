@@ -196,8 +196,9 @@ def _upgrade_with_lean_atom(atoms: list) -> dict:
 
 
 def test_all_verified_counts_trusted_and_unsat_atoms():
+    unsat = {**_atom("unsat", z3="unsat"), "spec_validation_result": {}}
     upgraded = _upgrade_with_lean_atom(
-        [_trusted_atom("trusted"), _atom("unsat", z3="unsat")]
+        [_trusted_atom("trusted"), unsat]
     )
     assert upgraded["all_verified"] is True
 
@@ -225,6 +226,24 @@ def test_all_verified_keeps_legacy_unsat_verified_atoms():
 
 def test_all_verified_rejects_verified_status_with_skipped_z3_result():
     upgraded = _upgrade_with_lean_atom([_atom("skipped", z3="skipped")])
+    assert upgraded["all_verified"] is False
+
+
+def test_all_verified_rejects_trusted_atom_with_unsatisfiable_spec():
+    trusted = {
+        **_trusted_atom("trusted"),
+        "spec_validation_result": {"is_satisfiable": False},
+    }
+    upgraded = _upgrade_with_lean_atom([trusted])
+    assert upgraded["all_verified"] is False
+
+
+def test_all_verified_rejects_unsat_atom_with_unsatisfiable_spec():
+    unsat = {
+        **_atom("unsat", z3="unsat"),
+        "spec_validation_result": {"is_satisfiable": False},
+    }
+    upgraded = _upgrade_with_lean_atom([unsat])
     assert upgraded["all_verified"] is False
 
 

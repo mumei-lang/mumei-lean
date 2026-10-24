@@ -146,13 +146,14 @@ def applyResult
   | _ => a
 
 /-- Compute the `all_verified` field after applying `results`: true iff
-every atom in `cert` ends up with `z3_check_result ∈ {"unsat", "lean_verified"}`.
-This matches mumei's resolver semantics (`unsat` from Z3 or
-`lean_verified` from this bridge are the only two "proved" states). -/
+every atom in `cert` has status `trusted` or ends up with
+`z3_check_result ∈ {"unsat", "lean_verified"}`. -/
 def computeAllVerified
     (atoms : List AtomCertificateData) : Bool :=
   atoms.all fun a =>
-    a.z3CheckResult == "unsat" || a.z3CheckResult == "lean_verified"
+    a.status == "trusted"
+      || a.z3CheckResult == "unsat"
+      || a.z3CheckResult == "lean_verified"
 
 /-- Build the JSON payload for a `.lean-cert.json` file.
 

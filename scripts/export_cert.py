@@ -635,12 +635,20 @@ def _upgrade_single_certificate(
         # hashes, so we drop it explicitly to avoid stale metadata.
         cert.pop("certificate_hash", None)
         # ``all_verified`` flips to true iff every atom is ``trusted``,
-        # ``unsat`` or ``lean_verified`` (and at least one atom exists).
+        # ``unsat`` or ``lean_verified``, and its spec is satisfiable
+        # (or has no satisfiability result), with at least one atom present.
         atoms = cert.get("atoms", [])
         if atoms:
             cert["all_verified"] = all(
-                a.get("status") == "trusted"
-                or a.get("z3_check_result") in {"unsat", LEAN_VERIFIED}
+                (
+                    a.get("status") == "trusted"
+                    or a.get("z3_check_result") in {"unsat", LEAN_VERIFIED}
+                )
+                and (
+                    not isinstance(a.get("spec_validation_result"), dict)
+                    or a["spec_validation_result"].get("is_satisfiable", True)
+                    is not False
+                )
                 for a in atoms
                 if isinstance(a, dict)
             )

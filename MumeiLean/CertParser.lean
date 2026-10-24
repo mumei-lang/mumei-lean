@@ -56,7 +56,16 @@ structure AtomCertificateData where
   bridgeLemmaHash   : String
   manualLemmaReason : Option String
   leanResultMetadata : Option LeanResultMetadataData
-  deriving Repr, Inhabited
+  specValidation   : Option Json := none
+  deriving Inhabited
+
+def AtomCertificateData.specSatisfiable (atom : AtomCertificateData) : Option Bool :=
+  match atom.specValidation with
+  | none => none
+  | some validation =>
+    match validation.getObjValAs? Bool "is_satisfiable" with
+    | .ok satisfiable => some satisfiable
+    | .error _        => none
 
 /-- Lean-side mirror of mumei `ProofCertificate` (subset of fields used
 by the bridge). -/
@@ -71,7 +80,7 @@ structure ProofCertificateData where
   certificateHash  : String
   allVerified      : Bool
   atoms            : List AtomCertificateData
-  deriving Repr, Inhabited
+  deriving Inhabited
 
 /-- Look up `key` in a JSON object and decode it as `String`. -/
 private def getStr (j : Json) (key : String) : Except String String :=
@@ -101,6 +110,12 @@ private def getOptStr (j : Json) (key : String) : Option String :=
                      | .ok s    => some s
                      | .error _ => none
   | .error _      => none
+
+/-- Read the raw spec-validation value when present. -/
+private def getSpecValidation (j : Json) : Option Json :=
+  match j.getObjVal? "spec_validation_result" with
+  | .ok validation => some validation
+  | .error _ => none
 
 /-- Decode a JSON array of strings, returning `[]` if absent. -/
 private def getStrArrOr (j : Json) (key : String) : List String :=
@@ -170,6 +185,7 @@ def parseAtomCertificate (j : Json) : Except String AtomCertificateData := do
     bridgeLemmaHash   := getStrOr j "bridge_lemma_hash" "",
     manualLemmaReason := getOptStr j "manual_lemma_reason",
     leanResultMetadata := getLeanResultMetadata j,
+    specValidation   := getSpecValidation j,
   }
 
 /-- Parse a mumei `.proof-cert.json` payload into a

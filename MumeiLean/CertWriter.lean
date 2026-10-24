@@ -71,11 +71,14 @@ def leanResultMetadataToJson (m : LeanResultMetadataData) : Json :=
 
 /-- Serialise an `AtomCertificateData` back to JSON. -/
 def atomToJson (a : AtomCertificateData) : Json :=
-  Json.mkObj [
+  Json.mkObj ([
     ("name",            Json.str a.name),
     ("z3_check_result", Json.str a.z3CheckResult),
     ("z3_result_class", Json.str a.z3ResultClass),
     ("status",          Json.str a.status),
+  ] ++
+    (a.specValidation.toList.map fun validation =>
+      ("spec_validation_result", validation)) ++ [
     ("content_hash",    Json.str a.contentHash),
     ("proof_hash",      Json.str a.proofHash),
     ("requires",        Json.str a.requires),
@@ -92,7 +95,7 @@ def atomToJson (a : AtomCertificateData) : Json :=
       match a.leanResultMetadata with
       | none   => Json.null
       | some m => leanResultMetadataToJson m),
-  ]
+  ])
 
 /-- Mirror of `_unknown_lean_candidate` in `scripts/export_cert.py`:
 the atom's Z3 outcome must be in the unknown/escalation class before a
@@ -146,13 +149,16 @@ def applyResult
   | _ => a
 
 /-- Compute the `all_verified` field after applying `results`: true iff
-every atom in `cert` ends up with `z3_check_result ∈ {"unsat", "lean_verified"}`.
-This matches mumei's resolver semantics (`unsat` from Z3 or
-`lean_verified` from this bridge are the only two "proved" states). -/
+every atom in `cert` has status `trusted` or ends up with
+`z3_check_result ∈ {"unsat", "lean_verified"}`, and no atom has an
+explicitly unsatisfiable spec-validation result. -/
 def computeAllVerified
     (atoms : List AtomCertificateData) : Bool :=
   atoms.all fun a =>
-    a.z3CheckResult == "unsat" || a.z3CheckResult == "lean_verified"
+    (a.status == "trusted"
+      || a.z3CheckResult == "unsat"
+      || a.z3CheckResult == "lean_verified")
+      && a.specSatisfiable != some false
 
 /-- Build the JSON payload for a `.lean-cert.json` file.
 

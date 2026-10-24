@@ -32,6 +32,7 @@ def main (args : List String) : IO UInt32 := do
         IO.eprintln s!"reparse error: {e}"
         pure 2
       | .ok cert2 => do
+        let out2 := writeLeanCertificate cert2 [] "lean4-test"
         let summary := Json.mkObj [
           ("input_atom_count",  Json.num cert.atoms.length),
           ("output_atom_count", Json.num cert2.atoms.length),
@@ -68,6 +69,7 @@ def main (args : List String) : IO UInt32 := do
               | none => Json.null
             | none => Json.null),
           ("written_json",      Json.str out),
+          ("written_json_again", Json.str out2),
         ]
         IO.println summary.compress
         pure 0

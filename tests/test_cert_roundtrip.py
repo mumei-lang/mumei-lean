@@ -120,6 +120,12 @@ def test_lean_parser_and_writer_round_trip(tmp_path: Path):
         "z3_check_result": "skipped",
         "status": "trusted",
     })
+    cert["atoms"].append({
+        "name": "trusted_missing_spec_flag",
+        "z3_check_result": "skipped",
+        "status": "trusted",
+        "spec_validation_result": {},
+    })
     cert_path = tmp_path / "trusted_roundtrip.proof-cert.json"
     cert_path.write_text(json.dumps(cert))
     proc = subprocess.run(
@@ -144,12 +150,43 @@ def test_lean_parser_and_writer_round_trip(tmp_path: Path):
     assert written["lean_version"] == "lean4-test"
     assert written["all_verified"] is True
     for atom in written["atoms"]:
-        if atom["name"] == "trusted_roundtrip":
+        if atom["name"] in {"trusted_roundtrip", "trusted_missing_spec_flag"}:
             assert atom["z3_check_result"] == "skipped"
             assert atom["status"] == "trusted"
         else:
             assert atom["z3_check_result"] == "lean_verified"
             assert atom["status"] == "verified"
+
+
+@pytest.mark.skipif(not _have_lake(),
+                    reason="lake not on PATH; skipping live Lean round-trip")
+@pytest.mark.skipif(os.environ.get("MUMEI_LEAN_SKIP_LIVE") == "1",
+                    reason="MUMEI_LEAN_SKIP_LIVE=1 set")
+def test_lean_writer_rejects_trusted_atom_with_unsatisfiable_spec(tmp_path: Path):
+    """An explicitly unsatisfiable spec keeps the certificate unverified."""
+    cert = json.loads(PILOT_FIXTURE.read_text())
+    cert["atoms"].append({
+        "name": "trusted_unsatisfiable_spec",
+        "z3_check_result": "skipped",
+        "status": "trusted",
+        "spec_validation_result": {"is_satisfiable": False},
+    })
+    cert_path = tmp_path / "trusted_unsatisfiable_spec.proof-cert.json"
+    cert_path.write_text(json.dumps(cert))
+    proc = subprocess.run(
+        ["lake", "env", "lean", "--run", str(DRIVER_LEAN), str(cert_path)],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    assert proc.returncode == 0, (
+        f"lake env lean exited {proc.returncode}\n"
+        f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+    summary = json.loads(proc.stdout.strip().splitlines()[-1])
+    written = json.loads(summary["written_json"])
+    assert written["all_verified"] is False
 
 
 @pytest.mark.skipif(not _have_lake(),

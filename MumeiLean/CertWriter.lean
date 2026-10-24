@@ -147,13 +147,15 @@ def applyResult
 
 /-- Compute the `all_verified` field after applying `results`: true iff
 every atom in `cert` has status `trusted` or ends up with
-`z3_check_result ∈ {"unsat", "lean_verified"}`. -/
+`z3_check_result ∈ {"unsat", "lean_verified"}`, and no atom has an
+explicitly unsatisfiable spec-validation result. -/
 def computeAllVerified
     (atoms : List AtomCertificateData) : Bool :=
   atoms.all fun a =>
-    a.status == "trusted"
+    (a.status == "trusted"
       || a.z3CheckResult == "unsat"
-      || a.z3CheckResult == "lean_verified"
+      || a.z3CheckResult == "lean_verified")
+      && a.specSatisfiable != some false
 
 /-- Build the JSON payload for a `.lean-cert.json` file.
 

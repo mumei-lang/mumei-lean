@@ -34,6 +34,10 @@ def _atom(name: str, z3: str = "unknown") -> dict:
     }
 
 
+def _trusted_atom(name: str) -> dict:
+    return {**_atom(name, z3="skipped"), "status": "trusted"}
+
+
 #: Contract fields stamped by `_metadata_for_atoms` on every emitted
 #: `lean_result_metadata` entry — metadata fixtures asserting promotion must
 #: carry them or the stale-translator gate correctly rejects the result.
@@ -177,6 +181,56 @@ def test_all_verified_flips_when_every_atom_is_proved():
         lean_version="x",
     )
     assert upgraded["all_verified"] is True
+
+
+def test_all_verified_counts_trusted_and_unsat_atoms():
+    upgraded = upgrade_certificate(
+        cert=_certificate([_trusted_atom("trusted"), _atom("unsat", z3="unsat")]),
+        proved_atoms=[],
+        failed_atoms=[],
+        lean_version="x",
+    )
+    assert upgraded["all_verified"] is True
+
+
+def test_all_verified_rejects_unknown_atoms_alongside_trusted_atoms():
+    upgraded = upgrade_certificate(
+        cert=_certificate([_trusted_atom("trusted"), _atom("unknown")]),
+        proved_atoms=[],
+        failed_atoms=[],
+        lean_version="x",
+    )
+    assert upgraded["all_verified"] is False
+
+
+def test_all_verified_accepts_only_trusted_atoms():
+    upgraded = upgrade_certificate(
+        cert=_certificate([_trusted_atom("trusted")]),
+        proved_atoms=[],
+        failed_atoms=[],
+        lean_version="x",
+    )
+    assert upgraded["all_verified"] is True
+
+
+def test_all_verified_keeps_legacy_unsat_verified_atoms():
+    upgraded = upgrade_certificate(
+        cert=_certificate([_atom("legacy", z3="unsat")]),
+        proved_atoms=[],
+        failed_atoms=[],
+        lean_version="x",
+    )
+    assert upgraded["all_verified"] is True
+
+
+def test_all_verified_rejects_verified_status_with_skipped_z3_result():
+    upgraded = upgrade_certificate(
+        cert=_certificate([_atom("skipped", z3="skipped")]),
+        proved_atoms=[],
+        failed_atoms=[],
+        lean_version="x",
+    )
+    assert upgraded["all_verified"] is False
 
 
 def test_upgrade_certificate_can_attach_harness_contract():

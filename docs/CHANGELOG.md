@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-24: Trusted atoms in `all_verified` (#136)
+
+- Aligned `scripts/export_cert.py` and native `CertWriter.lean` certificate
+  exports: trusted atoms count toward `all_verified` only when the spec is not
+  explicitly unsatisfiable; a passing Z3 or Lean result follows the same
+  satisfiability condition.
+- The native path now reads
+  `spec_validation_result.is_satisfiable`. Missing satisfiability metadata is
+  treated as satisfiable for compatibility, and the Python exporter preserves
+  the existing value when it performs no atom upgrade.
+- No certificate JSON schema change.
+
 ## 2026-09-22: Statement-sequence-middle `task_group` lowering (P31 close-out)
 
 - New lowering rules `task_group_all_seq_lowering` / `task_group_any_seq_lowering` (spec §4.7): a `task_group:all|any { task {…}; … }` segment in the *middle* of a statement sequence no longer stays partial. The group's value is discarded in statement position; only the children's writes to names `let`-bound in the enclosing sequence are observable. `_statement_sequence_tail` now tracks binding *environments* (one per `any` winner scenario) instead of a single binding list: `task_group:all` applies every child's writes in declaration order (codegen join order; a verified atom never has two children racing on one name), while `task_group:any` branches the continuation into one scenario per child — when the scenarios disagree on the tail, the block lowers to the same candidate-value `List Int` shape as a value-position `any` group (`result ∈ <def>` + `fin_cases`), when they agree it collapses to the plain tail. Winner-scenario fan-out is capped at `_MAX_SEQ_SCENARIOS` (16).

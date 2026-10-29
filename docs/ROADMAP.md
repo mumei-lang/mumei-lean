@@ -23,6 +23,17 @@ atom has `z3_check_result == "lean_verified"`, current `translator_version` and
 that permits Lean results, pass `--allow-lean-verified` explicitly. A mismatch
 remains `stale_translator` and is not promoted.
 
+## Trusted-atom `all_verified` parity (#136) — ✅ Implemented
+
+Both certificate export paths now use the same `all_verified` rule: an atom
+passes when it is trusted or has a successful Z3/Lean result, and its spec is
+not explicitly unsatisfiable. Missing satisfiability metadata remains
+satisfiable for compatibility. The Python exporter preserves the input
+`all_verified` value when it does not upgrade an atom; the native Lean writer
+parses the satisfiability result and applies the same rule. This keeps trusted
+atoms from being treated as proofs when their spec is unsatisfiable, without
+changing the JSON schema.
+
 Run the local contract vocabulary gate before opening a PR that touches `README.md`, `docs/LEAN_HARNESS_CONTRACT.md`, `docs/INTEGRATION.md`, or the bridge scripts:
 
 ```bash

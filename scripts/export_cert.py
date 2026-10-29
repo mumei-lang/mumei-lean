@@ -421,6 +421,21 @@ def _unknown_lean_candidate(atom: dict) -> bool:
     )
 
 
+def _dual_check_candidate(atom: dict) -> bool:
+    return (
+        atom.get("z3_check_result") == Z3CheckResult.UNSAT.value
+        and atom.get("status") == VerificationStatus.VERIFIED.value
+    )
+
+
+def _dual_check_audit_passed(metadata: Optional[dict]) -> bool:
+    return (
+        isinstance(metadata, dict)
+        and metadata.get("axiom_audit") == "passed"
+        and isinstance(metadata.get("kernel_axioms"), list)
+    )
+
+
 def _normalise_atom_names(names: Iterable[str]) -> set:
     out: set = set()
     for name in names:
@@ -449,6 +464,7 @@ def _atom_proved(
     proved: Iterable[str],
     known_witness_override: Iterable[str] = (),
     metadata: Optional[dict] = None,
+    dual_check: bool = False,
 ) -> bool:
     """Return True iff ``atom`` was successfully proved on the Lean side.
 
@@ -460,7 +476,9 @@ def _atom_proved(
     known_witness = name in known_witness_override
     if not known_witness and name not in proved:
         return False
-    if not _unknown_lean_candidate(atom):
+    if not _unknown_lean_candidate(atom) and not (
+        dual_check and _dual_check_candidate(atom)
+    ):
         return False
     if isinstance(metadata, dict) and not known_witness:
         status = str(metadata.get("status", ""))
@@ -473,6 +491,8 @@ def _atom_proved(
     if not _translator_contract_current(atom):
         return False
     if not _lean_result_contract_current(metadata):
+        return False
+    if dual_check and not _dual_check_audit_passed(metadata):
         return False
     source_reason = atom.get("manual_lemma_reason")
     if source_reason and not known_witness:
@@ -553,7 +573,9 @@ def _upgrade_atom_list(
     failed_set: set,
     atom_metadata: Optional[Dict[str, dict]],
     known_witness_override: Optional[set] = None,
-) -> bool:
+    dual_check: bool = False,
+) -> Tuple[bool, bool]:
+    mutated_any = False
     upgraded_any = False
     known_witness_override = known_witness_override or set()
     for atom in atoms:
@@ -561,14 +583,24 @@ def _upgrade_atom_list(
             continue
         name = atom.get("name")
         metadata = (atom_metadata or {}).get(str(name))
+        dual_candidate = dual_check and _dual_check_candidate(atom)
         proved = _atom_proved(
             atom,
             failed_set,
             proved_set,
             known_witness_override,
             metadata,
+            dual_check=dual_candidate,
         )
         if proved:
+            if dual_candidate:
+                atom["lean_dual_check"] = _metadata_for_atom(
+                    atom,
+                    LEAN_VERIFIED,
+                    atom_metadata,
+                )
+                mutated_any = True
+                continue
             atom["z3_check_result"] = LEAN_VERIFIED
             atom["status"] = VerificationStatus.VERIFIED.value
             atom["translator_version"] = TRANSLATOR_VERSION
@@ -586,18 +618,38 @@ def _upgrade_atom_list(
                 ]
             if metadata.get("escalation_reason"):
                 atom["escalation_reason"] = metadata["escalation_reason"]
+            mutated_any = True
             upgraded_any = True
-        elif metadata is not None and _unknown_lean_candidate(atom):
-            status = str(metadata.get("status", MANUAL_LEMMA_REQUIRED))
-            if not _translator_contract_current(atom) or not _lean_result_contract_current(
-                metadata
+        elif dual_candidate or (
+            metadata is not None and _unknown_lean_candidate(atom)
+        ):
+            status = str(
+                metadata.get("status", MANUAL_LEMMA_REQUIRED)
+                if metadata is not None
+                else MANUAL_LEMMA_REQUIRED
+            )
+            if not _translator_contract_current(atom) or (
+                metadata is not None
+                and not _lean_result_contract_current(metadata)
             ):
                 status = "stale_translator"
+            elif (
+                dual_candidate
+                and status == LEAN_VERIFIED
+                and not _dual_check_audit_passed(metadata)
+            ):
+                status = "failed"
+            elif dual_candidate and name in failed_set and status == LEAN_VERIFIED:
+                status = "failed"
             metadata = _metadata_for_atom(
                 atom,
                 status,
                 atom_metadata,
             )
+            if dual_candidate:
+                atom["lean_dual_check"] = metadata
+                mutated_any = True
+                continue
             atom["lean_metadata"] = metadata
             atom["lean_result_metadata"] = metadata
             if metadata.get("unknown_obligation_domain"):
@@ -606,7 +658,7 @@ def _upgrade_atom_list(
                 ]
             if metadata.get("escalation_reason"):
                 atom["escalation_reason"] = metadata["escalation_reason"]
-    return upgraded_any
+    return mutated_any, upgraded_any
 
 
 def _upgrade_single_certificate(
@@ -615,25 +667,28 @@ def _upgrade_single_certificate(
     failed_set: set,
     atom_metadata: Optional[Dict[str, dict]] = None,
     known_witness_override: Optional[set] = None,
+    dual_check: bool = False,
 ) -> bool:
     """Mutate a single per-module certificate in place.
 
     Returns ``True`` iff at least one atom was upgraded.
     """
-    upgraded_any = _upgrade_atom_list(
+    mutated_any, upgraded_any = _upgrade_atom_list(
         cert.get("atoms", []),
         proved_set,
         failed_set,
         atom_metadata,
         known_witness_override,
+        dual_check,
     )
 
-    if upgraded_any:
+    if mutated_any:
         # The mumei certificate_hash is computed over the canonical
         # serialisation; once we mutate atoms it is no longer valid,
         # and the upstream resolver only checks per-atom content
         # hashes, so we drop it explicitly to avoid stale metadata.
         cert.pop("certificate_hash", None)
+    if upgraded_any:
         # ``all_verified`` flips to true iff every atom is ``trusted``,
         # ``unsat`` or ``lean_verified``, and its spec is satisfiable
         # (or has no satisfiability result), with at least one atom present.
@@ -663,6 +718,7 @@ def upgrade_certificate(
     atom_metadata: Optional[Dict[str, dict]] = None,
     harness_contract: Optional[Dict[str, Any]] = None,
     known_witness_override: Optional[Iterable[str]] = None,
+    dual_check: bool = False,
 ) -> dict:
     """Return a new certificate dict with successful Lean proofs marked.
 
@@ -682,6 +738,13 @@ def upgrade_certificate(
 
     if isinstance(out.get("modules"), dict):
         # ProofBundle: recurse into each per-module certificate.
+        dual_atoms = [
+            atom
+            for nested in out["modules"].values()
+            if isinstance(nested, dict)
+            for atom in nested.get("atoms", [])
+            if isinstance(atom, dict)
+        ]
         for nested in out["modules"].values():
             if isinstance(nested, dict):
                 _upgrade_single_certificate(
@@ -690,20 +753,35 @@ def upgrade_certificate(
                     failed_set,
                     atom_metadata,
                     known_witness_set,
+                    dual_check,
                 )
+        if dual_check:
+            if any(_dual_check_candidate(atom) for atom in dual_atoms):
+                out.pop("certificate_hash", None)
+            out.setdefault("summary", {}).update(
+                _dual_check_summary(dual_atoms)
+            )
     elif isinstance(out.get("candidates"), list):
-        if _upgrade_atom_list(
+        mutated_any, upgraded_any = _upgrade_atom_list(
             out["candidates"],
             proved_set,
             failed_set,
             atom_metadata,
             known_witness_set,
-        ):
+            dual_check,
+        )
+        if upgraded_any:
             out.setdefault("summary", {})["lean_verified"] = sum(
                 1
                 for atom in out["candidates"]
                 if isinstance(atom, dict)
                 and atom.get("z3_check_result") == Z3CheckResult.LEAN_VERIFIED.value
+            )
+        if dual_check:
+            if mutated_any:
+                out.pop("certificate_hash", None)
+            out.setdefault("summary", {}).update(
+                _dual_check_summary(out["candidates"])
             )
     else:
         _upgrade_single_certificate(
@@ -712,6 +790,7 @@ def upgrade_certificate(
             failed_set,
             atom_metadata,
             known_witness_set,
+            dual_check,
         )
 
     out["lean_version"] = lean_version
@@ -725,6 +804,21 @@ def upgrade_certificate(
             harness_contract, sort_keys=True
         )
     return out
+
+
+def _dual_check_summary(atoms: Iterable[dict]) -> dict[str, int]:
+    candidates = [
+        atom for atom in atoms if isinstance(atom, dict) and _dual_check_candidate(atom)
+    ]
+    passed = sum(
+        1
+        for atom in candidates
+        if isinstance(atom.get("lean_dual_check"), dict)
+        and atom["lean_dual_check"].get("status") == LEAN_VERIFIED
+        and atom["lean_dual_check"].get("axiom_audit") == "passed"
+        and isinstance(atom["lean_dual_check"].get("kernel_axioms"), list)
+    )
+    return {"dual_checked": len(candidates), "dual_check_passed": passed}
 
 
 def _read_text_or_die(path: Path) -> str:

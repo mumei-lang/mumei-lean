@@ -26,7 +26,7 @@ mismatch remains `stale_translator` and is not proven.
 
 ## Unknown obligation bridge contract
 
-The only promoted Lean path is:
+The existing Lean promotion path is:
 
 1. Scan mumei proof certificates for atoms whose `z3_result_class == "unknown"` or `z3_check_result == "unknown"`.
 2. Translate each candidate to generated Lean with `translator_ir` metadata, `logic_fragment_tags`, and any `manual_lemma_reason` preserved.
@@ -44,8 +44,27 @@ Field handling is fixed:
 | `translator_ir` | Typed lowering contract emitted into generated Lean and copied into `.lean-cert.json` for mumei-side auditing. |
 | `manual_lemma_reason` | Stable reason a generated theorem needs human lemma work; dry runs should emit `manual_lemma_required`, not `lean_verified`. |
 | `stale_translator` | mumei-side rejection when `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract. |
+| `lean_dual_check` | Separate Lean proof and kernel-audit metadata for an opted-in, verified Z3-unsat atom; it does not alter proof status or trust. |
 
 Current contract constants are `translator_version = mumei-lean-translator-ir-v2` and `bridge_lemma_hash = 5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9`.
+
+## Z3-unsat dual-check route
+
+Pass `--dual-check` to additionally collect only atoms with
+`z3_check_result == "unsat"` and `status == "verified"`. Trusted atoms are
+never selected. The producer writes the result to `lean_dual_check`, leaving
+the original Z3 result, status, `lean_metadata`, `lean_result_metadata`,
+atom-level translator identifiers, `escalation_reason`, and `all_verified`
+unchanged. A theorem is counted in `dual_check_passed` only when its metadata
+has `status == "lean_verified"`, current translator identifiers,
+`axiom_audit == "passed"`, and a `kernel_axioms` list. Build failures,
+manual-lemma requirements, stale contracts, and rejected or missing audits
+remain visible as non-passing metadata. The flag is off by default; without it,
+the existing unknown-only behavior and output remain unchanged.
+
+This field records an independent proof, not a change in trust or proof status.
+mumei Claim Book can use it for G5 only when `--allow-lean-verified` is
+explicitly enabled.
 
 ## Scope
 

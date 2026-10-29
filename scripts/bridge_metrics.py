@@ -121,6 +121,7 @@ def _summary_details(
     payloads: List[Tuple[Path, dict]],
     metadata_by_payload: List[Dict[str, dict]],
     atoms_per_payload: List[List[IngestedAtom]],
+    dual_check: bool = False,
 ) -> List[dict]:
     details: List[dict] = []
     for (src_path, _payload), metadata, atoms in zip(
@@ -128,25 +129,50 @@ def _summary_details(
         metadata_by_payload,
         atoms_per_payload,
     ):
+        fallback_atoms = atoms
+        if dual_check:
+            fallback_atoms = [
+                atom
+                for atom in atoms
+                if atom.z3_check_result in {"unknown", "spurious_candidate"}
+                or atom.z3_result_class == "unknown"
+                or atom.escalation_reason == "spurious_candidate"
+            ]
         proved = sum(
             1
-            for atom in atoms
+            for atom in fallback_atoms
             if metadata.get(atom.name, {}).get("status") == LEAN_VERIFIED
         )
         known_witness_used = sum(
             1
-            for atom in atoms
+            for atom in fallback_atoms
             if metadata.get(atom.name, {}).get("known_witness_used")
         )
-        details.append(
-            {
-                "source": str(src_path),
-                "candidate_count": len(atoms),
-                "lean_fallback": {
-                    "attempted": len(atoms),
-                    "proved": proved,
-                    "known_witness_used": known_witness_used,
-                },
-            }
-        )
+        detail = {
+            "source": str(src_path),
+            "candidate_count": len(atoms),
+            "lean_fallback": {
+                "attempted": len(fallback_atoms),
+                "proved": proved,
+                "known_witness_used": known_witness_used,
+            },
+        }
+        if dual_check:
+            dual_atoms = [
+                atom
+                for atom in atoms
+                if atom.z3_check_result == "unsat" and atom.status == "verified"
+            ]
+            detail["dual_checked"] = len(dual_atoms)
+            detail["dual_check_passed"] = sum(
+                1
+                for atom in dual_atoms
+                if metadata.get(atom.name, {}).get("status") == LEAN_VERIFIED
+                and metadata.get(atom.name, {}).get("axiom_audit") == "passed"
+                and isinstance(
+                    metadata.get(atom.name, {}).get("kernel_axioms"),
+                    list,
+                )
+            )
+        details.append(detail)
     return details

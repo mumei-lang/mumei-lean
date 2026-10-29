@@ -130,6 +130,10 @@
           "type": ["object", "null"],
           "additionalProperties": true
         },
+        "lean_dual_check": {
+          "type": ["object", "null"],
+          "additionalProperties": true
+        },
         "counterexample_validation": {
           "type": ["object", "null"],
           "additionalProperties": true

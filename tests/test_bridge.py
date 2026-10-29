@@ -724,6 +724,63 @@ def test_main_scan_unknown_writes_summary_json(tmp_path: Path):
     assert payload["harness_contract"]["input_kind"] == "scan_unknown"
 
 
+def test_dual_check_dry_run_preserves_z3_state_and_reports_separate_counts(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    cert_path = tmp_path / "mixed.json"
+    unsat = _atom("unsat", z3="unsat")
+    unknown = _atom("unknown")
+    trusted = {**_atom("trusted", z3="skipped"), "status": "trusted"}
+    cert_path.write_text(
+        json.dumps(_cert("std/math.mm", [unsat, unknown, trusted]))
+    )
+    out_cert = tmp_path / "out.lean-cert.json"
+    summary = tmp_path / "summary.json"
+
+    rc = main(
+        [
+            "--cert",
+            str(cert_path),
+            "--out-dir",
+            str(tmp_path / "generated"),
+            "--repo-dir",
+            str(tmp_path / "project"),
+            "--lean-cert-out",
+            str(out_cert),
+            "--summary-json",
+            str(summary),
+            "--no-build",
+            "--dual-check",
+        ]
+    )
+
+    assert rc == 0
+    exported = json.loads(out_cert.read_text())
+    by_name = {atom["name"]: atom for atom in exported["atoms"]}
+    assert by_name["unsat"]["z3_check_result"] == "unsat"
+    assert by_name["unsat"]["status"] == "verified"
+    assert by_name["unsat"]["lean_dual_check"]["status"] != "lean_verified"
+    assert "lean_result_metadata" not in by_name["unsat"]
+    assert by_name["unknown"]["z3_check_result"] == "unknown"
+    assert "lean_dual_check" not in by_name["unknown"]
+    assert by_name["trusted"] == trusted
+    payload = json.loads(summary.read_text())
+    assert payload["total_unknown"] == 1
+    assert payload["dual_checked"] == 1
+    assert payload["dual_check_passed"] == 0
+    assert payload["modules"][0]["unknown_count"] == 1
+    assert payload["modules"][0]["dual_checked"] == 1
+    assert any(
+        "verified Z3-unsat atoms" in contract
+        for contract in payload["harness_contract"]["artifact_contracts"]
+    )
+    assert any(
+        "lean_dual_check" in contract
+        for contract in payload["harness_contract"]["artifact_contracts"]
+    )
+    assert "dual checks: 1 checked, 0 passed" in capsys.readouterr().out
+
+
 def test_main_scan_unknown_writes_empty_summary_when_dir_empty(tmp_path: Path):
     """Empty scans still produce a summary so CI artefacts are stable."""
     summary = tmp_path / "summary.json"

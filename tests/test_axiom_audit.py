@@ -282,6 +282,77 @@ def test_bridge_axiom_audit_controls_promotion_and_metadata(
 @pytest.mark.parametrize(
     ("status", "axioms", "disallowed"),
     [
+        ("passed", ["Classical.choice"], []),
+        ("rejected", ["User.assumption"], ["User.assumption"]),
+    ],
+)
+def test_bridge_dual_check_uses_kernel_audit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+    axioms: list[str],
+    disallowed: list[str],
+):
+    cert = _bridge_test_cert("std/math.mm", ["dual_atom"])
+    cert["atoms"][0]["z3_check_result"] = "unsat"
+    cert["atoms"][0]["status"] = "verified"
+    cert_path = tmp_path / "dual.json"
+    cert_path.write_text(json.dumps(cert))
+    output_path = tmp_path / "dual.lean-cert.json"
+    summary_path = tmp_path / "summary.json"
+    theorem = "Generated.Std.Math.dual_atom_correct"
+
+    def fake_build(_repo_dir: Path, log_path: Path) -> tuple[int, float]:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("")
+        return 0, 0.01
+
+    def fake_audit(_repo_dir, modules, theorems, _log_path, _timeout_s):  # noqa: ANN001
+        assert modules == ["Generated.Std.Math"]
+        assert theorems == [theorem]
+        return {
+            theorem: {
+                "status": status,
+                "axioms": axioms,
+                "disallowed": disallowed,
+            }
+        }
+
+    monkeypatch.setattr(bridge, "_lake_command_prefix", lambda _repo: ["lake"])
+    monkeypatch.setattr(bridge, "_run_lake_build", fake_build)
+    monkeypatch.setattr(bridge, "run_axiom_audit", fake_audit)
+
+    rc = bridge.main(
+        [
+            "--cert",
+            str(cert_path),
+            "--out-dir",
+            str(tmp_path / "generated"),
+            "--repo-dir",
+            str(tmp_path / "project"),
+            "--lean-cert-out",
+            str(output_path),
+            "--summary-json",
+            str(summary_path),
+            "--dual-check",
+            "--no-tactic-search",
+        ]
+    )
+
+    assert rc == 0
+    atom = json.loads(output_path.read_text())["atoms"][0]
+    assert atom["z3_check_result"] == "unsat"
+    assert atom["status"] == "verified"
+    assert atom["lean_dual_check"]["axiom_audit"] == status
+    assert atom["lean_dual_check"]["kernel_axioms"] == axioms
+    summary = json.loads(summary_path.read_text())
+    assert summary["dual_checked"] == 1
+    assert summary["dual_check_passed"] == int(status == "passed")
+
+
+@pytest.mark.parametrize(
+    ("status", "axioms", "disallowed"),
+    [
         ("rejected", ["User.assumption"], ["User.assumption"]),
         ("error", [], []),
     ],

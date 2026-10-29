@@ -450,7 +450,10 @@ def _attach_domain_to_translator_ir(
         rules.append(rule)
 
 
-def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
+def collect_unknown_atoms(
+    payload: Any,
+    include_z3_unsat: bool = False,
+) -> List[IngestedAtom]:
     """Walk a certificate / bundle and return Lean escalation candidates."""
     atoms: List[IngestedAtom] = []
     for module_key, cert in _iter_certificates(payload):
@@ -459,11 +462,17 @@ def collect_unknown_atoms(payload: Any) -> List[IngestedAtom]:
                 continue
             z3_check_result = atom.get("z3_check_result")
             escalation_reason = atom.get("escalation_reason", "") or ""
+            is_dual_check_candidate = (
+                include_z3_unsat
+                and z3_check_result == Z3CheckResult.UNSAT.value
+                and atom.get("status") == "verified"
+            )
             is_candidate = (
                 z3_check_result == Z3CheckResult.UNKNOWN.value
                 or atom.get("z3_result_class") == "unknown"
                 or z3_check_result == "spurious_candidate"
                 or escalation_reason == "spurious_candidate"
+                or is_dual_check_candidate
             )
             if not is_candidate:
                 continue

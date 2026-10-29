@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from export_cert import (
     BRIDGE_LEMMA_HASH,
     LEAN_VERIFIED,
@@ -457,6 +459,201 @@ def test_upgrade_certificate_handles_escalation_bundle_metadata():
     assert by_name["manual"]["z3_check_result"] == "unknown"
     assert by_name["manual"]["lean_metadata"]["status"] == "manual_required"
     assert by_name["manual"]["lean_result_metadata"]["status"] == "manual_required"
+
+
+def test_dual_check_success_preserves_z3_proof_fields_and_all_verified():
+    unsat = _atom("already_proved", z3="unsat")
+    unsat["escalation_reason"] = "preserve-me"
+    unsat["lean_metadata"] = {"source": "lean_metadata"}
+    unsat["lean_result_metadata"] = {"source": "lean_result_metadata"}
+    cert = _certificate([unsat, _trusted_atom("trusted")])
+    cert["all_verified"] = False
+    dual_metadata = _meta(
+        status=LEAN_VERIFIED,
+        theorem_name="already_proved_correct",
+        proof_path="Generated/Math.lean",
+        kernel_axioms=["propext"],
+        axiom_audit="passed",
+    )
+
+    upgraded = upgrade_certificate(
+        cert=cert,
+        proved_atoms=["already_proved"],
+        failed_atoms=[],
+        lean_version="lean",
+        atom_metadata={"already_proved": dual_metadata},
+        dual_check=True,
+    )
+    atom = upgraded["atoms"][0]
+
+    assert atom["lean_dual_check"]["status"] == LEAN_VERIFIED
+    assert atom["lean_dual_check"]["theorem_name"] == "already_proved_correct"
+    assert atom["lean_dual_check"]["proof_path"] == "Generated/Math.lean"
+    assert atom["lean_dual_check"]["kernel_axioms"] == ["propext"]
+    assert atom["lean_dual_check"]["axiom_audit"] == "passed"
+    assert atom["z3_check_result"] == "unsat"
+    assert atom["status"] == "verified"
+    assert atom["translator_version"] == TRANSLATOR_VERSION
+    assert atom["bridge_lemma_hash"] == BRIDGE_LEMMA_HASH
+    assert atom["escalation_reason"] == "preserve-me"
+    assert atom["lean_metadata"] == {"source": "lean_metadata"}
+    assert atom["lean_result_metadata"] == {"source": "lean_result_metadata"}
+    assert upgraded["all_verified"] is False
+    assert "certificate_hash" not in upgraded
+    assert upgraded["atoms"][1] == cert["atoms"][1]
+
+
+@pytest.mark.parametrize(
+    ("source_update", "metadata_update", "proved", "failed", "expected"),
+    [
+        ({}, {"status": "manual_lemma_required"}, ["dual"], [], "manual_lemma_required"),
+        ({}, {"status": LEAN_VERIFIED}, ["dual"], [], "failed"),
+        (
+            {"translator_version": "old-translator"},
+            {"status": LEAN_VERIFIED, "translator_version": "old-translator"},
+            ["dual"],
+            [],
+            "stale_translator",
+        ),
+        ({}, {"status": LEAN_VERIFIED}, ["dual"], ["dual"], "failed"),
+    ],
+)
+def test_dual_check_nonverified_attempts_are_recorded(
+    source_update, metadata_update, proved, failed, expected
+):
+    atom = {**_atom("dual", z3="unsat"), **source_update}
+    cert = _certificate([atom])
+    cert["all_verified"] = False
+    metadata = _meta(theorem_name="dual_correct", proof_path="Generated/Math.lean")
+    metadata.update(metadata_update)
+
+    upgraded = upgrade_certificate(
+        cert=cert,
+        proved_atoms=proved,
+        failed_atoms=failed,
+        lean_version="lean",
+        atom_metadata={"dual": metadata},
+        dual_check=True,
+    )
+    dual = upgraded["atoms"][0]["lean_dual_check"]
+
+    assert dual["status"] == expected
+    assert upgraded["atoms"][0]["z3_check_result"] == "unsat"
+    assert upgraded["atoms"][0]["status"] == "verified"
+    assert upgraded["all_verified"] is False
+    assert "certificate_hash" not in upgraded
+
+
+def test_dual_check_rejected_axiom_audit_is_preserved_but_not_counted_as_passed():
+    rejected = _meta(
+        status=LEAN_VERIFIED,
+        theorem_name="dual_correct",
+        proof_path="Generated/Math.lean",
+        kernel_axioms=["User.assumption"],
+        axiom_audit="rejected",
+    )
+    upgraded = upgrade_certificate(
+        cert={
+            "file": "math.mm",
+            "candidates": [_atom("dual", z3="unsat")],
+            "summary": {},
+        },
+        proved_atoms=["dual"],
+        failed_atoms=[],
+        lean_version="lean",
+        atom_metadata={"dual": rejected},
+        dual_check=True,
+    )
+
+    assert upgraded["candidates"][0]["lean_dual_check"]["axiom_audit"] == "rejected"
+    assert upgraded["candidates"][0]["lean_dual_check"]["status"] == "failed"
+    assert upgraded["summary"]["dual_checked"] == 1
+    assert upgraded["summary"]["dual_check_passed"] == 0
+
+
+def test_dual_check_does_not_change_unknown_upgrade_or_default_output():
+    cert = _certificate(
+        [
+            _atom("unsat", z3="unsat"),
+            _atom("unknown"),
+            _trusted_atom("trusted"),
+        ]
+    )
+    off_implicit = upgrade_certificate(
+        cert, ["unsat", "unknown"], [], "lean"
+    )
+    off_explicit = upgrade_certificate(
+        cert, ["unsat", "unknown"], [], "lean", dual_check=False
+    )
+    assert off_implicit == off_explicit
+    assert "lean_dual_check" not in off_explicit["atoms"][0]
+
+    metadata = _meta(
+        status=LEAN_VERIFIED,
+        theorem_name="unknown_correct",
+        proof_path="Generated/Math.lean",
+    )
+    on = upgrade_certificate(
+        cert,
+        ["unsat", "unknown"],
+        [],
+        "lean",
+        atom_metadata={"unknown": metadata},
+        dual_check=True,
+    )
+    assert on["atoms"][0]["z3_check_result"] == "unsat"
+    assert "lean_dual_check" not in on["atoms"][1]
+    assert on["atoms"][1]["z3_check_result"] == LEAN_VERIFIED
+
+
+def test_dual_check_handles_module_and_candidate_envelopes():
+    metadata = _meta(
+        status=LEAN_VERIFIED,
+        theorem_name="dual_correct",
+        proof_path="Generated/Math.lean",
+        kernel_axioms=[],
+        axiom_audit="passed",
+    )
+    cert = _certificate([_atom("dual", z3="unsat")])
+    bundle = {
+        "bundle_version": "1.0",
+        "modules": {"std/math": cert},
+        "summary": {},
+    }
+    upgraded_bundle = upgrade_certificate(
+        bundle,
+        ["dual"],
+        [],
+        "lean",
+        atom_metadata={"dual": metadata},
+        dual_check=True,
+    )
+    assert (
+        upgraded_bundle["modules"]["std/math"]["atoms"][0]["lean_dual_check"][
+            "status"
+        ]
+        == LEAN_VERIFIED
+    )
+    assert upgraded_bundle["summary"]["dual_check_passed"] == 1
+
+    candidates = {
+        "file": "std/math.mm",
+        "candidates": [_atom("dual", z3="unsat")],
+        "summary": {},
+        "certificate_hash": "stale",
+    }
+    upgraded_candidates = upgrade_certificate(
+        candidates,
+        ["dual"],
+        [],
+        "lean",
+        atom_metadata={"dual": metadata},
+        dual_check=True,
+    )
+    assert upgraded_candidates["candidates"][0]["lean_dual_check"]["status"] == LEAN_VERIFIED
+    assert upgraded_candidates["summary"]["dual_checked"] == 1
+    assert upgraded_candidates["summary"]["dual_check_passed"] == 1
+    assert "certificate_hash" not in upgraded_candidates
 
 
 def test_main_end_to_end(tmp_path: Path):

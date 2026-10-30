@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased: Lean dual-check producer
+
+- Added opt-in `scripts/bridge.py --dual-check` support for independently
+  proving verified Z3-unsat atoms. Results are recorded in `lean_dual_check`
+  with kernel axiom audit evidence, without changing the original Z3 result,
+  proof status, or trust.
+
 ## 2026-10-24: Trusted atoms in `all_verified` (#136)
 
 - Aligned `scripts/export_cert.py` and native `CertWriter.lean` certificate

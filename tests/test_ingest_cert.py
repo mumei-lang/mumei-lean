@@ -93,6 +93,40 @@ def test_collect_unknown_atoms_filters_by_z3_check_result():
     assert [a.name for a in atoms] == ["a", "c"]
 
 
+def test_collect_unknown_atoms_includes_only_opted_in_verified_unsat_atoms():
+    cert = _make_certificate(
+        "math.mm",
+        [
+            _make_atom("unknown"),
+            _make_atom("unsat_verified", z3="unsat", status="verified"),
+            _make_atom("unsat_trusted", z3="unsat", status="trusted"),
+        ],
+    )
+
+    assert [atom.name for atom in collect_unknown_atoms(cert)] == ["unknown"]
+    assert [
+        atom.name
+        for atom in collect_unknown_atoms(cert, include_z3_unsat=True)
+    ] == ["unknown", "unsat_verified"]
+
+
+@pytest.mark.parametrize(
+    "envelope",
+    [
+        lambda cert: {"bundle_version": "1.0", "modules": {"std/math": cert}},
+        lambda cert: {"file": cert["file"], "candidates": cert["atoms"]},
+    ],
+)
+def test_collect_unknown_atoms_dual_check_supports_bundle_envelopes(envelope):
+    cert = _make_certificate(
+        "math.mm",
+        [_make_atom("unsat_verified", z3="unsat", status="verified")],
+    )
+
+    [atom] = collect_unknown_atoms(envelope(cert), include_z3_unsat=True)
+    assert atom.name == "unsat_verified"
+
+
 def test_collect_unknown_atoms_accepts_unknown_result_class_only():
     cert = _make_certificate(
         "math.mm",

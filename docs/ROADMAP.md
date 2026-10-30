@@ -2,9 +2,17 @@
 
 ## Cross-project bridge contract
 
-`mumei-lang/mumei/docs/CROSS_PROJECT_ROADMAP.md` owns the global V1 order. For this repo, the V1 rule is narrow: `mumei-lean` expands only the Z3 `unknown` complement path after V1-A/V1-B/V1-C/V1-D produce obligations that the SMT layer cannot close. It is not a general fallback for audit/spec/code findings.
+`mumei-lang/mumei/docs/CROSS_PROJECT_ROADMAP.md` owns the global V1 order. For this repo, the V1 rule is narrow: `mumei-lean` handles Z3 `unknown` obligations after V1-A/V1-B/V1-C/V1-D and can opt in to independently checking verified Z3-unsat atoms. Neither route changes the trust boundary or handles audit/spec/code findings.
 
 Promotion to `lean_verified` requires a successful Lean build plus matching `translator_version` and `bridge_lemma_hash` in both the exported atom and `lean_result_metadata`; mismatches are `stale_translator`. PRs that update this roadmap should review the cross-project roadmap in the same diff and record relevant bridge regression commands from `tests/`.
+
+## Unreleased: Producer-side Lean dual checks
+
+- `scripts/bridge.py --dual-check` opts into re-proving verified Z3-unsat atoms
+  and records the result separately in `lean_dual_check`. The original Z3
+  result, proof status, and trust remain unchanged. mumei-side G5 classification
+  is implemented; Claim Book requires the explicit `--allow-lean-verified`
+  opt-in and a passing kernel axiom audit.
 
 ### Priority 17 bridge surface
 

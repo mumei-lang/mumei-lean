@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import List, Tuple
 
 try:
-    from .proofcert import Z3CheckResult
+    from .proofcert import VerificationStatus, Z3CheckResult
 except ImportError:  # pragma: no cover - direct ``python scripts/bridge_scan.py``
-    from proofcert import Z3CheckResult  # type: ignore
+    from proofcert import VerificationStatus, Z3CheckResult  # type: ignore
 
 
 def _load_cert(path: Path) -> dict:
@@ -26,7 +26,10 @@ def _is_unknown_lean_candidate(atom: dict) -> bool:
     )
 
 
-def _scan_unknown_certs(std_certs_dir: Path) -> List[Tuple[Path, dict]]:
+def _scan_unknown_certs(
+    std_certs_dir: Path,
+    include_z3_unsat: bool = False,
+) -> List[Tuple[Path, dict]]:
     """Return a list of ``(path, certificate_dict)`` for each per-module
     cert under ``std_certs_dir`` that contains at least one ``unknown``
     atom.
@@ -43,7 +46,15 @@ def _scan_unknown_certs(std_certs_dir: Path) -> List[Tuple[Path, dict]]:
         if not isinstance(atoms, list):
             continue
         if any(
-            isinstance(a, dict) and _is_unknown_lean_candidate(a)
+            isinstance(a, dict)
+            and (
+                _is_unknown_lean_candidate(a)
+                or (
+                    include_z3_unsat
+                    and a.get("z3_check_result") == Z3CheckResult.UNSAT.value
+                    and a.get("status") == VerificationStatus.VERIFIED.value
+                )
+            )
             for a in atoms
         ):
             found.append((path, payload))

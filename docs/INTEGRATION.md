@@ -4,9 +4,9 @@
 > modifying the mumei compiler itself.
 
 
-## Unknown obligation bridge contract
+## Bridge contract
 
-The only promoted Lean path is:
+The existing Lean promotion path handles Z3 `unknown` obligations:
 
 1. Scan mumei proof certificates for atoms whose `z3_result_class == "unknown"` or `z3_check_result == "unknown"`; `status == "unknown"` or an `escalation_reason` alone is not a Lean candidate.
 2. Translate each candidate to generated Lean with `translator_ir` metadata, `logic_fragment_tags`, and any `manual_lemma_reason` preserved.
@@ -24,13 +24,14 @@ Field handling is fixed:
 | `translator_ir` | Typed lowering contract emitted into generated Lean and copied into `.lean-cert.json` for mumei-side auditing. |
 | `manual_lemma_reason` | Stable reason a generated theorem needs human lemma work; dry runs should emit `manual_lemma_required`, not `lean_verified`. |
 | `kernel_axioms` / `axiom_audit` | Kernel-reported axioms and the audit status (`passed`, `rejected`, or `error`) for an audited theorem. |
+| `lean_dual_check` | Separate Lean re-proof metadata for a Z3-unsat verified atom; it does not change the atom's proof status or Z3 result. |
 | `stale_translator` | mumei-side rejection when `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract. |
 
 Current contract constants are `translator_version = mumei-lean-translator-ir-v2` and `bridge_lemma_hash = 5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9`.
 
 ## Bridge acceptance invariant
 
-The bridge is a complement for Z3 `unknown` obligations only. A candidate can be promoted to `lean_verified` when all of these hold:
+The existing Z3-unknown route can promote a candidate to `lean_verified` when all of these hold:
 
 1. The source atom was routed from `z3_result_class == "unknown"` or `z3_check_result == "unknown"`.
 2. Generated Lean builds successfully without unresolved manual-lemma placeholders.
@@ -42,7 +43,7 @@ The bridge is a complement for Z3 `unknown` obligations only. A candidate can be
    promotion. `--no-build` and missing-Lake paths do not run the audit and
    promote nothing.
 
-Audited atoms record `kernel_axioms` and `axiom_audit` in
+Audited escalations record `kernel_axioms` and `axiom_audit` in
 `lean_result_metadata`. The complete theorem-to-result map is written to
 `<out-dir>/axiom_audit.json`; when `--summary-json` is used, its `axiom_audit`
 object counts passed, rejected, and error results.
@@ -54,7 +55,19 @@ artifacts. Audit logs are written to
 `<out-dir>/axiom_audit_logs/<module-with-dots-replaced-by-underscores>.log`;
 module rebuild logs use the same path with a `.build.log` suffix.
 
-If either `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract, the failure condition is `stale_translator`. `sat`, `unsat`, parser failures, audit/spec issues, and ordinary mumei-agent findings are never upgraded by this bridge.
+If either `translator_version` or `bridge_lemma_hash` differs from the current mumei/mumei-lean contract, the failure condition is `stale_translator`. `sat`, parser failures, audit/spec issues, and ordinary mumei-agent findings are never upgraded by this bridge.
+
+The opt-in `--dual-check` route additionally translates and builds atoms only
+when their original `status` is `verified` and `z3_check_result` is `unsat`;
+trusted atoms are excluded. Its result is recorded in `lean_dual_check` with
+the theorem name, proof path, translator identifiers, kernel axioms, and audit
+status. This metadata is separate from `lean_result_metadata`: it preserves
+the original Z3 result and proof status, as well as `lean_metadata`,
+atom-level translator identifiers, `escalation_reason`, and `all_verified`.
+The dual check does not change proof trust or status. It counts as passed only
+with current translator identifiers, `status: "lean_verified"`,
+`axiom_audit: "passed"`, and a `kernel_axioms` list. mumei Claim Book requires
+`--allow-lean-verified` before using this evidence for G5.
 
 ## End-to-end workflow
 
@@ -263,8 +276,10 @@ The summary JSON has the shape
 
 Useful properties:
 
-* `total_unknown` is the number of atoms with `z3_check_result == "unknown"`
-  ingested into Lean for this scan, *not* the count of certificates touched.
+* `total_unknown` is the number of unknown atoms ingested into Lean for this
+  scan, *not* the count of certificates touched.
+* With `--dual-check`, `dual_checked` and `dual_check_passed` count eligible
+  unsat atoms separately; each module summary includes matching counters.
 * Modules are grouped by the certificate's `module` key (e.g. the bundle
   shape's per-namespace key), so bundle inputs collapse naturally into
   per-namespace stats.

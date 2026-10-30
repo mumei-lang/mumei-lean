@@ -44,6 +44,7 @@ try:
         IngestedAtom,
         _lean_theorem_name,
         _module_to_lean_namespace,
+        _is_unknown_candidate_dict,
         _validate_module_prefix,
         collect_unknown_atoms,
         external_proof_rendered,
@@ -56,6 +57,7 @@ try:
         _failed_theorem_attributions,
         _has_unattributable_failures,
         _normalise_atom_names,
+        _dual_check_passed,
         BRIDGE_LEMMA_HASH,
         LEAN_VERIFIED,
         MANUAL_LEMMA_REQUIRED,
@@ -114,6 +116,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
         IngestedAtom,
         _lean_theorem_name,
         _module_to_lean_namespace,
+        _is_unknown_candidate_dict,
         _validate_module_prefix,
         collect_unknown_atoms,
         external_proof_rendered,
@@ -126,6 +129,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
         _failed_theorem_attributions,
         _has_unattributable_failures,
         _normalise_atom_names,
+        _dual_check_passed,
         BRIDGE_LEMMA_HASH,
         LEAN_VERIFIED,
         MANUAL_LEMMA_REQUIRED,
@@ -202,6 +206,79 @@ def _axiom_audit_counts(results: Dict[str, AuditResult]) -> dict[str, int]:
         if status in counts:
             counts[status] += 1
     return counts
+
+
+def _is_dual_check_candidate(atom: IngestedAtom) -> bool:
+    return (
+        atom.z3_check_result == "unsat"
+        and atom.status == "verified"
+        and not _is_unknown_candidate(atom)
+    )
+
+
+def _is_unknown_candidate(atom: IngestedAtom) -> bool:
+    return _is_unknown_candidate_dict(
+        {
+            "z3_check_result": atom.z3_check_result,
+            "z3_result_class": atom.z3_result_class,
+            "escalation_reason": atom.escalation_reason,
+        }
+    )
+
+
+def _dual_check_summary_counts(
+    atoms_per_payload: List[List[IngestedAtom]],
+    metadata_per_payload: List[Dict[str, dict]],
+) -> Tuple[int, int]:
+    checked = 0
+    passed = 0
+    for atoms, metadata_by_name in zip(atoms_per_payload, metadata_per_payload):
+        for atom in atoms:
+            if not _is_dual_check_candidate(atom):
+                continue
+            checked += 1
+            metadata = metadata_by_name.get(atom.name, {})
+            if _dual_check_passed(
+                atom.translator_version,
+                atom.bridge_lemma_hash,
+                metadata,
+            ):
+                passed += 1
+    return checked, passed
+
+
+def _update_dual_check_summary(
+    summary_payload: dict,
+    atoms_per_payload: List[List[IngestedAtom]],
+    metadata_per_payload: List[Dict[str, dict]],
+) -> None:
+    checked, passed = _dual_check_summary_counts(
+        atoms_per_payload,
+        metadata_per_payload,
+    )
+    summary_payload["dual_checked"] = checked
+    summary_payload["dual_check_passed"] = passed
+    module_passed: Dict[str, int] = {}
+    for atoms, metadata_by_name in zip(atoms_per_payload, metadata_per_payload):
+        for atom in atoms:
+            if not _is_dual_check_candidate(atom):
+                continue
+            metadata = metadata_by_name.get(atom.name, {})
+            if _dual_check_passed(
+                atom.translator_version,
+                atom.bridge_lemma_hash,
+                metadata,
+            ):
+                module_passed[atom.module_key] = (
+                    module_passed.get(atom.module_key, 0) + 1
+                )
+    for module_summary in summary_payload.get("modules", []):
+        if isinstance(module_summary, dict):
+            module_summary["dual_check_passed"] = module_passed.get(
+                module_summary.get("module"),
+                0,
+            )
+    print(f"dual checks: {checked} checked, {passed} passed")
 
 
 def _audit_proved_atoms(
@@ -1211,6 +1288,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Skip the `lake build` step (useful for dry runs).",
     )
     parser.add_argument(
+        "--dual-check",
+        action="store_true",
+        help="Also Lean-check verified Z3-unsat atoms without changing their proof status.",
+    )
+    parser.add_argument(
         "--ci-mode",
         action="store_true",
         help="CI mode: on lake build failure, fall back to --no-build and "
@@ -1326,6 +1408,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             if args.lean_cert_out is not None
             else None
         ),
+        dual_check=args.dual_check,
     )
     harness_stage = bridge_stage_metadata(
         input_kind=input_kind,
@@ -1347,7 +1430,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     elif args.escalation_bundle is not None:
         payloads = [(args.escalation_bundle, _load_cert(args.escalation_bundle))]
     else:
-        payloads = _scan_unknown_certs(args.scan_unknown / "std" / "certs")
+        payloads = _scan_unknown_certs(
+            args.scan_unknown / "std" / "certs",
+            include_z3_unsat=args.dual_check,
+        )
         if not payloads:
             print(
                 f"info: no certificates with unknown atoms found under "
@@ -1368,6 +1454,14 @@ def main(argv: Optional[List[str]] = None) -> int:
                             "harness_contract": harness_contract,
                             "axiom_audit": _empty_axiom_audit_counts(),
                             "details": [],
+                            **(
+                                {
+                                    "dual_checked": 0,
+                                    "dual_check_passed": 0,
+                                }
+                                if args.dual_check
+                                else {}
+                            ),
                         },
                         indent=2,
                         ensure_ascii=False,
@@ -1411,7 +1505,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     external_proof_application = ExternalProofApplication()
     for src_path, payload in payloads:
-        atoms = collect_unknown_atoms(payload)
+        atoms = collect_unknown_atoms(
+            payload,
+            include_z3_unsat=args.dual_check,
+        )
         if external_proofs:
             applied = apply_external_proofs(
                 atoms, external_proofs, renders_override=external_proof_rendered
@@ -1488,34 +1585,47 @@ def main(argv: Optional[List[str]] = None) -> int:
     # obligations. The summary is grouped by ``module_key`` rather
     # than by source certificate so that bundle inputs collapse
     # naturally into per-namespace stats.
-    modules_summary: dict[str, List[str]] = {}
+    modules_summary: dict[str, List[IngestedAtom]] = {}
     for atom in all_candidate_atoms:
-        modules_summary.setdefault(atom.module_key, []).append(atom.name)
-    modules_list = [
-        {
+        modules_summary.setdefault(atom.module_key, []).append(atom)
+    modules_list = []
+    for key, atoms in sorted(modules_summary.items()):
+        module_summary = {
             "module": key,
-            "candidate_count": len(names),
-            "unknown_count": len(names),
-            "atoms": sorted(names),
+            "candidate_count": len(atoms),
+            "unknown_count": sum(1 for atom in atoms if _is_unknown_candidate(atom)),
+            "atoms": sorted(atom.name for atom in atoms),
         }
-        for key, names in sorted(modules_summary.items())
-    ]
+        if args.dual_check:
+            module_summary["dual_checked"] = sum(
+                1 for atom in atoms if _is_dual_check_candidate(atom)
+            )
+            module_summary["dual_check_passed"] = 0
+        modules_list.append(module_summary)
+    unknown_count = sum(
+        1 for atom in all_candidate_atoms if _is_unknown_candidate(atom)
+    )
     summary_payload = {
         "total_candidates": len(all_candidate_atoms),
-        "total_unknown": len(all_candidate_atoms),
+        "total_unknown": unknown_count,
         "total_generated": len(all_atoms),
         "modules": modules_list,
         "ci_mode_fallback": False,
         "harness_contract": harness_contract,
         "axiom_audit": _empty_axiom_audit_counts(),
         "lean_fallback": {
-            "attempted": len(all_candidate_atoms),
+            "attempted": unknown_count,
             "proved": 0,
             "known_witness_used": len(known_witness_proved),
             "lean_solver_time_s": None,
         },
         "details": [],
     }
+    if args.dual_check:
+        summary_payload["dual_checked"] = sum(
+            1 for atom in all_candidate_atoms if _is_dual_check_candidate(atom)
+        )
+        summary_payload["dual_check_passed"] = 0
     _write_axiom_audit_report(args.out_dir, {})
     if args.summary_json is not None:
         args.summary_json.parent.mkdir(parents=True, exist_ok=True)
@@ -1545,11 +1655,20 @@ def main(argv: Optional[List[str]] = None) -> int:
             metadata_per_payload,
             atoms_per_payload,
         )
-        summary_payload["lean_fallback"]["proved"] = summary_payload["metrics"]["lean_successes"]
+        summary_payload["lean_fallback"]["proved"] = summary_payload["metrics"][
+            "lean_successes"
+        ]
+        if args.dual_check:
+            _update_dual_check_summary(
+                summary_payload,
+                atoms_per_payload,
+                metadata_per_payload,
+            )
         summary_payload["details"] = _summary_details(
             payloads,
             metadata_per_payload,
             atoms_per_payload,
+            dual_check=args.dual_check,
         )
         if args.summary_json is not None:
             args.summary_json.write_text(
@@ -1564,6 +1683,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     lean_version=args.lean_version,
                     atom_metadata=metadata_per_payload[0],
                     harness_contract=harness_contract,
+                    dual_check=args.dual_check,
                     known_witness_override=_known_witness_names(
                         atoms_per_payload[0],
                         known_witness_proved,
@@ -1590,6 +1710,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                         lean_version=args.lean_version,
                         atom_metadata=metadata,
                         harness_contract=harness_contract,
+                        dual_check=args.dual_check,
                         known_witness_override=_known_witness_names(
                             atoms,
                             known_witness_proved,
@@ -1798,12 +1919,21 @@ def main(argv: Optional[List[str]] = None) -> int:
         metadata_per_payload,
         atoms_per_payload,
     )
-    summary_payload["lean_fallback"]["proved"] = summary_payload["metrics"]["lean_successes"]
+    summary_payload["lean_fallback"]["proved"] = summary_payload["metrics"][
+        "lean_successes"
+    ]
+    if args.dual_check:
+        _update_dual_check_summary(
+            summary_payload,
+            atoms_per_payload,
+            metadata_per_payload,
+        )
     summary_payload["lean_fallback"]["known_witness_used"] = len(known_witness_proved)
     summary_payload["details"] = _summary_details(
         payloads,
         metadata_per_payload,
         atoms_per_payload,
+        dual_check=args.dual_check,
     )
     if args.summary_json is not None:
         args.summary_json.write_text(
@@ -1821,6 +1951,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             lean_version=args.lean_version,
             atom_metadata=metadata_per_payload[0],
             harness_contract=harness_contract,
+            dual_check=args.dual_check,
             known_witness_override=_known_witness_names(
                 atoms_per_payload[0],
                 known_witness_proved,
@@ -1851,6 +1982,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             lean_version=args.lean_version,
             atom_metadata=metadata,
             harness_contract=harness_contract,
+            dual_check=args.dual_check,
             known_witness_override=_known_witness_names(
                 atoms,
                 known_witness_proved,

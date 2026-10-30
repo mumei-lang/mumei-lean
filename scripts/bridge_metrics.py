@@ -5,11 +5,27 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 try:
-    from .export_cert import LEAN_VERIFIED, MANUAL_LEMMA_REQUIRED
-    from .ingest_cert import IngestedAtom
+    from .export_cert import (
+        LEAN_VERIFIED,
+        MANUAL_LEMMA_REQUIRED,
+        _dual_check_passed,
+    )
+    from .ingest_cert import (
+        IngestedAtom,
+        _is_unknown_candidate_dict,
+        is_dual_check_candidate,
+    )
 except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
-    from export_cert import LEAN_VERIFIED, MANUAL_LEMMA_REQUIRED  # type: ignore
-    from ingest_cert import IngestedAtom  # type: ignore
+    from export_cert import (  # type: ignore
+        LEAN_VERIFIED,
+        MANUAL_LEMMA_REQUIRED,
+        _dual_check_passed,
+    )
+    from ingest_cert import (  # type: ignore
+        IngestedAtom,
+        _is_unknown_candidate_dict,
+        is_dual_check_candidate,
+    )
 
 
 def _empty_metric_bucket() -> dict:
@@ -48,6 +64,8 @@ def _aggregate_metrics(
     }
     for metadata, atoms in zip(metadata_by_payload, atoms_per_payload):
         for atom in atoms:
+            if is_dual_check_candidate(vars(atom)):
+                continue
             status = metadata.get(atom.name, {}).get("status", MANUAL_LEMMA_REQUIRED)
             if status == "manual_required":
                 status = MANUAL_LEMMA_REQUIRED
@@ -121,6 +139,7 @@ def _summary_details(
     payloads: List[Tuple[Path, dict]],
     metadata_by_payload: List[Dict[str, dict]],
     atoms_per_payload: List[List[IngestedAtom]],
+    dual_check: bool = False,
 ) -> List[dict]:
     details: List[dict] = []
     for (src_path, _payload), metadata, atoms in zip(
@@ -128,25 +147,47 @@ def _summary_details(
         metadata_by_payload,
         atoms_per_payload,
     ):
+        fallback_atoms = atoms
+        if dual_check:
+            fallback_atoms = [
+                atom
+                for atom in atoms
+                if _is_unknown_candidate_dict(vars(atom))
+            ]
         proved = sum(
             1
-            for atom in atoms
+            for atom in fallback_atoms
             if metadata.get(atom.name, {}).get("status") == LEAN_VERIFIED
         )
         known_witness_used = sum(
             1
-            for atom in atoms
+            for atom in fallback_atoms
             if metadata.get(atom.name, {}).get("known_witness_used")
         )
-        details.append(
-            {
-                "source": str(src_path),
-                "candidate_count": len(atoms),
-                "lean_fallback": {
-                    "attempted": len(atoms),
-                    "proved": proved,
-                    "known_witness_used": known_witness_used,
-                },
-            }
-        )
+        detail = {
+            "source": str(src_path),
+            "candidate_count": len(atoms),
+            "lean_fallback": {
+                "attempted": len(fallback_atoms),
+                "proved": proved,
+                "known_witness_used": known_witness_used,
+            },
+        }
+        if dual_check:
+            dual_atoms = [
+                atom
+                for atom in atoms
+                if is_dual_check_candidate(vars(atom))
+            ]
+            detail["dual_checked"] = len(dual_atoms)
+            detail["dual_check_passed"] = sum(
+                1
+                for atom in dual_atoms
+                if _dual_check_passed(
+                    atom.translator_version,
+                    atom.bridge_lemma_hash,
+                    metadata.get(atom.name),
+                )
+            )
+        details.append(detail)
     return details

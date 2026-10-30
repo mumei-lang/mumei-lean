@@ -13,8 +13,23 @@ def bridge_harness_contract(
     module_prefix: str,
     out_dir: str,
     lean_cert_out: str | None,
+    dual_check: bool = False,
 ) -> dict[str, Any]:
     """Return the NLAH-style bridge contract for a bridge invocation."""
+    artifact_contracts = [
+        "Only atoms with z3_check_result == unknown are lifted into Lean.",
+        "Generated Lean theorem paths are recorded per atom in lean_metadata.proof_path.",
+        "Lake failures are attributed conservatively; unattributable failures prove no atoms.",
+        "Exported certificates preserve original atom hashes and mark only proved atoms as lean_verified.",
+    ]
+    if dual_check:
+        artifact_contracts[0] = (
+            "Unknown atoms and opt-in verified Z3-unsat atoms are lifted into Lean; "
+            "trusted atoms are excluded."
+        )
+        artifact_contracts.append(
+            "Dual-check results are recorded separately in lean_dual_check without changing atom proof status."
+        )
     return {
         "policy": BRIDGE_HARNESS_POLICY,
         "input_kind": input_kind,
@@ -30,12 +45,7 @@ def bridge_harness_contract(
             "generated_lean_dir": out_dir,
             "lean_cert_out": lean_cert_out,
         },
-        "artifact_contracts": [
-            "Only atoms with z3_check_result == unknown are lifted into Lean.",
-            "Generated Lean theorem paths are recorded per atom in lean_metadata.proof_path.",
-            "Lake failures are attributed conservatively; unattributable failures prove no atoms.",
-            "Exported certificates preserve original atom hashes and mark only proved atoms as lean_verified.",
-        ],
+        "artifact_contracts": artifact_contracts,
         "verifier_gates": {
             "translator_contract": "translator_version and bridge_lemma_hash must match the current bridge.",
             "lean_build": "lake build exits 0 without sorry or generated theorem errors.",

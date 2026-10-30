@@ -59,8 +59,13 @@ unchanged. A theorem is counted in `dual_check_passed` only when its metadata
 has `status == "lean_verified"`, current translator identifiers,
 `axiom_audit == "passed"`, and a `kernel_axioms` list. Build failures,
 manual-lemma requirements, stale contracts, and rejected or missing audits
-remain visible as non-passing metadata. The flag is off by default; without it,
-the existing unknown-only behavior and output remain unchanged.
+remain visible as non-passing metadata. `dual_checked` and `dual_check_passed`
+are reported at the top level, per module, and in each source detail. In this
+mode, escalation metrics continue to describe only unknown/spurious
+escalations; verified Z3-unsat dual-check candidates are excluded from
+`escalation_attempts`, `lean_successes`, and all `by_*` buckets. The flag is
+off by default; without it, the existing unknown-only behavior and output
+remain unchanged.
 
 This field records an independent proof, not a change in trust or proof status.
 mumei Claim Book can use it for G5 only when `--allow-lean-verified` is
@@ -142,6 +147,8 @@ Runtime owners:
 - Always written for scan mode, including zero-unknown scans.
 - Contains `harness_contract`, module counts, CI fallback status, and metrics
   grouped by atom, logic fragment, and failure reason.
+- With `--dual-check`, includes separate top-level, per-module, and per-source
+  `dual_checked` / `dual_check_passed` counts.
 
 ## Failure Taxonomy
 

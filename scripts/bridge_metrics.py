@@ -5,10 +5,18 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 try:
-    from .export_cert import LEAN_VERIFIED, MANUAL_LEMMA_REQUIRED
+    from .export_cert import (
+        LEAN_VERIFIED,
+        MANUAL_LEMMA_REQUIRED,
+        _dual_check_passed,
+    )
     from .ingest_cert import IngestedAtom
 except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
-    from export_cert import LEAN_VERIFIED, MANUAL_LEMMA_REQUIRED  # type: ignore
+    from export_cert import (  # type: ignore
+        LEAN_VERIFIED,
+        MANUAL_LEMMA_REQUIRED,
+        _dual_check_passed,
+    )
     from ingest_cert import IngestedAtom  # type: ignore
 
 
@@ -169,11 +177,10 @@ def _summary_details(
             detail["dual_check_passed"] = sum(
                 1
                 for atom in dual_atoms
-                if metadata.get(atom.name, {}).get("status") == LEAN_VERIFIED
-                and metadata.get(atom.name, {}).get("axiom_audit") == "passed"
-                and isinstance(
-                    metadata.get(atom.name, {}).get("kernel_axioms"),
-                    list,
+                if _dual_check_passed(
+                    atom.translator_version,
+                    atom.bridge_lemma_hash,
+                    metadata.get(atom.name),
                 )
             )
         details.append(detail)

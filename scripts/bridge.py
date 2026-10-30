@@ -231,10 +231,10 @@ def _dual_check_summary_counts(
                 continue
             checked += 1
             metadata = metadata_by_name.get(atom.name, {})
-            if (
-                metadata.get("status") == "lean_verified"
-                and metadata.get("axiom_audit") == "passed"
-                and isinstance(metadata.get("kernel_axioms"), list)
+            if _dual_check_passed(
+                atom.translator_version,
+                atom.bridge_lemma_hash,
+                metadata,
             ):
                 passed += 1
     return checked, passed

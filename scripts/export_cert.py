@@ -834,10 +834,11 @@ def _dual_check_summary(atoms: Iterable[dict]) -> dict[str, int]:
     passed = sum(
         1
         for atom in candidates
-        if isinstance(atom.get("lean_dual_check"), dict)
-        and atom["lean_dual_check"].get("status") == LEAN_VERIFIED
-        and atom["lean_dual_check"].get("axiom_audit") == "passed"
-        and isinstance(atom["lean_dual_check"].get("kernel_axioms"), list)
+        if _dual_check_passed(
+            atom.get("translator_version"),
+            atom.get("bridge_lemma_hash"),
+            atom.get("lean_dual_check"),
+        )
     )
     return {"dual_checked": len(candidates), "dual_check_passed": passed}
 

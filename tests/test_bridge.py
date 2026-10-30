@@ -836,6 +836,72 @@ def test_dual_check_passes_are_reported_per_module():
     assert summary["modules"][0]["dual_check_passed"] == 1
 
 
+def test_stale_known_witness_is_not_counted_as_a_passed_dual_check(
+    tmp_path: Path,
+):
+    stale_atom = {
+        **_atom("abs_saturating", z3="unsat"),
+        "translator_version": "old-translator",
+    }
+    payload = _cert("std/math.mm", [stale_atom])
+    atoms = collect_unknown_atoms(payload, include_z3_unsat=True)
+    metadata = {
+        "abs_saturating": {
+            "status": "lean_verified",
+            "translator_version": bridge.TRANSLATOR_VERSION,
+            "bridge_lemma_hash": bridge.BRIDGE_LEMMA_HASH,
+            "theorem_name": "abs_saturating_correct",
+            "known_witness_used": True,
+            "axiom_audit": "passed",
+            "kernel_axioms": ["propext"],
+        }
+    }
+
+    summary = {"modules": [{"module": "std/math", "dual_checked": 1}]}
+    bridge._update_dual_check_summary(summary, [atoms], [metadata])
+    details = bridge._summary_details(
+        [(tmp_path / "math.json", payload)],
+        [metadata],
+        [atoms],
+        dual_check=True,
+    )
+    exported = bridge.upgrade_certificate(
+        {
+            "file": "std/math.mm",
+            "candidates": [stale_atom],
+            "summary": {},
+        },
+        ["abs_saturating"],
+        [],
+        "lean",
+        atom_metadata=metadata,
+        known_witness_override=["abs_saturating"],
+        dual_check=True,
+    )
+    upgraded = bridge.upgrade_certificate(
+        payload,
+        ["abs_saturating"],
+        [],
+        "lean",
+        atom_metadata=metadata,
+        known_witness_override=["abs_saturating"],
+        dual_check=True,
+    )
+
+    assert summary["dual_check_passed"] == 0
+    assert summary["modules"][0]["dual_check_passed"] == 0
+    assert details[0]["dual_check_passed"] == 0
+    assert exported["summary"]["dual_check_passed"] == 0
+    assert (
+        upgraded["atoms"][0]["lean_dual_check"]["status"]
+        == "stale_translator"
+    )
+    assert (
+        exported["candidates"][0]["lean_dual_check"]["status"]
+        == "stale_translator"
+    )
+
+
 def test_main_scan_unknown_writes_empty_summary_when_dir_empty(tmp_path: Path):
     """Empty scans still produce a summary so CI artefacts are stable."""
     summary = tmp_path / "summary.json"

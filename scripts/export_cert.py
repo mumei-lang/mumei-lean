@@ -633,13 +633,19 @@ def _upgrade_atom_list(
                 and not _lean_result_contract_current(metadata)
             ):
                 status = "stale_translator"
+            elif dual_candidate and name in failed_set:
+                status = "failed"
+            elif (
+                dual_candidate
+                and status == MANUAL_LEMMA_REQUIRED
+                and not atom.get("manual_lemma_reason")
+            ):
+                status = "failed"
             elif (
                 dual_candidate
                 and status == LEAN_VERIFIED
                 and not _dual_check_audit_passed(metadata)
             ):
-                status = "failed"
-            elif dual_candidate and name in failed_set and status == LEAN_VERIFIED:
                 status = "failed"
             metadata = _metadata_for_atom(
                 atom,

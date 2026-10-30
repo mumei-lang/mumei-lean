@@ -506,13 +506,28 @@ def test_dual_check_success_preserves_z3_proof_fields_and_all_verified():
 @pytest.mark.parametrize(
     ("source_update", "metadata_update", "proved", "failed", "expected"),
     [
-        ({}, {"status": "manual_lemma_required"}, ["dual"], [], "manual_lemma_required"),
+        ({}, {"status": "manual_lemma_required"}, ["dual"], [], "failed"),
+        (
+            {},
+            {"status": "manual_lemma_required"},
+            ["dual"],
+            ["dual"],
+            "failed",
+        ),
+        (
+            {"manual_lemma_reason": "requires a domain lemma"},
+            {"status": "manual_lemma_required"},
+            ["dual"],
+            [],
+            "manual_lemma_required",
+        ),
+        ({}, {"status": "partial_translation"}, ["dual"], [], "partial_translation"),
         ({}, {"status": LEAN_VERIFIED}, ["dual"], [], "failed"),
         (
             {"translator_version": "old-translator"},
             {"status": LEAN_VERIFIED, "translator_version": "old-translator"},
             ["dual"],
-            [],
+            ["dual"],
             "stale_translator",
         ),
         ({}, {"status": LEAN_VERIFIED}, ["dual"], ["dual"], "failed"),

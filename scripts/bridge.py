@@ -1625,24 +1625,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             metadata_per_payload,
             atoms_per_payload,
         )
+        summary_payload["lean_fallback"]["proved"] = summary_payload["metrics"][
+            "lean_successes"
+        ]
         if args.dual_check:
-            summary_payload["lean_fallback"]["proved"] = sum(
-                1
-                for atoms, metadata in zip(
-                    atoms_per_payload,
-                    metadata_per_payload,
-                )
-                for atom in atoms
-                if _is_unknown_candidate(atom)
-                and metadata.get(atom.name, {}).get("status") == "lean_verified"
-            )
             _update_dual_check_summary(
                 summary_payload,
                 atoms_per_payload,
                 metadata_per_payload,
             )
-        else:
-            summary_payload["lean_fallback"]["proved"] = summary_payload["metrics"]["lean_successes"]
         summary_payload["details"] = _summary_details(
             payloads,
             metadata_per_payload,
@@ -1898,24 +1889,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         metadata_per_payload,
         atoms_per_payload,
     )
+    summary_payload["lean_fallback"]["proved"] = summary_payload["metrics"][
+        "lean_successes"
+    ]
     if args.dual_check:
-        summary_payload["lean_fallback"]["proved"] = sum(
-            1
-            for atoms, metadata in zip(
-                atoms_per_payload,
-                metadata_per_payload,
-            )
-            for atom in atoms
-            if _is_unknown_candidate(atom)
-            and metadata.get(atom.name, {}).get("status") == "lean_verified"
-        )
         _update_dual_check_summary(
             summary_payload,
             atoms_per_payload,
             metadata_per_payload,
         )
-    else:
-        summary_payload["lean_fallback"]["proved"] = summary_payload["metrics"]["lean_successes"]
     summary_payload["lean_fallback"]["known_witness_used"] = len(known_witness_proved)
     summary_payload["details"] = _summary_details(
         payloads,

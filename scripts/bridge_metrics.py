@@ -48,6 +48,8 @@ def _aggregate_metrics(
     }
     for metadata, atoms in zip(metadata_by_payload, atoms_per_payload):
         for atom in atoms:
+            if atom.z3_check_result == "unsat" and atom.status == "verified":
+                continue
             status = metadata.get(atom.name, {}).get("status", MANUAL_LEMMA_REQUIRED)
             if status == "manual_required":
                 status = MANUAL_LEMMA_REQUIRED

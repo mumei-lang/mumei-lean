@@ -781,6 +781,34 @@ def test_dual_check_dry_run_preserves_z3_state_and_reports_separate_counts(
     assert "dual checks: 1 checked, 0 passed" in capsys.readouterr().out
 
 
+def test_dual_check_candidates_do_not_pollute_escalation_metrics():
+    payload = _cert(
+        "std/math.mm",
+        [
+            _atom("unknown"),
+            _atom("unsat", z3="unsat"),
+            {**_atom("trusted", z3="skipped"), "status": "trusted"},
+        ],
+    )
+    atoms = collect_unknown_atoms(payload, include_z3_unsat=True)
+    metadata = {
+        "unknown": {"status": "lean_verified"},
+        "unsat": {"status": "lean_verified"},
+    }
+
+    metrics = bridge._aggregate_metrics([metadata], [atoms])
+
+    assert metrics["escalation_attempts"] == 1
+    assert metrics["lean_successes"] == 1
+    assert set(metrics["by_atom"]) == {"unknown"}
+    for grouping in (
+        "by_failure_reason",
+        "by_logic_fragment",
+        "by_z3_result_class",
+    ):
+        assert sum(bucket["attempts"] for bucket in metrics[grouping].values()) == 1
+
+
 def test_main_scan_unknown_writes_empty_summary_when_dir_empty(tmp_path: Path):
     """Empty scans still produce a summary so CI artefacts are stable."""
     summary = tmp_path / "summary.json"

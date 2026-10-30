@@ -770,6 +770,7 @@ def test_dual_check_dry_run_preserves_z3_state_and_reports_separate_counts(
     assert payload["dual_check_passed"] == 0
     assert payload["modules"][0]["unknown_count"] == 1
     assert payload["modules"][0]["dual_checked"] == 1
+    assert payload["modules"][0]["dual_check_passed"] == 0
     assert any(
         "verified Z3-unsat atoms" in contract
         for contract in payload["harness_contract"]["artifact_contracts"]
@@ -807,6 +808,32 @@ def test_dual_check_candidates_do_not_pollute_escalation_metrics():
         "by_z3_result_class",
     ):
         assert sum(bucket["attempts"] for bucket in metrics[grouping].values()) == 1
+
+
+def test_dual_check_passes_are_reported_per_module():
+    payload = _cert("std/math.mm", [_atom("dual", z3="unsat")])
+    atoms = collect_unknown_atoms(payload, include_z3_unsat=True)
+    metadata = {
+        "dual": {
+            "status": "lean_verified",
+            "translator_version": bridge.TRANSLATOR_VERSION,
+            "bridge_lemma_hash": bridge.BRIDGE_LEMMA_HASH,
+            "axiom_audit": "passed",
+            "kernel_axioms": [],
+        }
+    }
+    summary = {
+        "modules": [
+            {"module": "std/math", "dual_checked": 1, "dual_check_passed": 0}
+        ]
+    }
+
+    bridge._update_dual_check_summary(summary, [atoms], [metadata])
+
+    assert summary["dual_checked"] == 1
+    assert summary["dual_check_passed"] == 1
+    assert summary["modules"][0]["dual_checked"] == 1
+    assert summary["modules"][0]["dual_check_passed"] == 1
 
 
 def test_main_scan_unknown_writes_empty_summary_when_dir_empty(tmp_path: Path):

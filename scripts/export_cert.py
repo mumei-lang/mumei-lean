@@ -436,6 +436,21 @@ def _dual_check_audit_passed(metadata: Optional[dict]) -> bool:
     )
 
 
+def _dual_check_passed(
+    translator_version: object,
+    bridge_lemma_hash: object,
+    metadata: Optional[dict],
+) -> bool:
+    return (
+        isinstance(metadata, dict)
+        and translator_version == TRANSLATOR_VERSION
+        and bridge_lemma_hash == BRIDGE_LEMMA_HASH
+        and _lean_result_contract_current(metadata)
+        and metadata.get("status") == LEAN_VERIFIED
+        and _dual_check_audit_passed(metadata)
+    )
+
+
 def _normalise_atom_names(names: Iterable[str]) -> set:
     out: set = set()
     for name in names:

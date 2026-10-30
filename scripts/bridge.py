@@ -56,6 +56,7 @@ try:
         _failed_theorem_attributions,
         _has_unattributable_failures,
         _normalise_atom_names,
+        _dual_check_passed,
         BRIDGE_LEMMA_HASH,
         LEAN_VERIFIED,
         MANUAL_LEMMA_REQUIRED,
@@ -126,6 +127,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
         _failed_theorem_attributions,
         _has_unattributable_failures,
         _normalise_atom_names,
+        _dual_check_passed,
         BRIDGE_LEMMA_HASH,
         LEAN_VERIFIED,
         MANUAL_LEMMA_REQUIRED,
@@ -249,6 +251,26 @@ def _update_dual_check_summary(
     )
     summary_payload["dual_checked"] = checked
     summary_payload["dual_check_passed"] = passed
+    module_passed: Dict[str, int] = {}
+    for atoms, metadata_by_name in zip(atoms_per_payload, metadata_per_payload):
+        for atom in atoms:
+            if not _is_dual_check_candidate(atom):
+                continue
+            metadata = metadata_by_name.get(atom.name, {})
+            if _dual_check_passed(
+                atom.translator_version,
+                atom.bridge_lemma_hash,
+                metadata,
+            ):
+                module_passed[atom.module_key] = (
+                    module_passed.get(atom.module_key, 0) + 1
+                )
+    for module_summary in summary_payload.get("modules", []):
+        if isinstance(module_summary, dict):
+            module_summary["dual_check_passed"] = module_passed.get(
+                module_summary.get("module"),
+                0,
+            )
     print(f"dual checks: {checked} checked, {passed} passed")
 
 
@@ -1571,6 +1593,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             module_summary["dual_checked"] = sum(
                 1 for atom in atoms if _is_dual_check_candidate(atom)
             )
+            module_summary["dual_check_passed"] = 0
         modules_list.append(module_summary)
     unknown_count = sum(
         1 for atom in all_candidate_atoms if _is_unknown_candidate(atom)

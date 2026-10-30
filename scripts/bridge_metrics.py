@@ -10,14 +10,22 @@ try:
         MANUAL_LEMMA_REQUIRED,
         _dual_check_passed,
     )
-    from .ingest_cert import IngestedAtom
+    from .ingest_cert import (
+        IngestedAtom,
+        _is_unknown_candidate_dict,
+        is_dual_check_candidate,
+    )
 except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
     from export_cert import (  # type: ignore
         LEAN_VERIFIED,
         MANUAL_LEMMA_REQUIRED,
         _dual_check_passed,
     )
-    from ingest_cert import IngestedAtom  # type: ignore
+    from ingest_cert import (  # type: ignore
+        IngestedAtom,
+        _is_unknown_candidate_dict,
+        is_dual_check_candidate,
+    )
 
 
 def _empty_metric_bucket() -> dict:
@@ -56,7 +64,7 @@ def _aggregate_metrics(
     }
     for metadata, atoms in zip(metadata_by_payload, atoms_per_payload):
         for atom in atoms:
-            if atom.z3_check_result == "unsat" and atom.status == "verified":
+            if is_dual_check_candidate(vars(atom)):
                 continue
             status = metadata.get(atom.name, {}).get("status", MANUAL_LEMMA_REQUIRED)
             if status == "manual_required":
@@ -144,9 +152,7 @@ def _summary_details(
             fallback_atoms = [
                 atom
                 for atom in atoms
-                if atom.z3_check_result in {"unknown", "spurious_candidate"}
-                or atom.z3_result_class == "unknown"
-                or atom.escalation_reason == "spurious_candidate"
+                if _is_unknown_candidate_dict(vars(atom))
             ]
         proved = sum(
             1
@@ -171,7 +177,7 @@ def _summary_details(
             dual_atoms = [
                 atom
                 for atom in atoms
-                if atom.z3_check_result == "unsat" and atom.status == "verified"
+                if is_dual_check_candidate(vars(atom))
             ]
             detail["dual_checked"] = len(dual_atoms)
             detail["dual_check_passed"] = sum(

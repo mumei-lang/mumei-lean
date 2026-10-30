@@ -44,6 +44,7 @@ try:
         IngestedAtom,
         _lean_theorem_name,
         _module_to_lean_namespace,
+        _is_unknown_candidate_dict,
         _validate_module_prefix,
         collect_unknown_atoms,
         external_proof_rendered,
@@ -115,6 +116,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/bridge.py``
         IngestedAtom,
         _lean_theorem_name,
         _module_to_lean_namespace,
+        _is_unknown_candidate_dict,
         _validate_module_prefix,
         collect_unknown_atoms,
         external_proof_rendered,
@@ -207,15 +209,20 @@ def _axiom_audit_counts(results: Dict[str, AuditResult]) -> dict[str, int]:
 
 
 def _is_dual_check_candidate(atom: IngestedAtom) -> bool:
-    return atom.z3_check_result == "unsat" and atom.status == "verified"
+    return (
+        atom.z3_check_result == "unsat"
+        and atom.status == "verified"
+        and not _is_unknown_candidate(atom)
+    )
 
 
 def _is_unknown_candidate(atom: IngestedAtom) -> bool:
-    return (
-        atom.z3_check_result == "unknown"
-        or atom.z3_result_class == "unknown"
-        or atom.z3_check_result == "spurious_candidate"
-        or atom.escalation_reason == "spurious_candidate"
+    return _is_unknown_candidate_dict(
+        {
+            "z3_check_result": atom.z3_check_result,
+            "z3_result_class": atom.z3_result_class,
+            "escalation_reason": atom.escalation_reason,
+        }
     )
 
 

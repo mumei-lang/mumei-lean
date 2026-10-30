@@ -621,6 +621,46 @@ def test_dual_check_does_not_change_unknown_upgrade_or_default_output():
     assert on["atoms"][1]["z3_check_result"] == LEAN_VERIFIED
 
 
+@pytest.mark.parametrize(
+    "classification",
+    [
+        {"z3_result_class": "unknown"},
+        {"escalation_reason": "spurious_candidate"},
+    ],
+)
+def test_dual_check_routes_unknown_class_unsat_atoms_through_escalation(classification):
+    atom = {**_atom("unknown_unsat", z3="unsat"), **classification}
+    bundle = {
+        "bundle_version": "1.0",
+        "modules": {"std/math": _certificate([atom])},
+        "summary": {},
+    }
+    metadata = _meta(
+        status=LEAN_VERIFIED,
+        theorem_name="unknown_unsat_correct",
+        proof_path="Generated/Math.lean",
+        kernel_axioms=[],
+        axiom_audit="passed",
+    )
+
+    upgraded = upgrade_certificate(
+        cert=bundle,
+        proved_atoms=["unknown_unsat"],
+        failed_atoms=[],
+        lean_version="lean",
+        atom_metadata={"unknown_unsat": metadata},
+        dual_check=True,
+    )
+
+    upgraded_atom = upgraded["modules"]["std/math"]["atoms"][0]
+    assert upgraded_atom["z3_check_result"] == LEAN_VERIFIED
+    assert upgraded_atom["status"] == "verified"
+    assert upgraded_atom["lean_result_metadata"]["status"] == LEAN_VERIFIED
+    assert "lean_dual_check" not in upgraded_atom
+    assert upgraded["summary"]["dual_checked"] == 0
+    assert upgraded["summary"]["dual_check_passed"] == 0
+
+
 def test_dual_check_handles_module_and_candidate_envelopes():
     metadata = _meta(
         status=LEAN_VERIFIED,

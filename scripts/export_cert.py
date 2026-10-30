@@ -35,6 +35,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 try:
     from .proofcert import Z3CheckResult, VerificationStatus
+    from .ingest_cert import _is_unknown_candidate_dict, is_dual_check_candidate
     from .known_witnesses import (
         KNOWN_LEAN_WITNESSES,
         known_atom_from_generated_theorem,
@@ -42,6 +43,10 @@ try:
     )
 except ImportError:  # pragma: no cover - direct ``python scripts/export_cert.py``
     from proofcert import Z3CheckResult, VerificationStatus  # type: ignore
+    from ingest_cert import (  # type: ignore
+        _is_unknown_candidate_dict,
+        is_dual_check_candidate,
+    )
     from known_witnesses import (  # type: ignore
         KNOWN_LEAN_WITNESSES,
         known_atom_from_generated_theorem,
@@ -411,21 +416,11 @@ def _lean_result_contract_current(metadata: Optional[dict]) -> bool:
 
 
 def _unknown_lean_candidate(atom: dict) -> bool:
-    z3_check = atom.get("z3_check_result", "")
-    escalation = atom.get("escalation_reason", "") or ""
-    return (
-        z3_check == Z3CheckResult.UNKNOWN.value
-        or atom.get("z3_result_class") == "unknown"
-        or z3_check == "spurious_candidate"
-        or escalation == "spurious_candidate"
-    )
+    return _is_unknown_candidate_dict(atom)
 
 
 def _dual_check_candidate(atom: dict) -> bool:
-    return (
-        atom.get("z3_check_result") == Z3CheckResult.UNSAT.value
-        and atom.get("status") == VerificationStatus.VERIFIED.value
-    )
+    return is_dual_check_candidate(atom)
 
 
 def _dual_check_audit_passed(metadata: Optional[dict]) -> bool:

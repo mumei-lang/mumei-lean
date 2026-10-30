@@ -730,9 +730,22 @@ def test_dual_check_dry_run_preserves_z3_state_and_reports_separate_counts(
     cert_path = tmp_path / "mixed.json"
     unsat = _atom("unsat", z3="unsat")
     unknown = _atom("unknown")
+    class_unknown = {
+        **_atom("class_unknown", z3="unsat"),
+        "z3_result_class": "unknown",
+    }
+    spurious = {
+        **_atom("spurious", z3="unsat"),
+        "escalation_reason": "spurious_candidate",
+    }
     trusted = {**_atom("trusted", z3="skipped"), "status": "trusted"}
     cert_path.write_text(
-        json.dumps(_cert("std/math.mm", [unsat, unknown, trusted]))
+        json.dumps(
+            _cert(
+                "std/math.mm",
+                [unsat, unknown, class_unknown, spurious, trusted],
+            )
+        )
     )
     out_cert = tmp_path / "out.lean-cert.json"
     summary = tmp_path / "summary.json"
@@ -763,14 +776,26 @@ def test_dual_check_dry_run_preserves_z3_state_and_reports_separate_counts(
     assert "lean_result_metadata" not in by_name["unsat"]
     assert by_name["unknown"]["z3_check_result"] == "unknown"
     assert "lean_dual_check" not in by_name["unknown"]
+    for name in ("class_unknown", "spurious"):
+        assert by_name[name]["z3_check_result"] == "unsat"
+        assert "lean_dual_check" not in by_name[name]
     assert by_name["trusted"] == trusted
     payload = json.loads(summary.read_text())
-    assert payload["total_unknown"] == 1
+    assert payload["total_unknown"] == 3
     assert payload["dual_checked"] == 1
     assert payload["dual_check_passed"] == 0
-    assert payload["modules"][0]["unknown_count"] == 1
+    assert payload["modules"][0]["unknown_count"] == 3
     assert payload["modules"][0]["dual_checked"] == 1
     assert payload["modules"][0]["dual_check_passed"] == 0
+    assert payload["details"][0]["lean_fallback"]["attempted"] == 3
+    assert payload["details"][0]["dual_checked"] == 1
+    assert payload["details"][0]["dual_check_passed"] == 0
+    assert payload["metrics"]["escalation_attempts"] == 3
+    assert set(payload["metrics"]["by_atom"]) == {
+        "unknown",
+        "class_unknown",
+        "spurious",
+    }
     assert any(
         "verified Z3-unsat atoms" in contract
         for contract in payload["harness_contract"]["artifact_contracts"]
@@ -782,32 +807,54 @@ def test_dual_check_dry_run_preserves_z3_state_and_reports_separate_counts(
     assert "dual checks: 1 checked, 0 passed" in capsys.readouterr().out
 
 
-def test_dual_check_candidates_do_not_pollute_escalation_metrics():
+@pytest.mark.parametrize("include_z3_unsat", [False, True])
+def test_dual_check_candidates_do_not_pollute_escalation_metrics(include_z3_unsat):
     payload = _cert(
         "std/math.mm",
         [
             _atom("unknown"),
+            {
+                **_atom("class_unknown", z3="unsat"),
+                "z3_result_class": "unknown",
+            },
+            {
+                **_atom("spurious", z3="unsat"),
+                "escalation_reason": "spurious_candidate",
+            },
             _atom("unsat", z3="unsat"),
             {**_atom("trusted", z3="skipped"), "status": "trusted"},
         ],
     )
-    atoms = collect_unknown_atoms(payload, include_z3_unsat=True)
-    metadata = {
-        "unknown": {"status": "lean_verified"},
-        "unsat": {"status": "lean_verified"},
-    }
+    atoms = collect_unknown_atoms(payload, include_z3_unsat=include_z3_unsat)
+    metadata = {atom.name: {"status": "lean_verified"} for atom in atoms}
 
     metrics = bridge._aggregate_metrics([metadata], [atoms])
 
-    assert metrics["escalation_attempts"] == 1
-    assert metrics["lean_successes"] == 1
-    assert set(metrics["by_atom"]) == {"unknown"}
+    assert metrics["escalation_attempts"] == 3
+    assert metrics["lean_successes"] == 3
+    assert set(metrics["by_atom"]) == {"unknown", "class_unknown", "spurious"}
     for grouping in (
         "by_failure_reason",
         "by_logic_fragment",
         "by_z3_result_class",
     ):
-        assert sum(bucket["attempts"] for bucket in metrics[grouping].values()) == 1
+        assert sum(bucket["attempts"] for bucket in metrics[grouping].values()) == 3
+
+    assert bridge._dual_check_summary_counts([atoms], [metadata]) == (
+        int(include_z3_unsat),
+        0,
+    )
+    detail = bridge._summary_details(
+        [(Path("std/math.mm"), payload)],
+        [metadata],
+        [atoms],
+        dual_check=include_z3_unsat,
+    )[0]
+    if include_z3_unsat:
+        assert detail["dual_checked"] == 1
+        assert detail["dual_check_passed"] == 0
+    else:
+        assert "dual_checked" not in detail
 
 
 def test_dual_check_passes_are_reported_per_module():

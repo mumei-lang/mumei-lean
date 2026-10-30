@@ -450,6 +450,24 @@ def _attach_domain_to_translator_ir(
         rules.append(rule)
 
 
+def _is_unknown_candidate_dict(atom: dict) -> bool:
+    z3_check_result = atom.get("z3_check_result")
+    return (
+        z3_check_result == Z3CheckResult.UNKNOWN.value
+        or atom.get("z3_result_class") == "unknown"
+        or z3_check_result == "spurious_candidate"
+        or (atom.get("escalation_reason", "") or "") == "spurious_candidate"
+    )
+
+
+def is_dual_check_candidate(atom: dict) -> bool:
+    return (
+        atom.get("z3_check_result") == Z3CheckResult.UNSAT.value
+        and atom.get("status") == "verified"
+        and not _is_unknown_candidate_dict(atom)
+    )
+
+
 def collect_unknown_atoms(
     payload: Any,
     include_z3_unsat: bool = False,
@@ -462,17 +480,8 @@ def collect_unknown_atoms(
                 continue
             z3_check_result = atom.get("z3_check_result")
             escalation_reason = atom.get("escalation_reason", "") or ""
-            is_dual_check_candidate = (
-                include_z3_unsat
-                and z3_check_result == Z3CheckResult.UNSAT.value
-                and atom.get("status") == "verified"
-            )
-            is_candidate = (
-                z3_check_result == Z3CheckResult.UNKNOWN.value
-                or atom.get("z3_result_class") == "unknown"
-                or z3_check_result == "spurious_candidate"
-                or escalation_reason == "spurious_candidate"
-                or is_dual_check_candidate
+            is_candidate = _is_unknown_candidate_dict(atom) or (
+                include_z3_unsat and is_dual_check_candidate(atom)
             )
             if not is_candidate:
                 continue

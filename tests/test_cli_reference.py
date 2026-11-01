@@ -16,6 +16,10 @@ from scripts.cli_reference import (
 )
 from scripts.gen_cli_reference import main as generate_main
 
+UNRESOLVED_ENV_READ_ALLOWLIST = {
+    ("scripts/sync_contract_constants.py", "_repo_arg"),
+}
+
 
 def test_committed_reference_matches_render() -> None:
     assert (REPO_ROOT / "docs/CLI_REFERENCE.md").read_text() == render_cli_reference()
@@ -57,57 +61,131 @@ def _is_os_environ(node: ast.AST) -> bool:
     )
 
 
-def _environment_names_read(scripts_dir: Path) -> set[str]:
-    environment_names = set()
-    for path in scripts_dir.glob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        literal_assignments = {}
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.Assign, ast.AnnAssign)):
-                continue
+def _literal_strings(node: ast.AST, bindings: dict[str, set[str]]) -> set[str]:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return {node.value}
+    if isinstance(node, ast.Name):
+        return bindings.get(node.id, set())
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        values = set()
+        for item in node.elts:
+            values.update(_literal_strings(item, bindings))
+        return values
+    return set()
+
+
+def _scan_environment_reads(
+    source: str,
+    path: str,
+) -> tuple[set[str], list[tuple[str, int, str]]]:
+    tree = ast.parse(source, filename=path)
+    literal_bindings: dict[str, set[str]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
             value = node.value
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            if not isinstance(value, (ast.List, ast.Tuple, ast.Set)):
-                continue
-            values = {
-                item.value
-                for item in value.elts
-                if isinstance(item, ast.Constant) and isinstance(item.value, str)
-            }
+            values = _literal_strings(value, literal_bindings)
             for target in targets:
-                if isinstance(target, ast.Name):
-                    literal_assignments[target.id] = values
+                if isinstance(target, ast.Name) and values:
+                    literal_bindings[target.id] = values
+        elif isinstance(node, ast.For) and isinstance(node.target, ast.Name):
+            values = _literal_strings(node.iter, literal_bindings)
+            if values:
+                literal_bindings[node.target.id] = values
 
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                function = node.func
-                is_get = (
-                    isinstance(function, ast.Attribute)
-                    and function.attr in {"get", "getenv"}
-                    and (
-                        _is_os_environ(function.value)
-                        or isinstance(function.value, ast.Name)
-                        and function.value.id == "os"
+    names: set[str] = set()
+    unresolved: list[tuple[str, int, str]] = []
+
+    class ReadVisitor(ast.NodeVisitor):
+        function_stack: list[str] = []
+
+        def _function_name(self) -> str:
+            return self.function_stack[-1] if self.function_stack else "<module>"
+
+        def _record_key(self, key: ast.AST, node: ast.AST) -> None:
+            values = _literal_strings(key, literal_bindings)
+            if values:
+                names.update(values)
+            else:
+                unresolved.append((path, node.lineno, self._function_name()))
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            self.function_stack.append(node.name)
+            self.generic_visit(node)
+            self.function_stack.pop()
+
+        visit_AsyncFunctionDef = visit_FunctionDef
+
+        def visit_Call(self, node: ast.Call) -> None:
+            function = node.func
+            is_environment_get = (
+                isinstance(function, ast.Attribute)
+                and function.attr in {"get", "getenv"}
+                and (
+                    _is_os_environ(function.value)
+                    or isinstance(function.value, ast.Name)
+                    and function.value.id == "os"
+                )
+            ) or isinstance(function, ast.Name) and function.id == "getenv"
+            if is_environment_get:
+                key = (
+                    node.args[0]
+                    if node.args
+                    else next(
+                        (keyword.value for keyword in node.keywords if keyword.arg == "key"),
+                        None,
                     )
-                ) or isinstance(function, ast.Name) and function.id == "getenv"
-                if is_get and node.args:
-                    value = node.args[0]
-                    if isinstance(value, ast.Constant) and isinstance(value.value, str):
-                        environment_names.add(value.value)
-                    elif isinstance(value, ast.Name):
-                        environment_names.update(literal_assignments.get(value.id, set()))
-                if (
-                    isinstance(function, ast.Name)
-                    and function.id == "_repo_arg"
-                    and len(node.args) > 1
-                    and isinstance(node.args[1], ast.Constant)
-                    and isinstance(node.args[1].value, str)
-                ):
-                    environment_names.add(node.args[1].value)
-            elif isinstance(node, ast.Subscript) and _is_os_environ(node.value):
-                index = node.slice
-                if isinstance(index, ast.Constant) and isinstance(index.value, str):
-                    environment_names.add(index.value)
+                )
+                if key is not None:
+                    self._record_key(key, node)
+            if (
+                isinstance(function, ast.Name)
+                and function.id == "_repo_arg"
+                and len(node.args) > 1
+            ):
+                self._record_key(node.args[1], node)
+            self.generic_visit(node)
+
+        def visit_Subscript(self, node: ast.Subscript) -> None:
+            if _is_os_environ(node.value):
+                self._record_key(node.slice, node)
+            self.generic_visit(node)
+
+    visitor = ReadVisitor()
+    visitor.visit(tree)
+    return names, unresolved
+
+
+def _assert_no_unresolved_environment_reads(
+    unresolved: list[tuple[str, int, str]],
+) -> None:
+    found_allowlisted = {(path, function) for path, _, function in unresolved}
+    assert UNRESOLVED_ENV_READ_ALLOWLIST <= found_allowlisted, (
+        "Stale unresolved environment-read allowlist entries: "
+        f"{sorted(UNRESOLVED_ENV_READ_ALLOWLIST - found_allowlisted)}"
+    )
+    unexpected = [
+        (path, line, function)
+        for path, line, function in unresolved
+        if (path, function) not in UNRESOLVED_ENV_READ_ALLOWLIST
+    ]
+    assert not unexpected, (
+        "Unresolved environment reads: "
+        + ", ".join(f"{path}:{line} in {function}" for path, line, function in unexpected)
+    )
+
+
+def _environment_names_read(scripts_dir: Path) -> set[str]:
+    environment_names = set()
+    unresolved = []
+    for path in scripts_dir.glob("*.py"):
+        names, sites = _scan_environment_reads(
+            path.read_text(encoding="utf-8"),
+            path.relative_to(REPO_ROOT).as_posix(),
+        )
+        environment_names.update(names)
+        unresolved.extend(sites)
+    _assert_no_unresolved_environment_reads(unresolved)
     return environment_names
 
 
@@ -132,6 +210,22 @@ def test_environment_reads_are_documented_or_internal() -> None:
         registered,
         set(INTERNAL_ENV_ALLOWLIST),
     )
+
+
+def test_unresolved_environment_read_is_reported() -> None:
+    names, unresolved = _scan_environment_reads(
+        "import os\ndef helper(key): return os.environ.get(key)\n",
+        "example.py",
+    )
+    assert names == set()
+    assert unresolved == [("example.py", 2, "helper")]
+    sync_path = REPO_ROOT / "scripts/sync_contract_constants.py"
+    _, allowed_sites = _scan_environment_reads(
+        sync_path.read_text(encoding="utf-8"),
+        "scripts/sync_contract_constants.py",
+    )
+    with pytest.raises(AssertionError, match=r"example\.py:2 in helper"):
+        _assert_no_unresolved_environment_reads([*allowed_sites, *unresolved])
 
 
 def test_environment_coverage_rejects_stale_allowlist_entries() -> None:

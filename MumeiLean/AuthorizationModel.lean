@@ -1,6 +1,7 @@
 import Std
 
-/-!+# Single-record authorization model
+/-!
+# Single-record authorization model
 
 An independent model, not a bridge witness or a host-language sandbox.
 Snapshots below are internal mathematical values, not transferable permissions.

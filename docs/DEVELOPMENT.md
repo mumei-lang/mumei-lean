@@ -1,5 +1,7 @@
 # Development and Build Guide
 
+See the [CLI reference](CLI_REFERENCE.md) for bridge-script options and repository environment variables.
+
 ### 3. Run the test suite
 
 ```bash

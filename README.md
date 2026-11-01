@@ -72,6 +72,7 @@ lake build
 ```
 
 The complete build, test, CI smoke, and fallback guide is [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+The [CLI reference](docs/CLI_REFERENCE.md) lists bridge-script options and repository environment variables.
 
 ## Repository layout
 

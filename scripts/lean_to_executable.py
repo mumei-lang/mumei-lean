@@ -154,7 +154,7 @@ def build_executable(
     return copied_binary, copied_cert
 
 
-def _parser() -> argparse.ArgumentParser:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Compile a Lean 4 executable and copy its .lean-cert.json."
     )
@@ -204,7 +204,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    args = _parser().parse_args(argv)
+    args = build_parser().parse_args(argv)
     try:
         binary, cert = build_executable(
             project_dir=args.project_dir,

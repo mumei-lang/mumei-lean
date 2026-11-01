@@ -1873,7 +1873,7 @@ def write_modules(
     return written
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Translate a mumei .proof-cert.json into Lean theorem sources.",
     )
@@ -1915,6 +1915,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="JSON file of caller-supplied tactic scripts / witness lemmas "
         "injected as proof bodies (docs/LEAN_TRANSLATOR_SPEC.md §13).",
     )
+    return parser
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
 
     if not args.input.exists():

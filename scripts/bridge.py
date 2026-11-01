@@ -1218,7 +1218,7 @@ def _verify_known_witnesses(
     return sorted(set(proved))
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "End-to-end orchestrator for the mumei ↔ mumei-lean bridge."
@@ -1361,6 +1361,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="mumei-lean repo root used as the lake working directory "
         "(default: this repo).",
     )
+    return parser
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
 
     try:

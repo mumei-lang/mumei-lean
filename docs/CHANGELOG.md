@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased: generated CLI reference
+
+- Added a generated reference for bridge-script argparse options and the
+  `MUMEI_REPO` / `MUMEI_AGENT_REPO` environment fallbacks.
+
 ## Unreleased: Lean dual-check producer
 
 - Added opt-in `scripts/bridge.py --dual-check` support for independently

@@ -845,7 +845,7 @@ def _read_text_or_die(path: Path) -> str:
     return path.read_text()
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Emit a mumei-compatible .lean-cert.json from a lake build run."
@@ -882,6 +882,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         required=True,
         help="Where to write the resulting .lean-cert.json.",
     )
+    return parser
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
 
     cert: Dict[str, Any] = json.loads(_read_text_or_die(args.input_cert))

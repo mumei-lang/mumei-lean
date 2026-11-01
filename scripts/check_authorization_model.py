@@ -63,9 +63,14 @@ def check(repo: Path, out_dir: Path) -> bool:
     return bool(results) and all(result["status"] == "passed" for result in results.values())
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out-dir", type=Path, default=Path("out/authorization-model"))
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
     passed = check(Path(__file__).resolve().parents[1], args.out_dir.resolve())
     print(f"Independent model build and axiom audit: {'PASS' if passed else 'FAIL'}")

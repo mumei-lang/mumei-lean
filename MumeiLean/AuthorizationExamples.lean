@@ -103,16 +103,18 @@ def roleCases : List RoleCase :=
   [⟨.reader, true, false, false⟩, ⟨.writer, true, true, false⟩,
    ⟨.administrator, true, true, true⟩, ⟨.unknown, false, false, false⟩]
 
-/-- 128 decisions: four roles, two organizations, two owners, read/update, enabled/disabled. -/
+/-- 128 decisions: roles × organizations × users × read flag × update flag × operation. -/
 theorem decision_matrix :
     roleCases.all (fun c => [7, 8].all (fun organization => [10, 11].all (fun owner =>
-      [false, true].all (fun enabled => [false, true].all (fun isUpdate =>
+      [false, true].all (fun reads => [false, true].all (fun updates =>
+      [false, true].all (fun isUpdate =>
         let p : Principal := ⟨organization, owner, c.role⟩
-        let s : State := { initial with policy := some ⟨1, enabled, enabled⟩ }
+        let s : State := { initial with policy := some ⟨1, reads, updates⟩ }
         let q := if isUpdate then update else read
+        let enabled := if isUpdate then updates else reads
         let permitted := if isUpdate then
           (if owner == 10 then c.canUpdateOwn else c.canUpdateOther) else c.canRead
-        (execute s p q).accepted == (enabled && organization == 7 && permitted)))))) = true := by
+        (execute s p q).accepted == (enabled && organization == 7 && permitted))))))) = true := by
   decide
 
 end MumeiLean.AuthorizationExamples

@@ -14,6 +14,21 @@ Promotion to `lean_verified` requires a successful Lean build plus matching `tra
   is implemented; Claim Book requires the explicit `--allow-lean-verified`
   opt-in and a passing kernel axiom audit.
 
+## Limited single-record authority model
+
+The independent [authorization model](AUTHORIZATION_MODEL.md) binds a principal
+to the current record, requested operation and policy. Model theorems, normal
+operation witnesses, mismatch/replay examples and the existing kernel axiom
+audit are implemented. The existing access-order trace and bridge acceptance
+contract are unchanged: these model theorems do not promote unrelated atoms to
+`lean_verified` or G5.
+
+The cross-project roadmap keeps runtime correspondence as a separate scope.
+The next steps belong in `mumei-demo`: a fixed data-only execution adapter, then
+scenario evidence and mutation tests. Python correspondence, production
+authentication/storage, dynamic authority changes and host-language confinement
+are not proved by this model. No general bridge obligation or new grade is added.
+
 ### Priority 17 bridge surface
 
 The mumei `docs/CROSS_PROJECT_ROADMAP.md` is canonical for the cross-project

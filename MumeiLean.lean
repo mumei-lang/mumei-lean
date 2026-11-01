@@ -23,6 +23,7 @@ import MumeiLean.Sort
 import MumeiLean.StdMathAbs
 import MumeiLean.StdMathSettlement
 import MumeiLean.Concurrency
+import MumeiLean.AuthorizationModel
 
 /-!
 # MumeiLean

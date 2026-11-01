@@ -36,16 +36,7 @@ ENVIRONMENT_VARIABLES = (
     ),
 )
 
-INTERNAL_ENV_ALLOWLIST = {
-    "CI_FIXTURE_MODE": "Selects deterministic fixture execution in run_scenario.sh.",
-    "LLM_API_KEY": "Credential presence check for optional specimen audits.",
-    "MUMEI_AGENT_PYTHON": "Internal scenario-runner interpreter override.",
-    "MUMEI_BIN": "Internal scenario-runner binary override.",
-    "MUMEI_LEAN_REPO": "Internal scenario-runner Lean checkout override.",
-    "MUMEI_STD_PATH": "Internal scenario-runner standard-library path override.",
-    "NL_REQUIREMENTS_FILE": "Internal natural-language fixture input override.",
-    "OPENAI_API_KEY": "Credential presence check for optional specimen audits.",
-}
+INTERNAL_ENV_ALLOWLIST = {}
 
 
 def markdown_cell(value: object | None) -> str:

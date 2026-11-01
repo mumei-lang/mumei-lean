@@ -4,6 +4,8 @@ import ast
 import re
 from pathlib import Path
 
+import pytest
+
 from scripts.cli_reference import (
     CLI_SCRIPTS,
     ENVIRONMENT_VARIABLES,
@@ -55,9 +57,7 @@ def _is_os_environ(node: ast.AST) -> bool:
     )
 
 
-def test_environment_reads_are_documented_or_internal() -> None:
-    scripts_dir = REPO_ROOT / "scripts"
-    registered = {name for name, _, _ in ENVIRONMENT_VARIABLES}
+def _environment_names_read(scripts_dir: Path) -> set[str]:
     environment_names = set()
     for path in scripts_dir.glob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -108,8 +108,39 @@ def test_environment_reads_are_documented_or_internal() -> None:
                 index = node.slice
                 if isinstance(index, ast.Constant) and isinstance(index.value, str):
                     environment_names.add(index.value)
+    return environment_names
 
-    assert environment_names <= registered | set(INTERNAL_ENV_ALLOWLIST)
+
+def _assert_environment_coverage(
+    environment_names: set[str],
+    registered: set[str],
+    internal: set[str],
+) -> None:
+    classified = registered | internal
+    assert environment_names <= classified, (
+        f"Unclassified environment reads: {sorted(environment_names - classified)}"
+    )
+    assert classified <= environment_names, (
+        f"Stale environment declarations: {sorted(classified - environment_names)}"
+    )
+
+
+def test_environment_reads_are_documented_or_internal() -> None:
+    registered = {name for name, _, _ in ENVIRONMENT_VARIABLES}
+    _assert_environment_coverage(
+        _environment_names_read(REPO_ROOT / "scripts"),
+        registered,
+        set(INTERNAL_ENV_ALLOWLIST),
+    )
+
+
+def test_environment_coverage_rejects_stale_allowlist_entries() -> None:
+    with pytest.raises(AssertionError, match="Stale environment declarations"):
+        _assert_environment_coverage(
+            {"MUMEI_REPO", "MUMEI_AGENT_REPO"},
+            {"MUMEI_REPO", "MUMEI_AGENT_REPO"},
+            {"FAKE_INTERNAL"},
+        )
 
 
 def test_parser_option_strings_match_golden_lists() -> None:

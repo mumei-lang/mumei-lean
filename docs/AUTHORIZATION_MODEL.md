@@ -81,8 +81,9 @@ failed rebuild into success. Build and audit logs, and the existing per-theorem
 `axiom_audit.json` result format, are saved under `out/authorization-model/`.
 They are independent model evidence, not Mumei proof certificates.
 
-Examples include a 128-decision matrix across roles, organizations, ownership,
-operation and policy flags, plus focused success, stale state, protected field,
+Examples include a 128-decision matrix across four roles, two organizations,
+two users, two read-flag values, two update-flag values and two operations
+(`4 × 2 × 2 × 2 × 2 × 2 = 128`), plus focused success, stale state, protected field,
 changed request, replay, missing state and mixed-trace checks. They use
 kernel-checked `decide`, not `native_decide`. The live Python regressions also
 inject a user axiom, `sorry`, and a failed rebuild after a successful build;

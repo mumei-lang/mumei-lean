@@ -30,6 +30,12 @@ An atom is `lean_verified` only when it came from Z3 `unknown`, generated Lean b
 
 ## Architecture in one picture
 
+For an independent, limited record-access model (not a new certificate or
+bridge route), see [Single-record authorization model](docs/AUTHORIZATION_MODEL.md).
+It binds principal, target, operation and current state, with a fail-closed
+model build and kernel axiom audit. It does not establish host-runtime or
+deployment safety.
+
 ```mermaid
 graph TD
     M["mumei verify --proof-cert"] -->|".proof-cert.json"| ML["mumei-lean"]

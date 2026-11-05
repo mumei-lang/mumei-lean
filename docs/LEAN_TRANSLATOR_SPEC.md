@@ -85,6 +85,7 @@ catalog and Rust certificate metadata must only emit rule IDs documented here.
 | `&&` | `and` | `And` | Logical conjunction. |
 | `\|\|` | `or` | `Or` | Logical disjunction. |
 | `!` | `not` | `Not` | Logical negation. |
+| `=>`, `==>` | `=>` | `→` | Implication. Mumei groups a chain to the left, so `a => b => c` is emitted as `(a → b) → c`. |
 | `==` | `=` | `Eq` | Equality. |
 | `!=` | `distinct` | `Ne` | Disequality. |
 | `<` | `bvslt` | `LT.lt` | Signed less-than for integer-like scalar lowering. |

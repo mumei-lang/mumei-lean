@@ -1269,6 +1269,14 @@ def _decl_parts_from_translator_ir(
     ]
 
 
+def _decl_part_names(parts: List[str]) -> List[str]:
+    names: List[str] = []
+    for part in parts:
+        binders, _, _ = part.strip("()").partition(" : ")
+        names.extend(binders.split())
+    return names
+
+
 def _decl_parts_for_identifiers(
     identifiers: List[str],
     array_identifiers: List[str],
@@ -1618,9 +1626,11 @@ def render_theorem(atom: IngestedAtom) -> str:
             f"def {result_name}{def_params_decl} : {body_type} :=\n"
             f"  {mapped_body_expr}\n\n"
         )
-        result_args = (
-            f" {' '.join(mapped_def_params)}" if mapped_def_params else ""
-        )
+        # Apply the def in the order its binders are declared: the
+        # declaration groups binders by type, which can differ from the
+        # atom's parameter order.
+        call_args = _decl_part_names(def_param_parts)
+        result_args = f" {' '.join(call_args)}" if call_args else ""
         membership = "∈" if is_any_group else "="
         h_body_param = (
             f" (h_body : {result_binder} {membership} {result_name}{result_args})"

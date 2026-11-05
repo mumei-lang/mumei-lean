@@ -365,6 +365,26 @@ def test_render_theorem_injects_list_body_semantics():
     assert "body semantics unsupported" not in rendered
 
 
+def test_render_theorem_applies_body_def_in_declared_binder_order():
+    cert = _make_certificate(
+        "m.mm",
+        [
+            _make_atom(
+                "item_handler",
+                requires="parts[0] == n && n >= 3",
+                ensures="n >= 3 => result == n",
+                body_expr="n",
+            )
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "def itemHandlerResult (n : Int) (parts : List Int) : Int :=" in rendered
+    assert "(h_body : result = itemHandlerResult n parts)" in rendered
+    assert "(n ≥ 3 → result = n)" in rendered
+    assert "=>" not in rendered
+
+
 @pytest.mark.parametrize(
     ("body_expr", "requires", "ensures", "expected_def"),
     [

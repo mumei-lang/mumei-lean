@@ -1203,6 +1203,29 @@ def _declared_array_names(translator_ir: dict) -> set[str]:
     return names
 
 
+def _declared_bool_binders(translator_ir: dict) -> dict[str, str]:
+    """Role by name of the binders the certificate declares ``bool``.
+
+    The expression lowering renders ``true``/``false`` and comparisons as
+    ``Prop``, so a ``bool`` binder must be a ``Prop`` for ``b = False`` and
+    ``if b then`` to elaborate.
+    """
+    binders = (
+        translator_ir.get("binders", [])
+        if isinstance(translator_ir, dict)
+        else []
+    )
+    if not isinstance(binders, list):
+        return {}
+    return {
+        str(b.get("mumei_name")): str(b.get("role") or "free")
+        for b in binders
+        if isinstance(b, dict)
+        and str(b.get("mumei_type") or "").strip() == "bool"
+        and b.get("mumei_name")
+    }
+
+
 def _declared_result_lean_type(translator_ir: dict) -> Optional[str]:
     """Lean type the certificate's ``translator_ir`` declares for the
     atom's return value (the ``role: "result"`` binder).
@@ -1299,20 +1322,26 @@ def _decl_parts_for_identifiers(
     string_identifiers: List[str],
     predicate_identifiers: Optional[List[str]] = None,
     predicate_arities: Optional[dict[str, int]] = None,
+    prop_identifiers: Optional[List[str]] = None,
 ) -> List[str]:
     predicate_identifiers = predicate_identifiers or []
     predicate_arities = predicate_arities or {}
+    prop_identifiers = prop_identifiers or []
     scalar = [
         ident for ident in identifiers
         if (
             ident not in array_identifiers
             and ident not in string_identifiers
             and ident not in predicate_identifiers
+            and ident not in prop_identifiers
         )
     ]
     parts: List[str] = []
     if scalar:
         parts.append(f"({' '.join(scalar)} : Int)")
+    props = [ident for ident in prop_identifiers if ident in identifiers]
+    if props:
+        parts.append(f"({' '.join(props)} : Prop)")
     for pred in predicate_identifiers:
         if pred in identifiers:
             arity = max(1, predicate_arities.get(pred, 1))
@@ -1542,6 +1571,13 @@ def render_theorem(atom: IngestedAtom) -> str:
         if use_body_semantics and not is_any_group and not is_loop_vc
         else None
     )
+    bool_binders = _declared_bool_binders(atom.translator_ir)
+    if result_type_override is not None and bool_binders.get("result") == "result":
+        result_type_override = "Prop"
+    prop_idents = [
+        name for name, role in bool_binders.items()
+        if role != "result" and name not in array_idents
+    ]
 
     scalar_params: List[str] = [
         i for i in idents
@@ -1549,6 +1585,7 @@ def render_theorem(atom: IngestedAtom) -> str:
             i not in array_idents
             and i not in string_idents
             and i not in predicate_idents
+            and i not in prop_idents
             and i != "result"
         )
     ]
@@ -1583,6 +1620,11 @@ def render_theorem(atom: IngestedAtom) -> str:
             decl_parts.append(
                 "(" + " ".join(mapped_scalar_params) + " : Int)"
             )
+        mapped_props = _map_identifier_list(
+            [i for i in idents if i in prop_idents], binder_mapping
+        )
+        if mapped_props:
+            decl_parts.append("(" + " ".join(mapped_props) + " : Prop)")
         for pred in predicate_idents:
             if pred != "result":
                 arity = max(1, predicate_arities.get(pred, 1))
@@ -1632,14 +1674,18 @@ def render_theorem(atom: IngestedAtom) -> str:
             _map_identifier_list(string_idents, binder_mapping),
             _map_identifier_list(predicate_idents, binder_mapping),
             mapped_predicate_arities,
+            _map_identifier_list(prop_idents, binder_mapping),
         )
         def_params_decl = f" {' '.join(def_param_parts)}" if def_param_parts else ""
         mapped_body_expr = _apply_identifier_mapping(
             body_tr.lean_expr,
             binder_mapping,
         )
+        # ``if b then`` on a ``Prop`` binder needs classical decidability.
+        prop_def = any(i in prop_idents for i in def_params)
         def_decl = (
-            f"def {result_name}{def_params_decl} : {body_type} :=\n"
+            ("open Classical in\nnoncomputable " if prop_def else "")
+            + f"def {result_name}{def_params_decl} : {body_type} :=\n"
             f"  {mapped_body_expr}\n\n"
         )
         # Apply the def in the order its binders are declared: the
@@ -1680,6 +1726,9 @@ def render_theorem(atom: IngestedAtom) -> str:
             body = f"  fin_cases h_body <;>\n    {tactic}"
         else:
             body = f"  rw [h_body]\n  unfold {result_name}\n  {tactic}"
+            if any(i in prop_idents for i in idents):
+                # ``b = False`` hypotheses only reach an ``if b`` through simp.
+                body += "\n  all_goals simp_all"
     else:
         body = f"  {atom.auto_tactic or 'mumei_arith'}"
     notes: List[str] = []

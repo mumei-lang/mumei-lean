@@ -1265,3 +1265,45 @@ def test_guard_trace_ops_require_ctor_identifiers(tmp_path: Path):
     rendered = render_module("std/list", "Generated", [atom])
     assert "omitted atom" in rendered
     assert "GuardOp." not in rendered
+
+
+def _bool_binder_atom(name: str, ensures: str, body: str, params: list, result: str) -> dict:
+    atom = _make_atom(name, requires="true", ensures=ensures, body_expr=body)
+    atom["translator_ir"] = {
+        "sort": "contract_obligation",
+        "binders": [
+            {"mumei_name": p, "lean_name": p, "mumei_type": t, "lean_type": "Bool" if t == "bool" else "Int", "role": "param"}
+            for p, t in params
+        ]
+        + [{"mumei_name": "result", "lean_name": "result", "mumei_type": result,
+            "lean_type": "Bool" if result == "bool" else "Int", "role": "result"}],
+    }
+    return atom
+
+
+def test_render_theorem_declares_bool_binders_as_prop():
+    cert = _make_certificate(
+        "m.mm",
+        [_bool_binder_atom("item_handler", "has_sku == false => result == 0",
+                           "if has_sku { sku } else { 0 }", [("sku", "i64"), ("has_sku", "bool")], "i64")],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert (
+        "open Classical in\nnoncomputable def itemHandlerResult (sku : Int) (has_sku : Prop) : Int :="
+        in rendered
+    )
+    assert "(has_sku : Prop) (result : Int)" in rendered
+    assert rendered.rstrip().endswith("all_goals simp_all")
+
+
+def test_render_theorem_types_a_bool_result_as_prop():
+    cert = _make_certificate(
+        "m.mm",
+        [_bool_binder_atom("is_over", "result == (a >= b)", "a >= b", [("a", "i64"), ("b", "i64")], "bool")],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "def isOverResult (a b : Int) : Prop :=" in rendered
+    assert "(result : Prop)" in rendered
+    assert "noncomputable" not in rendered and "simp_all" not in rendered

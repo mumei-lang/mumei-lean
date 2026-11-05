@@ -932,9 +932,11 @@ def _lowering_rules(tokens: List[tuple], array_ids: List[str], string_ids: List[
         rules.extend(["higher_order_predicate_lowering", "mathlib4_bridge"])
     if any(kind == "KW" and text == "match" for kind, text in tokens):
         rules.append("inductive_definition_lowering")
-    if any(kind == "OP" and text in _IMPLICATION_OPS for kind, text in tokens) or any(
-        kind == "ID" and text == "implies" for kind, text in tokens
-    ):
+    has_match = any(kind == "KW" and text == "match" for kind, text in tokens)
+    if any(
+        kind == "OP" and (text == "==>" or (text == "=>" and not has_match))
+        for kind, text in tokens
+    ) or any(kind == "ID" and text == "implies" for kind, text in tokens):
         rules.append("implication_lowering")
     if any(kind == "KW" and text == "let" for kind, text in tokens):
         rules.append("let_binding_lowering")
@@ -2642,6 +2644,19 @@ def _nest_implications_left(tokens: List[tuple]) -> List[tuple]:
             )
             i = j + 1
             continue
+        if kind == "KW" and text in _QUANTIFIER_KEYWORDS and not (
+            i + 1 < len(tokens) and tokens[i + 1] == ("OP", "(")
+        ):
+            # ``forall x: body`` extends to the end, so its body is a chain
+            # of its own and never an operand of an arrow before it.
+            colon = next(
+                (k for k in range(i + 1, len(tokens)) if tokens[k] == ("OP", ":")),
+                len(tokens) - 1,
+            )
+            segments[-1].extend(
+                tokens[i:colon + 1] + _nest_implications_left(tokens[colon + 1:])
+            )
+            break
         if kind == "OP" and text in _IMPLICATION_OPS:
             arrows.append(tokens[i])
             segments.append([])

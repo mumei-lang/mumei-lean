@@ -50,6 +50,7 @@ try:
         OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL,
         OBLIGATION_CLASS_SMART_CONTRACT_CEI,
         OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
+        LEAN_ONLY_KEYWORDS,
         TRANSLATOR_VERSION,
         TranslationResult,
         atom_array_names,
@@ -84,6 +85,7 @@ except ImportError:  # pragma: no cover - direct ``python scripts/ingest_cert.py
         OBLIGATION_CLASS_SMART_CONTRACT_ACCESS_CONTROL,
         OBLIGATION_CLASS_SMART_CONTRACT_CEI,
         OBLIGATION_CLASS_SMART_CONTRACT_GUARD_TRACE,
+        LEAN_ONLY_KEYWORDS,
         TRANSLATOR_VERSION,
         TranslationResult,
         atom_array_names,
@@ -626,6 +628,15 @@ def _translator_ir_payload(atom: dict, *fallbacks: Optional[TranslationResult]) 
         result = normalize_access_control_translator_ir(result)
         result = normalize_cei_translator_ir(result)
         result.setdefault("binders", [])
+        if isinstance(result["binders"], list):
+            # Older Mumei builds emit Lean keywords such as ``from`` unescaped.
+            result["binders"] = [
+                {**binder, "lean_name": f"{binder['lean_name']}_binder"}
+                if isinstance(binder, dict)
+                and binder.get("lean_name") in LEAN_ONLY_KEYWORDS
+                else binder
+                for binder in result["binders"]
+            ]
         result.setdefault("lowering_rules", [])
         result.setdefault("semantic_gap_notes", [])
         result.setdefault("proof_trace_hints", [])
@@ -1099,6 +1110,11 @@ def _lean_binder_mapping(atom: IngestedAtom) -> dict[str, str]:
     # Mapping values are substituted verbatim into rendered Lean
     # expressions; anything that is not a plain identifier could inject
     # arbitrary syntax, so unsafe pairs are dropped (fail-closed).
+    # Older Mumei builds map Lean keywords such as ``from`` to themselves.
+    mapping = {
+        source: f"{target}_binder" if target in LEAN_ONLY_KEYWORDS else target
+        for source, target in mapping.items()
+    }
     return {
         source: target
         for source, target in mapping.items()

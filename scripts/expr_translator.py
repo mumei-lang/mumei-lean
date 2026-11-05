@@ -639,6 +639,16 @@ def validate_translator_ir_compliance(translator_ir: TranslatorIR) -> List[str]:
     return issues
 
 
+# Lean keywords that are plain identifiers in Mumei, e.g. ``atom canMove(from: i64)``.
+LEAN_ONLY_KEYWORDS: Set[str] = {
+    "theorem", "def", "namespace", "end", "from", "to", "fun", "at", "by", "have",
+    "show", "where", "open", "deriving", "instance", "structure", "class",
+    "section", "variable", "universe", "example", "abbrev", "axiom", "calc",
+    "unless", "catch", "finally", "macro", "syntax", "notation", "local",
+    "private", "protected", "partial", "noncomputable", "Type", "Prop", "Sort",
+}
+
+
 def _lean_binder_name(name: str) -> str:
     clean = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in name)
     if not clean:
@@ -650,7 +660,7 @@ def _lean_binder_name(name: str) -> str:
     # certificate ``binder_mapping`` and the rendered theorem agree.
     if clean in _BUILTIN_NAME_BINDER_CANDIDATES:
         return clean
-    if clean in _RESERVED_IDENTS or clean in {"theorem", "def", "namespace", "end"}:
+    if clean in _RESERVED_IDENTS or clean in LEAN_ONLY_KEYWORDS:
         return f"{clean}_binder"
     return clean
 

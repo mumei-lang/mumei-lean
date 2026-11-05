@@ -385,6 +385,25 @@ def test_render_theorem_applies_body_def_in_declared_binder_order():
     assert "=>" not in rendered
 
 
+def test_render_theorem_renames_lean_keyword_binders():
+    cert = _make_certificate(
+        "m.mm",
+        [
+            _make_atom(
+                "can_move",
+                requires="from >= 0 && to >= 0 && msg.from == 1",
+                ensures="result == (from == 0 && to == 1)",
+                body_expr="(from == 0 && to == 1)",
+            )
+        ],
+    )
+    [atom] = collect_unknown_atoms(cert)
+    rendered = render_theorem(atom)
+    assert "msg.from" in atom.raw_requires
+    assert "def canMoveResult (from_binder to_binder msg_from : Int)" in rendered
+    assert "(result = ( from_binder = 0 ∧ to_binder = 1 ))" in rendered
+
+
 @pytest.mark.parametrize(
     ("body_expr", "requires", "ensures", "expected_def"),
     [

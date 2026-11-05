@@ -954,6 +954,8 @@ def test_implication_chain_under_a_quantifier_stays_inside_its_body():
         translate_contract("forall x: x >= 0 ==> x > -1 ==> x >= 0").lean_expr
         == "(∀ x : Int, ( x ≥ 0 → x > - 1 ) → x ≥ 0)"
     )
+    comma = translate_contract("forall x, x >= 0 ==> x > -1 ==> x >= 0").lean_expr
+    assert "( x ≥ 0 → x > - 1 ) → x ≥ 0" in comma
     assert (
         translate_contract("a => forall x: b => c => d").lean_expr
         == "a → (∀ x : Int, ( b → c ) → d)"

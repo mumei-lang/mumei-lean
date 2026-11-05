@@ -2647,10 +2647,10 @@ def _nest_implications_left(tokens: List[tuple]) -> List[tuple]:
         if kind == "KW" and text in _QUANTIFIER_KEYWORDS and not (
             i + 1 < len(tokens) and tokens[i + 1] == ("OP", "(")
         ):
-            # ``forall x: body`` extends to the end, so its body is a chain
+            # ``forall x: body`` (or ``forall x, body``) extends to the end, so its body is a chain
             # of its own and never an operand of an arrow before it.
             colon = next(
-                (k for k in range(i + 1, len(tokens)) if tokens[k] == ("OP", ":")),
+                (k for k in range(i + 1, len(tokens)) if tokens[k] in (("OP", ":"), ("OP", ","))),
                 len(tokens) - 1,
             )
             segments[-1].extend(

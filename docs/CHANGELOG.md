@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased: `=>` implication and body-def argument order
+
+- Mumei's `=>` implication now translates to Lean `→` like `==>`. A chain
+  `a => b => c` keeps Mumei's left grouping as `(a → b) → c`.
+- The generated `h_body` applies the body def in the order its binders are
+  declared. Before, a def whose binders were grouped by type (scalars before
+  lists) was applied in the atom's parameter order, which did not type-check.
+
 ## Unreleased: generated CLI reference
 
 - Added a generated reference for bridge-script argparse options and the

@@ -929,6 +929,48 @@ def test_implication_operator_translates_to_arrow():
     assert result.is_partial is False
 
 
+def test_fat_arrow_implication_translates_to_arrow():
+    result = translate_contract(
+        "(locations == 0 => result == 0) && (locations > 0 => result == total / locations)"
+    )
+    assert "=>" not in result.lean_expr
+    assert result.lean_expr.count("→") == 2
+    assert result.is_partial is False
+
+
+def test_implication_chain_keeps_mumei_left_grouping():
+    assert translate_contract("a => b => c").lean_expr == "( a → b ) → c"
+    assert translate_contract("a ==> b ==> c ==> d").lean_expr == "( ( a → b ) → c ) → d"
+    assert translate_contract("x > 0 => y > 0").lean_expr == "x > 0 → y > 0"
+
+
+def test_implication_chain_inside_call_arguments_stays_per_argument():
+    result = translate_contract("forall(i, 0, n, a[i] > 0 => b => c)")
+    assert result.lean_expr.endswith("i < n → ( a.get! i.toNat > 0 → b ) → c)")
+
+
+def test_implication_chain_under_a_quantifier_stays_inside_its_body():
+    assert (
+        translate_contract("forall x: x >= 0 ==> x > -1 ==> x >= 0").lean_expr
+        == "(∀ x : Int, ( x ≥ 0 → x > - 1 ) → x ≥ 0)"
+    )
+    comma = translate_contract("forall x, x >= 0 ==> x > -1 ==> x >= 0").lean_expr
+    assert "( x ≥ 0 → x > - 1 ) → x ≥ 0" in comma
+    assert (
+        translate_contract("a => forall x: b => c => d").lean_expr
+        == "a → (∀ x : Int, ( b → c ) → d)"
+    )
+
+
+def test_match_arms_are_not_recorded_as_implications():
+    from expr_translator import _lowering_rules, _tokenize
+
+    assert "implication_lowering" not in _lowering_rules(
+        _tokenize("match x { 0 => a, _ => b }"), [], []
+    )
+    assert "implication_lowering" in _lowering_rules(_tokenize("a => b"), [], [])
+
+
 def test_implies_function_translates_to_arrow():
     result = translate_contract("implies(x > 0, y > 0)")
     assert "→" in result.lean_expr

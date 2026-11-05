@@ -96,6 +96,7 @@ _OP_TRANSLATION = {
     "!=": "≠",
     "!":  "¬",
     "==>": "→",
+    "=>": "→",
     # passthrough for the rest
     ">=": "≥",
     "<=": "≤",
@@ -638,6 +639,16 @@ def validate_translator_ir_compliance(translator_ir: TranslatorIR) -> List[str]:
     return issues
 
 
+# Lean keywords that are plain identifiers in Mumei, e.g. ``atom canMove(from: i64)``.
+LEAN_ONLY_KEYWORDS: Set[str] = {
+    "theorem", "def", "namespace", "end", "from", "to", "fun", "at", "by", "have",
+    "show", "where", "open", "deriving", "instance", "structure", "class",
+    "section", "variable", "universe", "example", "abbrev", "axiom", "calc",
+    "unless", "catch", "finally", "macro", "syntax", "notation", "local",
+    "private", "protected", "partial", "noncomputable", "Type", "Prop", "Sort",
+}
+
+
 def _lean_binder_name(name: str) -> str:
     clean = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in name)
     if not clean:
@@ -649,7 +660,7 @@ def _lean_binder_name(name: str) -> str:
     # certificate ``binder_mapping`` and the rendered theorem agree.
     if clean in _BUILTIN_NAME_BINDER_CANDIDATES:
         return clean
-    if clean in _RESERVED_IDENTS or clean in {"theorem", "def", "namespace", "end"}:
+    if clean in _RESERVED_IDENTS or clean in LEAN_ONLY_KEYWORDS:
         return f"{clean}_binder"
     return clean
 
@@ -921,9 +932,11 @@ def _lowering_rules(tokens: List[tuple], array_ids: List[str], string_ids: List[
         rules.extend(["higher_order_predicate_lowering", "mathlib4_bridge"])
     if any(kind == "KW" and text == "match" for kind, text in tokens):
         rules.append("inductive_definition_lowering")
-    if any(kind == "OP" and text == "==>" for kind, text in tokens) or any(
-        kind == "ID" and text == "implies" for kind, text in tokens
-    ):
+    has_match = any(kind == "KW" and text == "match" for kind, text in tokens)
+    if any(
+        kind == "OP" and (text == "==>" or (text == "=>" and not has_match))
+        for kind, text in tokens
+    ) or any(kind == "ID" and text == "implies" for kind, text in tokens):
         rules.append("implication_lowering")
     if any(kind == "KW" and text == "let" for kind, text in tokens):
         rules.append("let_binding_lowering")
@@ -1012,11 +1025,11 @@ def _build_semantic_gap_notes(
             "higher_order_predicate_lowering: predicate parameters are typed "
             "as Lean functions and applied directly."
         )
-    if any(kind == "OP" and text == "==>" for kind, text in tokens) or any(
+    if any(kind == "OP" and text in _IMPLICATION_OPS for kind, text in tokens) or any(
         kind == "ID" and text == "implies" for kind, text in tokens
     ):
         notes.append(
-            "implication_lowering: Mumei ==> / implies(a,b) maps to Lean → "
+            "implication_lowering: Mumei => / ==> / implies(a,b) maps to Lean → "
             "via MumeiLean.Quantifiers.mumei_implies_intro."
         )
     if any(kind == "KW" and text == "let" for kind, text in tokens):
@@ -2585,6 +2598,78 @@ def _emit_tokens(
     return " ".join(pieces), is_partial
 
 
+_IMPLICATION_OPS = ("=>", "==>")
+_OPEN_TO_CLOSE = {"(": ")", "[": "]", "{": "}"}
+
+
+def _nest_implications_left(tokens: List[tuple]) -> List[tuple]:
+    """Parenthesize implication chains so they keep Mumei's grouping in Lean.
+
+    Mumei parses ``a => b => c`` left-associatively as ``(a => b) => c``,
+    while Lean's ``→`` is right-associative, so a chain of two or more
+    arrows between brackets or commas is rewritten with explicit parens.
+    """
+    out: List[tuple] = []
+    segments: List[List[tuple]] = [[]]
+    arrows: List[tuple] = []
+
+    def flush() -> None:
+        acc = segments[0]
+        for arrow, seg in zip(arrows[:-1], segments[1:-1]):
+            acc = [("OP", "(")] + acc + [arrow] + seg + [("OP", ")")]
+        if arrows:
+            acc = acc + [arrows[-1]] + segments[-1]
+        out.extend(acc)
+        segments[:] = [[]]
+        arrows.clear()
+
+    i = 0
+    while i < len(tokens):
+        kind, text = tokens[i]
+        if kind == "OP" and text in _OPEN_TO_CLOSE:
+            depth, j = 0, i
+            while j < len(tokens):
+                if tokens[j][0] == "OP" and tokens[j][1] in _OPEN_TO_CLOSE:
+                    depth += 1
+                elif tokens[j][0] == "OP" and tokens[j][1] in _OPEN_TO_CLOSE.values():
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            if j == len(tokens):
+                segments[-1].extend(tokens[i:])
+                break
+            segments[-1].extend(
+                [tokens[i]] + _nest_implications_left(tokens[i + 1:j]) + [tokens[j]]
+            )
+            i = j + 1
+            continue
+        if kind == "KW" and text in _QUANTIFIER_KEYWORDS and not (
+            i + 1 < len(tokens) and tokens[i + 1] == ("OP", "(")
+        ):
+            # ``forall x: body`` (or ``forall x, body``) extends to the end, so its body is a chain
+            # of its own and never an operand of an arrow before it.
+            colon = next(
+                (k for k in range(i + 1, len(tokens)) if tokens[k] in (("OP", ":"), ("OP", ","))),
+                len(tokens) - 1,
+            )
+            segments[-1].extend(
+                tokens[i:colon + 1] + _nest_implications_left(tokens[colon + 1:])
+            )
+            break
+        if kind == "OP" and text in _IMPLICATION_OPS:
+            arrows.append(tokens[i])
+            segments.append([])
+        elif kind == "OP" and text == ",":
+            flush()
+            out.append(tokens[i])
+        else:
+            segments[-1].append(tokens[i])
+        i += 1
+    flush()
+    return out
+
+
 def translate_contract(
     source: str, array_names: Optional[FrozenSet[str]] = None
 ) -> TranslationResult:
@@ -2623,7 +2708,7 @@ def translate_contract(
         )
 
     tokens, projected_idents = _lower_struct_projection_tokens(
-        _tokenize(stripped)
+        _nest_implications_left(_tokenize(stripped))
     )
     lean_expr, is_partial = _emit_tokens(
         tokens,

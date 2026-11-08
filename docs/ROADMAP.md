@@ -1,5 +1,22 @@
 # mumei-lean Roadmap
 
+## Verification-Native independent proof backend
+
+Follow the [canonical implementation order](https://github.com/mumei-lang/mumei/blob/develop/docs/CROSS_PROJECT_ROADMAP.md#verification-native-program-ordered-implementation)
+and [shared architecture contract](https://github.com/mumei-lang/mumei/blob/develop/docs/VERIFICATION_NATIVE.md).
+[C01](https://github.com/mumei-lang/mumei/issues/785) keeps Lean an independent
+proof backend, not the owner of all formal verification. Mumei owns the small
+common specification/semantic core; Agent owns configurable planning/adapters.
+
+[C02](https://github.com/mumei-lang/mumei/issues/786) and
+[C03](https://github.com/mumei-lang/mumei/issues/787) must preserve translator
+version and bridge-lemma hash checks, partial-translation rejection, Lake
+results, kernel-axiom audit, ordinary escalation and opt-in dual checks.
+A new common evidence record cannot bypass these gates or independently
+promote an atom to lean_verified. Existing detailed failure diagnostics remain
+available to the planner. No new external verifier or LLVM/native guarantee
+is introduced; source/model proof is not final-artifact verification.
+
 ## Cross-project bridge contract
 
 `mumei-lang/mumei/docs/CROSS_PROJECT_ROADMAP.md` owns the global V1 order. For this repo, the V1 rule is narrow: `mumei-lean` handles Z3 `unknown` obligations after V1-A/V1-B/V1-C/V1-D and can opt in to independently checking verified Z3-unsat atoms. Neither route changes the trust boundary or handles audit/spec/code findings.

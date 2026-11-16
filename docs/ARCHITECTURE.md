@@ -128,6 +128,36 @@ on per-atom `content_hash` checks, so the dropped field is safe today.
 The `all_verified` flag is recomputed: `true` iff every remaining atom
 is `unsat` or `lean_verified`.
 
+### External-proof ingestion (B-0 contract)
+
+Two further schemas extend the contract for AI-supplied proofs
+(defined in [`docs/LEAN_TRANSLATOR_SPEC.md`](LEAN_TRANSLATOR_SPEC.md)
+§13; implemented by `scripts/external_proof.py` /
+`scripts/bridge.py`):
+
+* **`mumei-agent.external_proofs/v1`** (consumed, `--external-proofs
+  PATH` on `scripts/ingest_cert.py` / `scripts/bridge.py`):
+  `{"proofs": [{atom, module_key?, tactic_script? | witness_lemma?,
+  source, attempts?}]}` — caller-supplied proof bodies injected into
+  the regenerated statement's tactic block. The supplier controls
+  neither the statement nor the gate: promotion still requires the
+  real `lake build` and every `export_cert.py` contract check, and a
+  rejected proof (`reject_external_proof` — empty, both/neither body
+  forms, forbidden tactic tokens) keeps the atom's un-supplied status.
+* **`mumei-lean-build-failures-v1`** (produced, `--failure-report
+  PATH` on `scripts/bridge.py`): `{"schema", "failures": [...],
+  "unattributed": [...]}` — the structured `lake build` failure
+  report. `failures` holds atom-attributed entries; `unattributed`
+  holds file-level diagnostics that cannot be pinned to a theorem and
+  therefore block promotion of the whole build (mumei-agent consumes
+  this report to drive its next repair attempt).
+
+Per-atom `lean_metadata` records the outcome: `external_proof`
+(`{source, script_sha256, ...}` or `{rejected}`), `ai_proof_used`
+(`true` only when an `ai_generated_proof` source actually reaches
+`lean_verified` through the real build) and `ai_proof_attempts` — the
+same keys mumei-agent emits; no alias is introduced.
+
 ## What gets generated under `generated/`
 
 `scripts/ingest_cert.py` produces one Lean source file per unique

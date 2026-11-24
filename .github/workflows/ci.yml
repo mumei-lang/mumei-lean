@@ -23,6 +23,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install pytest pyyaml
 
+      - name: Ruff check (baseline rules; see ruff.toml)
+        run: pipx run ruff==0.17.6 check
+
       - name: Run pytest
         env:
           MUMEI_LEAN_SKIP_LIVE: '1'

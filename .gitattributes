@@ -1,0 +1,10 @@
+# Mark generated artifacts so GitHub diffs and `linguist` stats stay focused
+# on hand-written sources (B4, mumei-lang/mumei#1449).
+lake-manifest.json linguist-generated
+generated/** linguist-generated
+out/** linguist-generated
+*.proof-cert.json linguist-generated
+*.lean-cert.json linguist-generated
+
+# Test fixtures under tests/ are hand-reviewed inputs, not generated output.
+tests/** -linguist-generated

@@ -1,0 +1,8 @@
+target-version = "py311"
+
+[lint]
+# Baseline rule set: only rules that currently pass repo-wide. Widen in
+# follow-ups (mumei-lang/mumei#1449): I (import sort), UP (pyupgrade),
+# B (bugbear), the rest of F, and `ruff format` are all deferred — each
+# needs its own mechanical-fix PR.
+select = ["E9", "F63", "F7", "F82", "W6"]

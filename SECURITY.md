@@ -8,7 +8,7 @@ The project is pre-1.0. Security fixes are applied to the `develop` branch and c
 
 Please do **not** open a public GitHub issue for security vulnerabilities.
 
-Report vulnerabilities privately via [GitHub Security Advisories](https://github.com/mumei-lang/mumei-lean/security/advisories/new) ("Report a vulnerability"). If private vulnerability reporting is not yet enabled on this repository, contact the maintainer directly through the email on their GitHub profile instead of opening a public issue.
+Report vulnerabilities privately via [GitHub Security Advisories](https://github.com/mumei-lang/mumei-lean/security/advisories/new) ("Report a vulnerability"). If private vulnerability reporting is not yet enabled on this repository, contact the maintainer via their GitHub profile (https://github.com/AkiraTamai) instead of opening a public issue.
 
 Please include:
 

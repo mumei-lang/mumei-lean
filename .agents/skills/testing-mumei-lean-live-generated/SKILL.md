@@ -125,6 +125,6 @@ Detailed flows live in `references/`. Read only what the change needs:
 
 - Read [`references/finite-field-and-sort-bridge-tests.md`](references/finite-field-and-sort-bridge-tests.md) when a finite-field or sort live path changes.
 - Read [`references/live-generated-theorem-paths.md`](references/live-generated-theorem-paths.md) when adding or checking any of the twenty live paths.
-- Read [`references/adversarial-checks.md`](references/adversarial-checks.md) when promotion logic or the trust boundary changes.
-- Read [`references/tactic-search.md`](references/tactic-search.md) when the tactic search ladder or its metadata changes.
+- Read [`references/adversarial-checks.md`](references/adversarial-checks.md) when promotion logic or the trust boundary changes; check 4 there is the external (AI) proof injection matrix (B-2 acceptance gate: `sorry`, failed `lake build`, unresolved tactic).
+- Read [`references/tactic-search.md`](references/tactic-search.md) when the tactic search ladder or its metadata changes; its "Adversarial \"no false promotion\" matrix" section is the tactic-search side of the no-false-promotion matrix.
 - Read [`references/tactic-search-history-and-agent-propagation.md`](references/tactic-search-history-and-agent-propagation.md) when the history artifact changes or a new live path must reach mumei-agent.

@@ -2,8 +2,40 @@ name: Authorization model
 
 on:
   pull_request:
+    paths:
+      - 'MumeiLean/**'
+      - 'MumeiLean.lean'
+      - 'bridge_lemma_catalog/**'
+      - 'data/**'
+      - 'examples/**'
+      - 'fixtures/**'
+      - 'generated/**'
+      - 'schema/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'docs/CLI_REFERENCE.md'
+      - 'lakefile.lean'
+      - 'lake-manifest.json'
+      - 'lean-toolchain'
+      - '.github/workflows/**'
   push:
     branches: [develop, main]
+    paths:
+      - 'MumeiLean/**'
+      - 'MumeiLean.lean'
+      - 'bridge_lemma_catalog/**'
+      - 'data/**'
+      - 'examples/**'
+      - 'fixtures/**'
+      - 'generated/**'
+      - 'schema/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'docs/CLI_REFERENCE.md'
+      - 'lakefile.lean'
+      - 'lake-manifest.json'
+      - 'lean-toolchain'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 permissions:

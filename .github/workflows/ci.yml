@@ -1,11 +1,46 @@
 name: CI
 
+# C1 (mumei-lang/mumei#1449): skip CI on docs-only changes. An allowlist is
+# safer than paths-ignore here: docs/CLI_REFERENCE.md is asserted by
+# tests/test_cli_reference.py, and workflow changes must trigger CI.
 on:
   push:
     branches: [develop, main]
-    paths-ignore: ["docs/**", "**.md"]
+    paths:
+      - 'MumeiLean/**'
+      - 'bridge_lemma_catalog/**'
+      - 'data/**'
+      - 'examples/**'
+      - 'fixtures/**'
+      - 'generated/**'
+      - 'schema/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'docs/CLI_REFERENCE.md'
+      - 'lakefile.lean'
+      - 'lake-manifest.json'
+      - 'lean-toolchain'
+      - 'ruff.toml'
+      - '.pre-commit-config.yaml'
+      - '.github/workflows/**'
   pull_request:
-    paths-ignore: ["docs/**", "**.md"]
+    paths:
+      - 'MumeiLean/**'
+      - 'bridge_lemma_catalog/**'
+      - 'data/**'
+      - 'examples/**'
+      - 'fixtures/**'
+      - 'generated/**'
+      - 'schema/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'docs/CLI_REFERENCE.md'
+      - 'lakefile.lean'
+      - 'lake-manifest.json'
+      - 'lean-toolchain'
+      - 'ruff.toml'
+      - '.pre-commit-config.yaml'
+      - '.github/workflows/**'
 
 permissions:
   contents: read

@@ -72,7 +72,7 @@ Pipeline:
 Run Python bridge tests:
 
 ```bash
-PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest -q
+PYTHONPATH=scripts MUMEI_LEAN_SKIP_LIVE=1 python -m pytest -q -m "not lake_available"
 ```
 
 Run live Lean-backed checks when the toolchain is ready:

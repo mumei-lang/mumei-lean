@@ -5,6 +5,13 @@ on:
     branches: [develop, main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ github.run_attempt }}
+  cancel-in-progress: true
+
 jobs:
   python-bridge:
     name: Python bridge
@@ -49,7 +56,7 @@ jobs:
 
       - name: Free disk space
         continue-on-error: true
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: true
           android: true
@@ -233,7 +240,7 @@ jobs:
       # tooling we don't need before touching lake.
       - name: Free disk space
         continue-on-error: true
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: true
           android: true
@@ -295,7 +302,7 @@ jobs:
 
       - name: Free disk space
         continue-on-error: true
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: true
           android: true

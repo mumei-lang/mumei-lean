@@ -6,6 +6,13 @@ on:
     branches: [develop, main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ github.run_attempt }}
+  cancel-in-progress: true
+
 jobs:
   authorization-model:
     name: Authorization model proofs and axiom audit

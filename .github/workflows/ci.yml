@@ -24,7 +24,7 @@ jobs:
           python -m pip install pytest pyyaml
 
       - name: Ruff check (baseline rules; see ruff.toml)
-        run: pipx run ruff check
+        run: pipx run ruff==0.17.6 check
 
       - name: Run pytest
         env:

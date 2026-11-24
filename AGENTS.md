@@ -25,3 +25,8 @@ Known gotchas:
 - Never write a secret value to any output — CLI text, logs, certificates, reports, error messages, test snapshots, PR descriptions or commit messages. Report only whether the secret is set.
 - Don't commit credentials; use placeholders in examples and docs.
 - Proof certificates and Lean evidence are trust boundaries: never edit certificate verdicts, proof hashes or `z3_check_result` fields by hand — regenerate them.
+
+## Agent skills layout
+
+- [`.github/skills/`](.github/skills/) — public skills for agents *using* the Lean bridge (bridge, prove-lean).
+- [`.agents/skills/`](.agents/skills/) — contributor-facing skills for working *on* this repository (testing recipes). Internal only.

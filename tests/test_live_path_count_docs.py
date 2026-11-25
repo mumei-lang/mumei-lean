@@ -24,5 +24,13 @@ def test_live_generated_theorem_path_count_is_consistent_across_docs():
     )
     assert heading is not None
     assert int(heading.group(1)) == 20
-    entries = re.findall(r"^\d+\. `", skill_reference, re.MULTILINE)
+    lines = skill_reference.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("1. `"))
+    entries = []
+    for line in lines[start:]:
+        if re.match(r"^\d+\. `", line):
+            entries.append(line)
+        elif entries and not line.strip():
+            break
     assert len(entries) == 20
+    assert [int(line.split(".", 1)[0]) for line in entries] == list(range(1, 21))

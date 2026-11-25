@@ -1,0 +1,27 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-01-01T00:00:00Z",
+  "mumei_version": "0.6.23",
+  "z3_version": "4.12.2",
+  "file": "ts01.mm",
+  "atoms": [
+    {
+      "name": "completionPercent",
+      "requires": "active >= 0 && done >= 0 && done <= active",
+      "ensures": "(active == 0 => result == 0) && result >= 0 && result <= 100",
+      "body_expr": "if active == 0 { 0 } else { done * 100 / active }",
+      "z3_check_result": "unsat",
+      "status": "verified",
+      "content_hash": "ts01-d04-content",
+      "proof_hash": "ts01-d04-proof",
+      "dependencies": [],
+      "effects": [],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "bridge_lemma_hash": "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9"
+    }
+  ],
+  "package_name": "ts01",
+  "package_version": "0",
+  "certificate_hash": "",
+  "all_verified": true
+}

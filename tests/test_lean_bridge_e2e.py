@@ -901,6 +901,40 @@ def test_poly_bound_monotone_upgrades_unknown_to_lean_verified(
 
 
 @pytest.mark.lake_available
+def test_if_integer_division_dual_check_closes_without_promoting_z3(
+    lake_available, tmp_path: Path
+):
+    """TS01-D04 regression: the if split leaves integer-division bounds that
+    require `Int.ediv` reasoning; a passed dual check must stay separate from
+    the original Z3 verdict."""
+    out_cert = tmp_path / "ts01.lean-cert.json"
+    generated = REPO_ROOT / "generated" / "Generated" / "Ts01.lean"
+    _cleanup_generated_file(generated)
+    try:
+        proc = _run_bridge(
+            "--cert",
+            str(FIXTURES / "ts01_completion_percent.proof-cert.json"),
+            "--dual-check",
+            "--out-dir",
+            str(REPO_ROOT / "generated"),
+            "--lean-cert-out",
+            str(out_cert),
+        )
+
+        _assert_bridge_ok(proc)
+        payload = json.loads(out_cert.read_text())
+        atom = payload["atoms"][0]
+        assert atom["z3_check_result"] == "unsat"
+        assert atom["status"] == "verified"
+        assert atom["lean_dual_check"]["status"] == "lean_verified"
+        assert atom["lean_dual_check"]["lean_theorem_name"] == (
+            "Generated.Ts01.completionPercent_correct"
+        )
+    finally:
+        _cleanup_generated_file(generated)
+
+
+@pytest.mark.lake_available
 def test_exists_pivot_partition_upgrades_spurious_to_lean_verified(
     lake_available, tmp_path: Path
 ):

@@ -30,7 +30,9 @@ def test_live_generated_theorem_path_count_is_consistent_across_docs():
     for line in lines[start:]:
         if re.match(r"^\d+\. `", line):
             entries.append(line)
-        elif entries and not line.strip():
+        elif not line.strip():
+            continue
+        else:
             break
     assert len(entries) == 20
     assert [int(line.split(".", 1)[0]) for line in entries] == list(range(1, 21))

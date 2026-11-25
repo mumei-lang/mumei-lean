@@ -915,6 +915,7 @@ def test_if_integer_division_dual_check_closes_without_promoting_z3(
             "--cert",
             str(FIXTURES / "ts01_completion_percent.proof-cert.json"),
             "--dual-check",
+            "--no-tactic-search",
             "--out-dir",
             str(REPO_ROOT / "generated"),
             "--lean-cert-out",

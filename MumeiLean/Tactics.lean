@@ -79,7 +79,7 @@ macro "mumei_arith_deep" : tactic =>
      | omega
      | linarith
      | nlinarith
-     | (split_ifs <;> intros <;> repeat' constructor <;> first
+     | (solve | split_ifs <;> intros <;> repeat' constructor <;> first
         | (intro hz; rfl)
         | (intro hz; contradiction)
         | mumei_ediv_bound

@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_live_generated_theorem_path_count_is_consistent_across_docs():
     contract = (ROOT / "docs" / "LEAN_HARNESS_CONTRACT.md").read_text()
     architecture = (ROOT / "docs" / "ARCHITECTURE.md").read_text()
+    readme = (ROOT / "README.md").read_text()
     skill_reference = (
         ROOT / ".agents/skills/testing-mumei-lean-live-generated/references/live-generated-theorem-paths.md"
     ).read_text()
@@ -16,6 +17,9 @@ def test_live_generated_theorem_path_count_is_consistent_across_docs():
     for document in (contract, architecture, skill_reference):
         assert "twenty live generated theorem paths" in document
         assert "eighteen live generated theorem paths" not in document
+
+    assert "Twenty live generated theorem paths" in readme
+    assert "Eighteen live generated theorem paths" not in readme
 
     heading = re.search(
         r"^## Live Generated Theorem Paths \((\d+) total\)$",

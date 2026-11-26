@@ -1,3 +1,7 @@
+# Cross-repo note (mumei-lang/mumei#1500): the composite action owns only
+# the common Python/dependency runner. mumei-lean's path filter and pytest
+# selection are repo-specific because this repository owns the Lean bridge
+# translator, certificate constants, fixtures, and live theorem-path contract.
 name: Contract Vocabulary
 
 on:
@@ -62,16 +66,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Run contract vocabulary checks
+        # Pin the upstream action commit: this check is a security gate, so a
+        # mutable branch must not be able to replace it outside this repo's review.
+        uses: mumei-lang/mumei/.github/actions/contract-vocabulary@c696632f19cbadb81a9faf6c2cb8b9780e5fa28f
         with:
-          python-version: '3.12'
-
-      - name: Install pytest
-        run: python -m pip install pytest pyyaml
-
-      - name: Check Lean harness docs contract
-        env:
-          MUMEI_LEAN_SKIP_LIVE: '1'
-          PYTHONPATH: scripts
-        run: python -m pytest tests/test_contract_vocabulary.py tests/test_ci_workflow_timeouts.py tests/test_live_path_count_docs.py -q
+          python_version: '3.12'
+          install_command: python -m pip install pytest pyyaml
+          check_command: MUMEI_LEAN_SKIP_LIVE=1 PYTHONPATH=scripts python -m pytest tests/test_contract_vocabulary.py tests/test_ci_workflow_timeouts.py tests/test_live_path_count_docs.py -q

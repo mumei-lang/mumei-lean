@@ -68,7 +68,7 @@ jobs:
           python -m pytest tests/test_authorization_model.py -q
       - name: Preserve build and kernel audit logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: authorization-model
           path: out/authorization-model/

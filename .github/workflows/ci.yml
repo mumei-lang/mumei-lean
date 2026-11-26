@@ -123,7 +123,7 @@ jobs:
 
       - name: Cache Lake build artefacts
         id: cache-lake
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         continue-on-error: true
         with:
           path: |
@@ -295,7 +295,7 @@ jobs:
           exit 0
 
       - name: Cache Lake build artefacts
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         continue-on-error: true
         with:
           path: |
@@ -363,7 +363,7 @@ jobs:
           exit 0
 
       - name: Cache Lake build artefacts
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         continue-on-error: true
         with:
           path: |

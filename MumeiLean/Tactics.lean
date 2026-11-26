@@ -60,6 +60,17 @@ macro "mumei_arith" : tactic =>
      | (rcases ‹_› with ⟨_, _⟩)
      | simp))
 
+/-- Integer-division bounds used by generated arithmetic obligations.
+
+`omega` understands the integer-division side conditions once the strictly
+positive denominator is exposed, while `nlinarith` covers constant-scaled
+products in the numerator bound. -/
+macro "mumei_ediv_bound" : tactic =>
+  `(tactic|
+    first
+    | (apply Int.ediv_nonneg <;> first | assumption | omega | nlinarith)
+    | (apply Int.ediv_le_of_le_mul <;> first | omega | nlinarith))
+
 /-- Deeper arithmetic automation for generated theorems that unfold body semantics. -/
 macro "mumei_arith_deep" : tactic =>
   `(tactic|
@@ -68,6 +79,14 @@ macro "mumei_arith_deep" : tactic =>
      | omega
      | linarith
      | nlinarith
+     | (solve | split_ifs <;> intros <;> repeat' constructor <;> first
+        | (intro hz; rfl)
+        | (intro hz; contradiction)
+        | mumei_ediv_bound
+        | positivity
+        | omega
+        | nlinarith
+        | ring)
      | (repeat' constructor <;> first | positivity | nlinarith | ring)
      | norm_num
      | ring1

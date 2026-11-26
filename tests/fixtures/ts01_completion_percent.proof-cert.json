@@ -1,0 +1,114 @@
+{
+  "version": "1.1",
+  "timestamp": "2026-11-25T16:46:10Z",
+  "mumei_version": "0.6.23",
+  "z3_version": "4.14.1",
+  "file": "ts01.mm",
+  "atoms": [
+    {
+      "name": "completionPercent",
+      "z3_check_result": "unsat",
+      "content_hash": "b03e0bf79f79a7321b4d191192aa6b70a68536b603ef147f942aff949bed58e3",
+      "status": "verified",
+      "spec_validation_result": {
+        "status": "satisfiable",
+        "is_satisfiable": true,
+        "trace_id": null,
+        "spec_metadata": {
+          "source_file": "ts01.mm"
+        },
+        "traceability_hash": "91c2dac091582c99e5f73858c13e5365f11f3bdc053fbaade29a047ec4697a3c",
+        "traceability_coverage": 0.75,
+        "checked_requires": true,
+        "checked_ensures": 3,
+        "checked_refinements": 0,
+        "ensures_implication_checks": 6,
+        "diagnostics": []
+      },
+      "proof_hash": "fdce03314b34b581a8837576d69a00ea6461ee1ded3acf712eb919ccedf0451c",
+      "dependencies": [],
+      "dependency_hashes": {},
+      "effects": [],
+      "requires": "active >= 0 && done >= 0 && done <= active",
+      "ensures": "(active == 0 => result == 0) && result >= 0 && result <= 100",
+      "forall_constraints": [],
+      "body_expr": "{ if active == 0 { 0 } else { done * 100 / active } }",
+      "body_summary": "{ if active == 0 { 0 } else { done * 100 / active } }",
+      "z3_result_class": "unsat",
+      "escalation_reason": "nonlinear_arithmetic",
+      "logic_fragment_tag": "nonlinear_arithmetic",
+      "logic_fragment_tags": [
+        "nonlinear_arithmetic"
+      ],
+      "translator_version": "mumei-lean-translator-ir-v2",
+      "binder_mapping": {
+        "active": "active",
+        "done": "done",
+        "result": "result"
+      },
+      "bridge_lemma_hash": "5716cfdd945d68b4a0d75d75c5ade1934cbd76e0dfe16734a8f3dd723cfdd8e9",
+      "translator_ir": {
+        "sort": "contract_obligation",
+        "binders": [
+          {
+            "mumei_name": "active",
+            "lean_name": "active",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "done",
+            "lean_name": "done",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "param"
+          },
+          {
+            "mumei_name": "result",
+            "lean_name": "result",
+            "mumei_type": "i64",
+            "lean_type": "Int",
+            "role": "result"
+          }
+        ],
+        "theorem_goal": "(active >= 0 && done >= 0 && done <= active) -> ((active == 0 => result == 0) && result >= 0 && result <= 100)",
+        "provenance_span": {
+          "file": "ts01.mm",
+          "line": 1,
+          "col": 1,
+          "len": 4
+        },
+        "lowering_rules": [
+          "contract_lowering",
+          "integer_overflow_bridge",
+          "type_system_mapping"
+        ],
+        "semantic_gap_notes": [
+          "integer_overflow_bridge: Mumei uses 2's complement wrap semantics, Lean 4 Int is unbounded. Bridge lemma required for overflow behavior."
+        ],
+        "proof_trace_hints": [
+          "assert mumei_i64_in_range hypotheses before applying arithmetic lemmas"
+        ],
+        "requires_bridge_lemmas": [
+          "mumei_i64_overflow_bridge",
+          "mumei_i64_add_overflow_bridge",
+          "mumei_div_by_zero_bridge"
+        ]
+      },
+      "symbol_provenance": [],
+      "solver_process_metadata": {
+        "task_id": null,
+        "cache_key": "8f2cb11d10a1eb14bb5dab7374b778b60a957df49172baa6511a568d0fd19c19",
+        "generation_id": "",
+        "solver_config_fingerprint": "4eb8092c0cb08dd4c8d6494173a480c7fae3ce88feef61311d32f80092aad8dc",
+        "timeout_ms": 10000,
+        "cancel_reason": null,
+        "process_start_time": "",
+        "process_end_time": "2026-11-25T16:46:10Z"
+      }
+    }
+  ],
+  "certificate_hash": "d80610198c9b48ff7398f7e2a59c26854c9dfe6d6d69dfaeb3b03345ed6a028f",
+  "all_verified": true
+}

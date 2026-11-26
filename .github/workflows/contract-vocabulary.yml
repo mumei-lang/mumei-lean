@@ -5,6 +5,9 @@ on:
     paths:
       - 'README.md'
       - 'docs/LEAN_HARNESS_CONTRACT.md'
+      - 'docs/ARCHITECTURE.md'
+      - '.agents/skills/testing-mumei-lean-live-generated/references/live-generated-theorem-paths.md'
+      - 'tests/test_live_path_count_docs.py'
       - 'docs/LEAN_TRANSLATOR_SPEC.md'
       - 'docs/BRIDGE_HARNESS_SPEC.md'
       - 'docs/INTEGRATION.md'
@@ -25,6 +28,9 @@ on:
     paths:
       - 'README.md'
       - 'docs/LEAN_HARNESS_CONTRACT.md'
+      - 'docs/ARCHITECTURE.md'
+      - '.agents/skills/testing-mumei-lean-live-generated/references/live-generated-theorem-paths.md'
+      - 'tests/test_live_path_count_docs.py'
       - 'docs/LEAN_TRANSLATOR_SPEC.md'
       - 'docs/BRIDGE_HARNESS_SPEC.md'
       - 'docs/INTEGRATION.md'
@@ -68,4 +74,4 @@ jobs:
         env:
           MUMEI_LEAN_SKIP_LIVE: '1'
           PYTHONPATH: scripts
-        run: python -m pytest tests/test_contract_vocabulary.py tests/test_ci_workflow_timeouts.py -q
+        run: python -m pytest tests/test_contract_vocabulary.py tests/test_ci_workflow_timeouts.py tests/test_live_path_count_docs.py -q

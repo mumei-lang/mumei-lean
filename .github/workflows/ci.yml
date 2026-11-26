@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -89,7 +89,7 @@ jobs:
     continue-on-error: true
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Free disk space
         continue-on-error: true
@@ -266,7 +266,7 @@ jobs:
     # step output until we cut over to a pinned mathlib release.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # GitHub-hosted Ubuntu runners only have ~14 GiB free on /. Pulling
       # mathlib4 (even before compiling anything) plus the Lean toolchain
@@ -335,7 +335,7 @@ jobs:
     continue-on-error: true
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Free disk space
         continue-on-error: true
@@ -408,12 +408,12 @@ jobs:
     continue-on-error: true
     steps:
       - name: Checkout mumei-lean
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: mumei-lean
 
       - name: Checkout mumei-lang/mumei (for std/certs)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         continue-on-error: true
         with:
           repository: mumei-lang/mumei

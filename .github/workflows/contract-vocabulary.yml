@@ -67,7 +67,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run contract vocabulary checks
-        uses: mumei-lang/mumei/.github/actions/contract-vocabulary@develop
+        # Pin the upstream action commit: this check is a security gate, so a
+        # mutable branch must not be able to replace it outside this repo's review.
+        uses: mumei-lang/mumei/.github/actions/contract-vocabulary@c696632f19cbadb81a9faf6c2cb8b9780e5fa28f
         with:
           python_version: '3.12'
           install_command: python -m pip install pytest pyyaml

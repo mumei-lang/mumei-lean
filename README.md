@@ -30,6 +30,13 @@ An atom is `lean_verified` only when it came from Z3 `unknown`, generated Lean b
 
 ## Architecture in one picture
 
+In the four-repository Mumei ecosystem, this repository is the independent Lean 4
+escalation backend: it translates solver-hard obligations, checks generated proofs
+with the Lean kernel, and emits certificates for Mumei to re-check. It does not own
+the source language semantics, audit policy, source/native correspondence, or
+blanket proof acceptance. The cross-repository ownership boundary is defined in
+[mumei's verification-native architecture](https://github.com/mumei-lang/mumei/blob/develop/docs/VERIFICATION_NATIVE.md).
+
 For an independent, limited record-access model (not a new certificate or
 bridge route), see [Single-record authorization model](docs/AUTHORIZATION_MODEL.md).
 It binds principal, target, operation and current state, with a fail-closed
@@ -41,7 +48,7 @@ graph TD
     M["mumei verify --proof-cert"] -->|".proof-cert.json"| ML["mumei-lean"]
     M2["mumei build --emit verified-json"] -->|".verified.json"| ML
     ML -->|"Lean 4 theorem + TranslatorIRMetadata"| LP["Lean Proof Check"]
-    LP -->|".lean-cert.json"| MR["mumei resolver (verify_import_certificate)"]
+    LP -->|"kernel-audited .lean-cert.json"| MR["mumei resolver (verify_import_certificate)"]
     MR -->|"mark_verified()"| MV["mumei verification pipeline"]
     AG["mumei-agent (proliferate / forge)"] -->|"Z3 unknown atoms"| ML
     ML -->|"lean_verified export"| DEMO["mumei-demo Evaluation Loop"]
